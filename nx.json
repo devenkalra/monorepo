@@ -8,6 +8,9 @@
     "production": [
       "default"
     ],
+    "projects": {
+      "py-file-helpers": "libs/py-file-helpers"
+    },
     "sharedGlobals": [
       "{workspaceRoot}/.circleci/config.yml"
     ]
