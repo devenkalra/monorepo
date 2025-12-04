@@ -7,14 +7,16 @@
     ],
     "production": [
       "default"
-    ],
-    "projects": {
-      "py-file-helpers": "libs/py-file-helpers"
-    },
-    "sharedGlobals": [
-      "{workspaceRoot}/.circleci/config.yml"
     ]
   },
+
+  "projects": {
+    "py-file-helpers": "libs/py-file-helpers"
+  },
+
+  "sharedGlobals": [
+    "{workspaceRoot}/.circleci/config.yml"
+  ],
   "nxCloudId": "69320e89b143c06e3eca443d",
   "plugins": [
     {
