@@ -27,7 +27,9 @@ readme = 'README.md'
   include = "py_file_helpers"
 
   [tool.poetry.dependencies]
-  python = ">=3.9,<3.11"
+  python = ">=3.10,<3.13"
+  pyexiftool = "^0.5.6"
+  pillow = "^12.0.0"
 
   [tool.poetry.group.dev.dependencies]
   autopep8 = "2.3.1"

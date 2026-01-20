@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # Source of Truth
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: filecatalog
+      POSTGRES_USER: django
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Graph Layer (Relations)
+  neo4j:
+    image: neo4j:5.11
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_dbms_memory_pagecache_size: 512M
+    ports:
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
+    volumes:
+      - neo4jdata:/data
+
+  # Search Layer (Full Text)
+  meilisearch:
+    image: getmeili/meilisearch:v1.3
+    environment:
+      MEILI_MASTER_KEY: masterKey123
+    ports:
+      - "7700:7700"
+    volumes:
+      - meilidata:/meili_data
+
+volumes:
+  pgdata:
+  neo4jdata:
+  meilidata:

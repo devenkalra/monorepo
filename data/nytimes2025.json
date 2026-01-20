@@ -1,0 +1,291 @@
+[
+  {
+    "name": "Oppenheimer",
+    "director": "Christopher Nolan",
+    "actors": [
+      "Cillian Murphy",
+      "Emily Blunt",
+      "Matt Damon"
+    ],
+    "summary": "A dramatization of the life of J. Robert Oppenheimer and the creation of the atomic bomb — blending biography, history, and intense moral complexity in a sweeping, cinematic scale.",
+    "year": 2023
+  },
+  {
+    "name": "Killers of the Flower Moon",
+    "director": "Martin Scorsese",
+    "actors": [
+      "Leonardo DiCaprio",
+      "Robert De Niro",
+      "Lily Gladstone"
+    ],
+    "summary": "A historical crime drama about the murders of Osage Nation members in 1920s Oklahoma after oil is discovered — a dark, meticulous portrait of greed, exploitation, and justice.",
+    "year": 2023
+  },
+  {
+    "name": "The Zone of Interest",
+    "director": "Jonathan Glazer",
+    "actors": [
+      "Sandra Hüller",
+      "Christian Friedel",
+      "Johann Karthaus"
+    ],
+    "summary": "A haunting, silent-style drama that depicts the ordinary domestic life of an Auschwitz commandant and his family juxtaposed with the horrors outside — a chilling meditation on complicity and evil.",
+    "year": 2023
+  },
+  {
+    "name": "Poor Things",
+    "director": "Yorgos Lanthimos",
+    "actors": [
+      "Emma Stone",
+      "Mark Ruffalo",
+      "Willem Dafoe"
+    ],
+    "summary": "A wild, surrealist reimagining of Frankenstein: a revived young woman explores life, identity, and desire — provocative, visually bold, and emotionally unpredictable.",
+    "year": 2023
+  },
+  {
+    "name": "The Holdovers",
+    "director": "Alexander Payne",
+    "actors": [
+      "Paul Giamatti",
+      "Da'Vine Joy Randolph",
+      "Dominic Sessa"
+    ],
+    "summary": "Set in a boarding school over Christmas break, a curmudgeonly teacher and a troubled student form an unlikely bond — a moving, character-driven story about loss, connection, and redemption.",
+    "year": 2023
+  },
+  {
+    "name": "Beau Is Afraid",
+    "director": "Ari Aster",
+    "actors": [
+      "Joaquin Phoenix",
+      "Patti LuPone",
+      "Amy Ryan"
+    ],
+    "summary": "A long, hallucinatory odyssey through fear and trauma after the sudden death of a mother — strange, unsettling, and deeply psychological.",
+    "year": 2023
+  },
+  {
+    "name": "The Killer",
+    "director": "David Fincher",
+    "actors": [
+    ],
+    "summary": "A cold, meticulous assassin thriller — terse, stylish, and ethically ambiguous, offering a dark meditation on violence and identity.",
+    "year": 2023
+  },
+  {
+    "name": "Barbie",
+    "director": "Greta Gerwig",
+    "actors": [
+    ],
+    "summary": "A sharp, satirical take on identity, feminism, and society's expectations — playful yet subversive, blending comedy with social commentary."
+  },
+  {
+    "name": "Past Lives",
+    "director": "Celine Song",
+    "actors": [
+    ],
+    "summary": "A delicate, intimate drama about love, memory, and fate — subtle in tone and deeply affecting in its portrayal of relationships across time.",
+    "year": 2023
+  },
+  {
+    "name": "Spider-Man: Across the Spider-Verse",
+    "director": "Joaquim Dos Santos, Kemp Powers, Justin K. Thompson",
+    "actors": [
+    ],
+    "summary": "A vibrant, innovative animated superhero film blending thrilling action, emotional stakes, and stylistic brilliance — widely praised for its ambition and heart.",
+    "year": 2023
+  },
+  {
+    "name": "Dune: Part Two",
+    "director": "Denis Villeneuve",
+    "actors": [
+      "Timothée Chalamet",
+      "Zendaya",
+      "Rebecca Ferguson"
+    ],
+    "summary": "The epic continuation of the Dune saga — political intrigue, war, prophecy and destiny collide on a grand sci-fi scale, delivering spectacle and emotional weight.",
+    "year": 2024
+  },
+  {
+    "name": "The Brutalist",
+    "director": "Brady Corbet",
+    "actors": [
+      "Adrien Brody",
+      "Felicity Jones",
+      "Guy Pearce"
+    ],
+    "summary": "A post-war epic about a European architect emigrating to America — a sweeping, intimate journey of displacement, ambition, and the search for identity.",
+    "year": 2024
+  },
+  {
+    "name": "Anora",
+    "director": "Sean Baker",
+    "actors": [
+      "Mikey Madison",
+      "Mark Eydelshteyn",
+      "Yura Borisov"
+    ],
+    "summary": "A gritty-yet-tender dramedy about a Brooklyn sex worker drawn into a dangerous, complicated world — mixing humor, loneliness, survival and the longing for something more.",
+    "year": 2024
+  },
+  {
+    "name": "Challengers",
+    "director": "Luca Guadagnino",
+    "actors": [
+    ],
+    "summary": "A tense romantic-drama / sports film exploring ambition, love triangles, and psychological pressure — cinematic and emotionally charged.",
+    "year": 2024
+  },
+  {
+    "name": "Wicked: Part One",
+    "director": "Jon M. Chu",
+    "actors": [
+      "Cynthia Erivo",
+      "Ariana Grande",
+      "Jeff Goldblum",
+      "Michelle Yeoh"
+    ],
+    "summary": "A lavish fantasy musical bringing a beloved story to life with grandeur — dazzling visuals, strong performances, and escapist spectacle.",
+    "year": 2024
+  },
+  {
+    "name": "Ghostlight",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A film blending mood, mystery and emotional nuance — quietly impactful and notable among the year's more contemplative works.",
+    "year": 2024
+  },
+  {
+    "name": "Nosferatu",
+    "director": "Robert Eggers",
+    "actors": [
+      "Lily-Rose Depp",
+      "Nicholas Hoult",
+      "Bill Skarsgård"
+    ],
+    "summary": "A gothic horror re-imagining: atmospheric, unsettling and moody — drawing on classic horror roots while offering fresh stylistic vision."
+  },
+  {
+    "name": "The Wild Robot",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "An animated / family-friendly film combining adventure, heart, and thoughtful themes — among the year’s standout for its warmth and accessibility.",
+    "year": 2024
+  },
+  {
+    "name": "Small Things Like These",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A quieter, character-driven drama tackling redemption, memory, and personal reckoning — subtle but resonant storytelling.",
+    "year": 2024
+  },
+  {
+    "name": "The Substance",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "year": 2024,
+    "summary": "A provocative, emotionally raw film that resonated with audiences and critics for its boldness and thematic depth."
+  },
+  {
+    "name": "Sinners",
+    "director": "Ryan Coogler",
+    "actors": [
+      "Michael B. Jordan",
+      "Jack O'Connell",
+      "Hailee Steinfeld"
+    ],
+    "summary": "A genre-blending horror film with social commentary — using vampire mythos and historical context to explore race, trauma, and power.",
+    "year": 2025
+  },
+  {
+    "name": "The Mastermind",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "One of the year’s most talked-about films — a smart, daring movie that challenges expectations and pushes cinematic boundaries.",
+    "year": 2025
+  },
+  {
+    "name": "The Secret Agent",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A stylish political thriller — tense, morally complex, and widely praised as one of 2025’s standout achievements.",
+    "year": 2025
+  },
+  {
+    "name": "The Phoenician Scheme",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A grand, ambitious film blending drama, power, and philosophical undertones — visually striking and narratively bold.",
+    "year": 2025
+  },
+  {
+    "name": "Hedda",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A modern-inflected adaptation / re-imagining that captivated critics, notable for its atmosphere, character work, and intensity.",
+    "year": 2025
+  },
+  {
+    "name": "Afternoons of Paris",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A quieter, humanistic film — intimate, emotionally thoughtful, and praised for its depth and subtlety.",
+    "year": 2025
+  },
+  {
+    "name": "Hamnet",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A meditative drama dealing with grief and loss — beautifully crafted and emotionally resonant.",
+    "year": 2025
+  },
+  {
+    "name": "Roofman",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A moving, character-centered film balancing heart and stakes — one of the standouts among 2025’s new releases.",
+    "year": 2025
+  },
+  {
+    "name": "Kill the Jockey",
+    "director": [
+    ],
+    "actors": [
+    ],
+    "summary": "A surreal, daring film — perhaps divisive, but emblematic of 2025’s willingness to take creative risks and push boundaries.",
+    "year": 2025
+  },
+  {
+    "name": "One Battle After Another",
+    "director": "Paul Thomas Anderson",
+    "actors": [
+      "Leonardo DiCaprio"
+    ],
+    "summary": "A sweeping, ambitious epic — combining political stakes, personal drama, and cinematic ambition, marking a high point in 2025’s film output.",
+    "year": 2025
+  }
+]
+

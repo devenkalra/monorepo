@@ -1,0 +1,51 @@
+{
+  "name": "py-string-helpers",
+  "root": "libs/py-string-helpers",
+  "projectType": "library",
+  "sourceRoot": "libs/py-string-helpers/py_string_helpers",
+  "targets": {
+    "build": {
+      "executor": "@nxlv/python:poetry-build",
+      "outputs": [
+        "{workspaceRoot}/dist/libs/py-string-helpers"
+      ],
+      "options": {}
+    },
+    "lint": {
+      "executor": "@nxlv/python:flake8",
+      "outputs": [
+        "{workspaceRoot}/dist/pylint/libs/py-string-helpers"
+      ],
+      "options": {
+        "outputFile": "dist/pylint/libs/py-string-helpers/report.txt"
+      }
+    },
+    "test": {
+      "executor": "@nxlv/python:run-commands",
+      "outputs": [
+        "{workspaceRoot}/coverage/libs/py-string-helpers"
+      ],
+      "options": {
+        "command": "poetry run pytest tests/",
+        "cwd": "{projectRoot}"
+      }
+    },
+    "install": {
+      "executor": "@nx/exec:exec",
+      "options": {
+        "command": "poetry install"
+      }
+    },
+    "add": {
+      "executor": "@nxlv/python:poetry-add"
+    },
+    "update-lock": {
+      "executor": "@nxlv/python:poetry-update"
+    }
+  },
+  "tags": [
+    "python",
+    "lib",
+    "string"
+  ]
+}

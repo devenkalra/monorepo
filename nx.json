@@ -9,11 +9,13 @@
       "default"
     ]
   },
-
   "projects": {
-    "py-file-helpers": "libs/py-file-helpers"
+    "py-file-helpers": "libs/py-file-helpers",
+    "py-data-helpers": "libs/py-data-helpers",
+    "py-string-helpers": "libs/py-string-helpers",
+    "catalog_files": "apps/catalog_files",
+    "py_cli": "libs/py_cli"
   },
-
   "sharedGlobals": [
     "{workspaceRoot}/.circleci/config.yml"
   ],
