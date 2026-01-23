@@ -1,0 +1,167 @@
+2026-01-15 16:48:03,313 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-15 16:48:23,546 | INFO | === Conversion run started ===
+2026-01-15 16:48:56,400 | INFO | Source root   : /mnt/photo/1990
+2026-01-15 16:48:56,401 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-15 16:48:56,402 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-15 16:49:06,499 | INFO | Found 21 file(s) under /mnt/photo/1990
+2026-01-15 16:49:06,501 | INFO | [1/21] Processing: 10/10 Marriage/VIDEO_TS/VTS_01_4.VOB
+2026-01-15 17:12:23,540 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-15 17:12:23,541 | INFO | === Conversion run started ===
+2026-01-15 17:12:23,541 | INFO | Source root   : /mnt/photo/1990
+2026-01-15 17:12:23,541 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-15 17:12:23,541 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-15 17:12:24,435 | INFO | Found 21 file(s) under /mnt/photo/1990
+2026-01-15 17:12:24,436 | INFO | [1/21] Processing: 10/10 Marriage/VIDEO_TS/VTS_01_4.VOB
+2026-01-15 17:47:27,523 | INFO |   ✓ converted + archived
+2026-01-15 17:47:27,525 | INFO | [2/21] Processing: 10/10 Marriage/scene'20120223 20.04.21-0001.avi
+2026-01-15 21:39:15,653 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 21:39:15,654 | INFO | [3/21] Processing: 10/10 Marriage/scene'20120223 20.13.54.avi
+2026-01-15 21:46:01,531 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 21:46:01,532 | INFO | [4/21] Processing: 10/10 Marriage/scene'20120223 20.23.27.avi
+2026-01-15 21:53:25,848 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 21:53:25,849 | INFO | [5/21] Processing: 10/10 Marriage/scene'20120223 20.32.59.avi
+2026-01-15 22:00:58,248 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:00:58,249 | INFO | [6/21] Processing: 10/10 Marriage/scene'20120223 20.42.32.avi
+2026-01-15 22:08:23,923 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:08:23,925 | INFO | [7/21] Processing: 10/10 Marriage/scene'20120223 20.52.05.avi
+2026-01-15 22:15:08,889 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:15:08,889 | INFO | [8/21] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-15 22:18:33,151 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:18:33,151 | INFO | [9/21] Processing: 10/10 Marriage/scene'20120223 22.19.05.avi
+2026-01-15 22:24:51,837 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:24:51,838 | INFO | [10/21] Processing: 10/10 Marriage/scene'20120223 22.47.14.avi
+2026-01-15 22:29:02,888 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:29:02,889 | INFO | [11/21] Processing: 10/10 Marriage/scene'20120224 21.14.48.avi
+2026-01-15 22:35:51,093 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:35:51,094 | INFO | [12/21] Processing: 10/10 Marriage/scene'20120224 21.24.11.avi
+2026-01-15 22:42:50,608 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:42:50,609 | INFO | [13/21] Processing: 10/10 Marriage/scene'20120224 21.33.34.avi
+2026-01-15 22:50:01,041 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:50:01,042 | INFO | [14/21] Processing: 10/10 Marriage/scene'20120224 21.42.57.avi
+2026-01-15 22:56:57,580 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 22:56:57,581 | INFO | [15/21] Processing: 10/10 Marriage/scene'20120224 21.52.21.avi
+2026-01-15 23:03:55,203 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 23:03:55,204 | INFO | [16/21] Processing: 10/10 Marriage/scene'20120224 22.01.44.avi
+2026-01-15 23:10:56,521 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 23:10:56,522 | INFO | [17/21] Processing: 10/10 Marriage/scene'20120224 22.11.07.avi
+2026-01-15 23:15:22,890 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 23:15:22,891 | INFO | [18/21] Processing: 10/10 Marriage/scene'20120224 23.43.45.avi
+2026-01-15 23:22:27,918 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 23:22:27,918 | INFO | [19/21] Processing: 10/10 Marriage/scene'20120225 00.02.31.avi
+2026-01-15 23:29:34,250 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 23:29:34,251 | INFO | [20/21] Processing: 10/10 Marriage/scene'20120225 00.11.54.avi
+2026-01-15 23:36:50,681 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 23:36:50,682 | INFO | [21/21] Processing: 10/10 Marriage/scene'20120225 00.21.17.avi
+2026-01-15 23:39:18,758 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-15 23:39:18,759 | INFO | 
+Summary:
+2026-01-15 23:39:18,759 | INFO |   converted: 1
+2026-01-15 23:39:18,759 | INFO |   skipped:   0
+2026-01-15 23:39:18,759 | INFO |   failed:    20
+2026-01-15 23:39:18,759 | INFO | Archive root: /mnt/data/media_archive
+2026-01-16 02:45:41,913 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 02:45:41,913 | INFO | === Conversion run started ===
+2026-01-16 02:45:41,914 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 02:45:41,914 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 02:45:41,914 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 02:45:42,938 | INFO | Found 20 file(s) under /mnt/photo/1990
+2026-01-16 02:45:42,939 | INFO | [1/20] Processing: 10/10 Marriage/scene'20120223 20.04.21-0001.avi
+2026-01-16 10:14:47,257 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 10:14:47,258 | INFO | === Conversion run started ===
+2026-01-16 10:14:47,258 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 10:14:47,259 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 10:14:47,259 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 10:14:48,311 | INFO | Found 20 file(s) under /mnt/photo/1990
+2026-01-16 10:14:48,312 | INFO | [1/20] Processing: 10/10 Marriage/scene'20120223 20.04.21-0001.avi
+2026-01-16 10:23:27,497 | INFO |   ✓ converted + archived
+2026-01-16 10:23:44,420 | INFO | [2/20] Processing: 10/10 Marriage/scene'20120223 20.13.54.avi
+2026-01-16 10:35:55,520 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 10:35:55,521 | INFO | === Conversion run started ===
+2026-01-16 10:35:55,521 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 10:35:55,522 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 10:35:55,522 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 10:35:56,801 | INFO | Found 19 file(s) under /mnt/photo/1990
+2026-01-16 10:35:56,802 | INFO | [1/19] Processing: 10/10 Marriage/scene'20120223 20.13.54.avi
+2026-01-16 10:35:56,964 | INFO |   ↷ mp4 exists (skip): scene_20120223 20.13.54.mp4
+2026-01-16 10:35:56,964 | INFO | [2/19] Processing: 10/10 Marriage/scene'20120223 20.23.27.avi
+2026-01-16 10:40:35,653 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 10:40:35,654 | INFO | === Conversion run started ===
+2026-01-16 10:40:35,655 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 10:40:35,655 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 10:40:35,655 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 10:40:37,348 | INFO | Found 19 file(s) under /mnt/photo/1990
+2026-01-16 10:40:37,348 | INFO | [1/19] Processing: 10/10 Marriage/scene'20120223 20.13.54.avi
+2026-01-16 10:50:55,536 | INFO |   ✓ converted + archived
+2026-01-16 10:50:58,636 | INFO | [2/19] Processing: 10/10 Marriage/scene'20120223 20.23.27.avi
+2026-01-16 10:58:23,568 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 10:58:23,568 | INFO | === Conversion run started ===
+2026-01-16 10:58:23,568 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 10:58:23,569 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 10:58:23,569 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 10:58:26,005 | INFO | Found 18 file(s) under /mnt/photo/1990
+2026-01-16 10:58:26,006 | INFO | [1/18] Processing: 10/10 Marriage/scene'20120223 20.23.27.avi
+2026-01-16 11:10:47,988 | INFO |   ✓ converted + archived
+2026-01-16 11:10:47,991 | INFO | [2/18] Processing: 10/10 Marriage/scene'20120223 20.32.59.avi
+2026-01-16 11:19:40,381 | INFO |   ✓ converted + archived
+2026-01-16 11:19:40,385 | INFO | [3/18] Processing: 10/10 Marriage/scene'20120223 20.42.32.avi
+2026-01-16 11:59:44,519 | INFO |   ✓ converted + archived
+2026-01-16 11:59:44,527 | INFO | [4/18] Processing: 10/10 Marriage/scene'20120223 20.52.05.avi
+2026-01-16 12:07:40,326 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 12:07:40,326 | INFO | === Conversion run started ===
+2026-01-16 12:07:40,326 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 12:07:40,326 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 12:07:40,327 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 12:07:41,408 | INFO | Found 15 file(s) under /mnt/photo/1990
+2026-01-16 12:07:41,409 | INFO | [1/15] Processing: 10/10 Marriage/scene'20120223 20.52.05.avi
+2026-01-16 12:17:13,704 | INFO |   ✓ converted + archived
+2026-01-16 12:17:13,705 | INFO | [2/15] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-16 12:23:14,997 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-16 12:23:14,998 | INFO | [3/15] Processing: 10/10 Marriage/scene'20120223 22.19.05.avi
+2026-01-16 12:23:39,468 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 12:23:39,468 | INFO | === Conversion run started ===
+2026-01-16 12:23:39,469 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 12:23:39,469 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 12:23:39,469 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 12:23:42,828 | INFO | Found 14 file(s) under /mnt/photo/1990
+2026-01-16 12:23:42,829 | INFO | [1/14] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-16 12:34:28,270 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-16 12:34:36,337 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 12:34:36,338 | INFO | === Conversion run started ===
+2026-01-16 12:34:36,338 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 12:34:36,338 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 12:34:36,339 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 12:34:36,557 | INFO | Found 14 file(s) under /mnt/photo/1990
+2026-01-16 12:34:36,558 | INFO | [1/14] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-16 12:38:23,438 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-16 12:40:18,952 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 12:40:18,952 | INFO | === Conversion run started ===
+2026-01-16 12:40:18,953 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 12:40:18,953 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 12:40:18,953 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 12:40:19,193 | INFO | Found 14 file(s) under /mnt/photo/1990
+2026-01-16 12:40:19,195 | INFO | [1/14] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-16 12:53:39,058 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-16 12:53:47,695 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 12:53:47,696 | INFO | === Conversion run started ===
+2026-01-16 12:53:47,696 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 12:53:47,696 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 12:53:47,697 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 12:53:47,897 | INFO | Found 14 file(s) under /mnt/photo/1990
+2026-01-16 12:53:47,898 | INFO | [1/14] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-16 12:58:21,016 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-16 12:58:30,018 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 12:58:30,018 | INFO | === Conversion run started ===
+2026-01-16 12:58:30,019 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 12:58:30,019 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 12:58:30,019 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 12:58:30,235 | INFO | Found 14 file(s) under /mnt/photo/1990
+2026-01-16 12:58:30,236 | INFO | [1/14] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-16 13:07:11,413 | INFO |   ✗ output mp4 not readable (aborted)
+2026-01-16 16:16:38,174 | INFO | Logging to file: /home/ubuntu/monorepo/scripts/convert.log
+2026-01-16 16:16:38,175 | INFO | === Conversion run started ===
+2026-01-16 16:16:38,175 | INFO | Source root   : /mnt/photo/1990
+2026-01-16 16:16:38,175 | INFO | Archive root  : /mnt/data/media_archive
+2026-01-16 16:16:38,175 | INFO | CRF=16, preset=slow, audio=320k
+2026-01-16 16:16:38,352 | INFO | Found 14 file(s) under /mnt/photo/1990
+2026-01-16 16:16:38,354 | INFO | [1/14] Processing: 10/10 Marriage/scene'20120223 21.01.37.avi
+2026-01-16 16:33:48,467 | INFO |   ✗ output mp4 not readable (aborted)
