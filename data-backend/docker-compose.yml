@@ -1,0 +1,207 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: bldrdojo-db
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-entitydb}
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    env_file:
+      - .env
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for caching and Celery)
+  redis:
+    image: redis:7-alpine
+    container_name: bldrdojo-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    env_file:
+      - .env
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MeiliSearch (Search Engine)
+  meilisearch:
+    image: getmeili/meilisearch:v1.5
+    container_name: bldrdojo-meilisearch
+    restart: unless-stopped
+    volumes:
+      - meilisearch_data:/meili_data
+    environment:
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_ENV=production
+    env_file:
+      - .env
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7700/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Neo4j (Graph Database)
+  neo4j:
+    image: neo4j:5-community
+    container_name: bldrdojo-neo4j
+    restart: unless-stopped
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
+      - NEO4J_dbms_memory_pagecache_size=512M
+      - NEO4J_dbms_memory_heap_initial__size=512M
+      - NEO4J_dbms_memory_heap_max__size=1G
+    env_file:
+      - .env
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "cypher-shell", "-u", "${NEO4J_USER:-neo4j}", "-p", "${NEO4J_PASSWORD}", "RETURN 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Vector Search Service (Flask)
+  vector-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.vector
+    container_name: bldrdojo-vector
+    restart: unless-stopped
+    volumes:
+      - vector_data:/app/data
+    environment:
+      - FLASK_ENV=production
+      - VECTOR_DB_PATH=/app/data/chroma
+    env_file:
+      - .env
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+
+  # Django Backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bldrdojo-backend
+    restart: unless-stopped
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/mediafiles
+      - ./logs:/app/logs
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-entitydb}
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - NEO4J_URI=bolt://neo4j:7687
+      - VECTOR_SERVICE_URL=http://vector-service:5000
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - backend-network
+      - frontend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py collectstatic --noinput &&
+        gunicorn --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile - config.wsgi:application
+      "
+
+  # React Frontend with Nginx
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bldrdojo-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/mediafiles:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - backend
+    networks:
+      - frontend-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+    name: bldrdojo-postgres-data
+  redis_data:
+    name: bldrdojo-redis-data
+  meilisearch_data:
+    name: bldrdojo-meilisearch-data
+  neo4j_data:
+    name: bldrdojo-neo4j-data
+  neo4j_logs:
+    name: bldrdojo-neo4j-logs
+  vector_data:
+    name: bldrdojo-vector-data
+  static_volume:
+    name: bldrdojo-static
+  media_volume:
+    name: bldrdojo-media
+
+networks:
+  backend-network:
+    name: bldrdojo-backend-network
+    driver: bridge
+  frontend-network:
+    name: bldrdojo-frontend-network
+    driver: bridge
