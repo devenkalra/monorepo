@@ -61,3 +61,13 @@ docker-compose.override.yml
 # Temporary files
 *.tmp
 *.bak
+
+# Data directories
+chroma_db/
+vector_db/
+data.ms/
+
+# Example files
+*_example.json
+chatgpt_example.json
+gemini_example.json

@@ -1,0 +1,76 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.db-journal
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Static and media files (will be collected in container)
+staticfiles/
+mediafiles/
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Documentation
+*.md
+docs/
+
+# Tests
+tests/
+htmlcov/
+
+# Backups
+backups/
+*.dump
+*.sql
+
+# Node modules (if any)
+node_modules/
+
+# SSL certificates
+ssl/
+*.pem
+*.key
+*.crt
