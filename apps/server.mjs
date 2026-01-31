@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 // --- add near top of server.mjs ---
-const GH_TOKEN = "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"; // create a fine-grained PAT with repo:issues scope
+const GH_TOKEN = os.getenv("GH_TOKEN")
 const GH_BASE = "https://api.github.com";
 
 const app = express();

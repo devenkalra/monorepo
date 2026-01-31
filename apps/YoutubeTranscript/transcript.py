@@ -4,7 +4,9 @@ from youtube_transcript_api import YouTubeTranscriptApi
 from slugify import slugify
 from openai import OpenAI
 from pytube import Playlist, YouTube
-OPENAIKEY="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"
+
+
+OPENAIKEY=os.getenv("OPENAIKEY")
 client = OpenAI(api_key=OPENAIKEY)
 from youtube_transcript_api import YouTubeTranscriptApi
 
