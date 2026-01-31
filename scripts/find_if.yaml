@@ -1,0 +1,61 @@
+title: 'Find files with find command'
+description: 'Find files in database by computing hash and searching'
+command: '/usr/bin/find {path} {type} {depth} {size} {name} {iwholename} {print}'
+working_dir: '~'
+window_size: '900x700'
+help_text: |
+  Use find command
+  
+
+parameters:
+  - name: path
+    label: 'Search Path'
+    type: text
+    flag: ''  # Positional - no flag
+    required: true
+    default: '.'
+  - name: type
+    label: 'Type'
+    type: text
+    flag: '-type'  # Positional - no flag
+    required: false
+    default: ''
+    help: 'd - directory, f - reg file, l - symbolic link'
+  - name: depth
+    label: 'Depth'
+    type: text
+    flag: '-maxdepth'  # Positional - no flag
+    required: false
+    default: ''
+  - name: size
+    label: 'Size'
+    type: text
+    flag: '-size'  # Positional - no flag
+    required: false
+    default: ''
+    help: "Size, + for greater than, - for less than"
+  - name: name
+    label: 'Name'
+    type: text
+    flag: '-name'
+    multiple: true
+    required: false
+    help: 'Files to search for in database (one per line)'
+    default: ''
+  - name: iwholename
+    label: 'Whole Path'
+    type: text
+    flag: '-iwholename'
+    multiple: true
+    required: false
+    help: 'Files to search for in database (one per line)'
+    default: ''
+  - name: print
+    label: 'Print Format'
+    type: text
+    flag: '-printf'
+    multiple: true
+    required: false
+    help: 'Print file format'
+    default: ''
+

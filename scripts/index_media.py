@@ -14,9 +14,7 @@ Features:
 """
 
 import argparse
-import hashlib
 import json
-import mimetypes
 import os
 import re
 import sqlite3
@@ -26,6 +24,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# Import shared utilities
+from media_utils import (
+    create_database_schema,
+    calculate_file_hash,
+    get_mime_type,
+    is_image_file,
+    is_video_file
+)
+
 # Try to import PIL for image processing
 try:
     from PIL import Image
@@ -33,129 +40,6 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
     print("Warning: PIL/Pillow not available. Thumbnail generation will be limited.", file=sys.stderr)
-
-
-# ==================== Database Schema ====================
-
-def create_database_schema(conn: sqlite3.Connection):
-    """Create the database schema for media indexing."""
-    cursor = conn.cursor()
-    
-    # Main files table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            volume TEXT NOT NULL,
-            fullpath TEXT NOT NULL UNIQUE,
-            name TEXT NOT NULL,
-            created_date TEXT,
-            modified_date TEXT NOT NULL,
-            size INTEGER NOT NULL,
-            mime_type TEXT,
-            extension TEXT,
-            file_hash TEXT,
-            indexed_date TEXT NOT NULL,
-            UNIQUE(volume, fullpath)
-        )
-    """)
-    
-    # Image metadata table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS image_metadata (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_id INTEGER NOT NULL,
-            raw_exif TEXT,
-            width INTEGER,
-            height INTEGER,
-            date_taken TEXT,
-            exposure_time TEXT,
-            focal_length REAL,
-            focal_length_35mm INTEGER,
-            f_number REAL,
-            camera_make TEXT,
-            camera_model TEXT,
-            lens_model TEXT,
-            iso INTEGER,
-            latitude REAL,
-            longitude REAL,
-            altitude REAL,
-            city TEXT,
-            state TEXT,
-            country TEXT,
-            country_code TEXT,
-            coverage TEXT,
-            caption TEXT,
-            keywords TEXT,
-            FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
-        )
-    """)
-    
-    # Video metadata table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS video_metadata (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_id INTEGER NOT NULL,
-            width INTEGER,
-            height INTEGER,
-            frame_rate REAL,
-            video_codec TEXT,
-            audio_channels INTEGER,
-            audio_bit_rate_kbps REAL,
-            duration_seconds REAL,
-            FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
-        )
-    """)
-    
-    # Thumbnails table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS thumbnails (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            file_id INTEGER NOT NULL,
-            thumbnail_data BLOB NOT NULL,
-            thumbnail_width INTEGER,
-            thumbnail_height INTEGER,
-            FOREIGN KEY (file_id) REFERENCES files(id) ON DELETE CASCADE
-        )
-    """)
-    
-    # Skipped files table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS skipped_files (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            run_timestamp TEXT NOT NULL,
-            fullpath TEXT NOT NULL,
-            skip_reason TEXT NOT NULL,
-            volume TEXT,
-            file_size INTEGER,
-            recorded_date TEXT NOT NULL
-        )
-    """)
-    
-    # Create indexes for faster queries
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_volume ON files(volume)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_hash ON files(file_hash)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_date_taken ON image_metadata(date_taken)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_location ON image_metadata(latitude, longitude)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_skipped_run_timestamp ON skipped_files(run_timestamp)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_skipped_reason ON skipped_files(skip_reason)")
-    
-    conn.commit()
-
-
-# ==================== File Hashing ====================
-
-def calculate_file_hash(filepath: str, chunk_size: int = 8192) -> str:
-    """Calculate SHA256 hash of a file."""
-    sha256_hash = hashlib.sha256()
-    try:
-        with open(filepath, "rb") as f:
-            for chunk in iter(lambda: f.read(chunk_size), b""):
-                sha256_hash.update(chunk)
-        return sha256_hash.hexdigest()
-    except Exception as e:
-        print(f"Error hashing file {filepath}: {e}", file=sys.stderr)
-        return ""
 
 
 # ==================== EXIF Processing ====================
@@ -244,7 +128,8 @@ def normalize_exif_data(exif: Dict) -> Dict:
                exif.get('XMP:Subject'))
     if keywords:
         if isinstance(keywords, list):
-            normalized['keywords'] = ', '.join(keywords)
+            # Convert all items to strings before joining
+            normalized['keywords'] = ', '.join(str(k) for k in keywords)
         else:
             normalized['keywords'] = str(keywords)
     
@@ -690,32 +575,9 @@ def get_file_info(filepath: str, volume: str) -> Dict:
         info['created_date'] = info['modified_date']
     
     # Get MIME type
-    mime_type, _ = mimetypes.guess_type(filepath)
-    info['mime_type'] = mime_type or 'application/octet-stream'
+    info['mime_type'] = get_mime_type(filepath)
     
     return info
-
-
-def is_image_file(mime_type: str, extension: str = '') -> bool:
-    """Check if file is an image (including RAW formats)."""
-    # Standard image MIME types
-    if mime_type.startswith('image/'):
-        return True
-    
-    # RAW formats may not have proper MIME types, check by extension
-    raw_extensions = [
-        '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', 
-        '.pef', '.srw', '.raf', '.3fr', '.fff', '.iiq', '.rwl', '.nrw',
-        '.mrw', '.erf', '.kdc', '.dcr', '.mos', '.ptx', '.r3d'
-    ]
-    
-    ext_lower = extension.lower()
-    return ext_lower in raw_extensions
-
-
-def is_video_file(mime_type: str) -> bool:
-    """Check if file is a video."""
-    return mime_type.startswith('video/')
 
 
 def check_file_exists(file_info: Dict, check_criteria: List[str], conn: sqlite3.Connection) -> bool:
@@ -1023,7 +885,7 @@ def process_video(filepath: str, file_id: int, conn: sqlite3.Connection) -> Opti
 def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: List[str],
                    include_patterns: List[str], max_depth: Optional[int],
                    check_existing: List[str], verbose: int, dry_run: bool, literal_patterns: bool,
-                   run_timestamp: str, conn: sqlite3.Connection) -> Tuple[int, int, int]:
+                   run_timestamp: str, conn: sqlite3.Connection, limit: Optional[int] = None) -> Tuple[int, int, int]:
     """Recursively scan directory and process media files.
     
     Args:
@@ -1052,6 +914,7 @@ def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: L
     files_added = 0
     files_updated = 0
     files_skipped = 0
+    files_processed = 0
     commit_counter = 0
     commit_interval = 100  # Commit every 100 files
     
@@ -1061,6 +924,8 @@ def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: L
     print(f"Skip patterns: {skip_patterns if skip_patterns else 'None'}")
     print(f"Max depth: {max_depth if max_depth is not None else 'Unlimited'}")
     print(f"Check existing by: {', '.join(check_existing)}")
+    if limit:
+        print(f"Limit: {limit} files")
     if dry_run:
         print(f"Mode: DRY RUN (no changes will be made)")
     print()
@@ -1091,6 +956,11 @@ def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: L
             dirs[:] = [d for d in dirs if not should_skip_path(os.path.join(root, d), skip_patterns, literal_patterns)]
         
         for filename in files:
+            # Check if we've reached the limit
+            if limit and files_processed >= limit:
+                print(f"\nReached limit of {limit} files. Stopping.")
+                return files_added, files_updated, files_skipped
+            
             filepath = os.path.join(root, filename)
             
             # First check if file matches include pattern
@@ -1112,6 +982,7 @@ def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: L
                     files_updated += 1
                 else:
                     files_added += 1
+                files_processed += 1
             else:
                 files_skipped += 1
                 if skip_reason and not dry_run:
@@ -1187,6 +1058,8 @@ Examples:
                        help="Verbosity level: 0=quiet, 1=file+outcome, 2=more details, 3=full metadata (default: 0)")
     parser.add_argument("--dry-run", action="store_true",
                        help="Show what would be done without actually processing files or modifying the database")
+    parser.add_argument("--limit", type=int,
+                       help="Limit number of files to process (useful with --dry-run for testing)")
     parser.add_argument("--db-path", default="media_index.db",
                        help="Path to SQLite database file (default: media_index.db)")
     
@@ -1233,7 +1106,11 @@ Examples:
     total_files_updated = 0
     total_files_skipped = 0
     
+    remaining_limit = args.limit  # Track remaining limit across directories
     for start_dir in start_dirs:
+        # Calculate limit for this directory
+        current_limit = remaining_limit if remaining_limit else None
+        
         files_added, files_updated, files_skipped = scan_directory(
             args.path,
             start_dir,
@@ -1246,11 +1123,19 @@ Examples:
             args.dry_run,
             args.literal_patterns,
             run_timestamp,
-            conn
+            conn,
+            current_limit
         )
         total_files_added += files_added
         total_files_updated += files_updated
         total_files_skipped += files_skipped
+        
+        # Update remaining limit
+        if remaining_limit:
+            remaining_limit -= (files_added + files_updated)
+            if remaining_limit <= 0:
+                print(f"\nLimit reached. Stopping further directory scans.")
+                break
     
     end_time = datetime.now()
     
