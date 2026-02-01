@@ -61,6 +61,16 @@ RELATION_SCHEMA = [
         'toSemantics': 'Teacher'
     },
     {
+        'key': 'HAS_STUDENT', 
+        'name': 'Has Student', 
+        'reverseKey': 'IS_STUDENT_OF',
+        'reverseName': 'Student Of', 
+        'relationAnnotation': 'Person',
+        'fromEntity': 'Person',
+        'toEntity': 'Person', 
+        'toSemantics': 'Person'
+    },
+    {
         'key': 'IS_STUDENT_OF', 
         'name': 'Student Of (Org)', 
         'reverseKey': 'HAS_STUDENT',

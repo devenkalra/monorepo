@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import ImageLightbox from './ImageLightbox';
 import RichTextEditor from './RichTextEditor';
 import api from '../services/api';
 
 function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialViewMode }) {
+    const navigate = useNavigate();
     const [isAnimating, setIsAnimating] = useState(false);
     const [shouldRender, setShouldRender] = useState(false);
     const displayEntityRef = useRef(null);
@@ -16,23 +18,51 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const [deletedAttachments, setDeletedAttachments] = useState([]);
     const [lightboxImages, setLightboxImages] = useState([]);
     const [lightboxIndex, setLightboxIndex] = useState(0);
-    const [viewMode, setViewMode] = useState('details'); // 'details' or 'relations'
+    const [viewMode, setViewMode] = useState('details'); // 'details', 'edit', or 'relations'
     const [relations, setRelations] = useState({ outgoing: [], incoming: [] });
     const [isLoadingRelations, setIsLoadingRelations] = useState(false);
     const [isAddingRelation, setIsAddingRelation] = useState(false);
-    const [newRelation, setNewRelation] = useState({ targetEntity: '', relationType: '' });
+    const [newRelation, setNewRelation] = useState({ targetEntity: '', relationType: '', targetEntityData: null });
     const [entitySearchResults, setEntitySearchResults] = useState([]);
+    const [entitySearchQuery, setEntitySearchQuery] = useState('');
     const [availableRelationTypes, setAvailableRelationTypes] = useState([]);
+    const [relationsFilter, setRelationsFilter] = useState('');
+    const [expandedRelations, setExpandedRelations] = useState({});
 
     useEffect(() => {
         if (entity && isVisible) {
+            // Ensure urls, photos, and attachments are arrays
+            const normalizedEntity = {
+                ...entity,
+                urls: Array.isArray(entity.urls) ? entity.urls : (entity.urls ? [] : []),
+                photos: Array.isArray(entity.photos) ? entity.photos : (entity.photos ? [] : []),
+                attachments: Array.isArray(entity.attachments) ? entity.attachments : (entity.attachments ? [] : [])
+            };
+            
             // Store entity for display during animations
-            displayEntityRef.current = entity;
-            setEditedEntity(entity);
-            // If it's a new entity, start in edit mode
-            setIsEditing(entity.isNew === true);
-            // Set initial view mode (defaults to 'details' if not specified)
-            setViewMode(initialViewMode || 'details');
+            displayEntityRef.current = normalizedEntity;
+            setEditedEntity(normalizedEntity);
+            
+            // Handle initial view mode
+            // initialViewMode can be: 'details', 'relations', 'edit', 'relations-edit'
+            if (initialViewMode === 'edit') {
+                // Edit mode on details tab
+                setIsEditing(true);
+                setViewMode('details');
+            } else if (initialViewMode === 'relations-edit') {
+                // Edit mode on relations tab
+                setIsEditing(true);
+                setViewMode('relations');
+            } else if (entity.isNew === true) {
+                // New entity - start in edit mode
+                setIsEditing(true);
+                setViewMode('details');
+            } else {
+                // Normal mode - set view mode and clear editing
+                setIsEditing(false);
+                setViewMode(initialViewMode || 'details');
+            }
+            
             setNewPhotos([]);
             setNewAttachments([]);
             setDeletedPhotos([]);
@@ -74,6 +104,11 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
 
     const handleEdit = () => {
         setIsEditing(true);
+        if (entity?.id && entity.id !== 'new') {
+            // Preserve current view mode when entering edit mode
+            const currentPath = viewMode === 'relations' ? '/relations' : '';
+            navigate(`/entity/${entity.id}${currentPath}/edit`);
+        }
     };
 
     const handleCancelEdit = () => {
@@ -83,6 +118,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         setNewAttachments([]);
         setDeletedPhotos([]);
         setDeletedAttachments([]);
+        if (entity?.id && entity.id !== 'new') {
+            navigate(`/entity/${entity.id}`);
+        }
     };
 
     const handleDelete = async () => {
@@ -236,7 +274,85 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         }
     };
 
+    // Relation schema - defines which entity types can be related
+    const RELATION_SCHEMA = [
+        { key: 'IS_CHILD_OF', reverseKey: 'IS_PARENT_OF', fromEntity: 'Person', toEntity: 'Person' },
+        { key: 'IS_FRIEND_OF', reverseKey: 'IS_FRIEND_OF', fromEntity: 'Person', toEntity: 'Person' },
+        { key: 'IS_COLLEAGUE_OF', reverseKey: 'IS_COLLEAGUE_OF', fromEntity: 'Person', toEntity: 'Person' },
+        { key: 'IS_SPOUSE_OF', reverseKey: 'IS_SPOUSE_OF', fromEntity: 'Person', toEntity: 'Person' },
+        { key: 'IS_MANAGER_OF', reverseKey: 'WORKS_FOR_MGR', fromEntity: 'Person', toEntity: 'Person' },
+        { key: 'IS_STUDENT_OF', reverseKey: 'IS_TEACHER_OF', fromEntity: 'Person', toEntity: 'Person' },
+        { key: 'HAS_STUDENT', reverseKey: 'IS_STUDENT_OF', fromEntity: 'Person', toEntity: 'Person' },
+        { key: 'IS_STUDENT_OF', reverseKey: 'HAS_STUDENT', fromEntity: 'Person', toEntity: 'Org' },
+        { key: 'IS_RELATED_TO', reverseKey: 'IS_RELATED_TO', fromEntity: '*', toEntity: '*' },
+        { key: 'LIVES_AT', reverseKey: 'HAS_RESIDENT', fromEntity: 'Person', toEntity: 'Location' },
+        { key: 'IS_LOCATED_IN', reverseKey: 'CONTAINS', fromEntity: 'Location', toEntity: 'Location' },
+        { key: 'HAS_ACTOR', reverseKey: 'ACTED_IN', fromEntity: 'Movie', toEntity: 'Person' },
+        { key: 'HAS_DIRECTOR', reverseKey: 'DIRECTED', fromEntity: 'Movie', toEntity: 'Person' },
+        { key: 'HAS_MUS_DIRECTOR', reverseKey: 'GAVE_MUSIC_TO', fromEntity: 'Movie', toEntity: 'Person' },
+        { key: 'INSPIRED', reverseKey: 'IS_BASED_ON', fromEntity: 'Book', toEntity: 'Movie' },
+        { key: 'HAS_AS_AUTHOR', reverseKey: 'IS_AUTHOR_OF', fromEntity: 'Book', toEntity: 'Person' },
+        { key: 'IS_LOCATED_IN', reverseKey: 'IS_LOCATION_OF', fromEntity: 'Book', toEntity: 'Location' },
+        { key: 'IS_CONTAINED_IN', reverseKey: 'CONTAINS', fromEntity: 'Container', toEntity: 'Container' },
+        { key: 'IS_LOCATED_IN', reverseKey: 'CONTAINS', fromEntity: 'Container', toEntity: 'Location' },
+        { key: 'IS_LOCATED_IN', reverseKey: 'CONTAINS', fromEntity: 'Asset', toEntity: 'Container' },
+        { key: 'IS_LOCATED_AT', reverseKey: 'HAS', fromEntity: 'Org', toEntity: 'Location' },
+        { key: 'HAS_EMPLOYEE', reverseKey: 'WORKS_AT', fromEntity: 'Org', toEntity: 'Person' },
+        { key: 'HAS_MEMBER', reverseKey: 'IS_MEMBER_OF', fromEntity: 'Org', toEntity: 'Person' },
+        { key: 'HAS_STUDENT', reverseKey: 'STUDIES_AT', fromEntity: 'Org', toEntity: 'Person' }
+    ];
+
+    // Get valid entity types that can be related to the current entity
+    const getValidEntityTypes = (currentEntityType) => {
+        const validTypes = new Set();
+        
+        RELATION_SCHEMA.forEach(schema => {
+            // Check forward direction
+            if (schema.fromEntity === currentEntityType || schema.fromEntity === '*') {
+                if (schema.toEntity === '*') {
+                    // Can relate to any type
+                    ['Person', 'Location', 'Movie', 'Book', 'Container', 'Asset', 'Org', 'Note'].forEach(t => validTypes.add(t));
+                } else {
+                    validTypes.add(schema.toEntity);
+                }
+            }
+            // Check reverse direction
+            if (schema.toEntity === currentEntityType || schema.toEntity === '*') {
+                if (schema.fromEntity === '*') {
+                    ['Person', 'Location', 'Movie', 'Book', 'Container', 'Asset', 'Org', 'Note'].forEach(t => validTypes.add(t));
+                } else {
+                    validTypes.add(schema.fromEntity);
+                }
+            }
+        });
+        
+        return Array.from(validTypes);
+    };
+
+    // Get valid relation types between two entity types
+    const getValidRelationTypes = (fromType, toType) => {
+        const validRelations = [];
+        
+        RELATION_SCHEMA.forEach(schema => {
+            // Check forward direction
+            if ((schema.fromEntity === fromType || schema.fromEntity === '*') && 
+                (schema.toEntity === toType || schema.toEntity === '*')) {
+                validRelations.push(schema.key);
+            }
+            // Check reverse direction
+            if ((schema.toEntity === fromType || schema.toEntity === '*') && 
+                (schema.fromEntity === toType || schema.fromEntity === '*')) {
+                validRelations.push(schema.reverseKey);
+            }
+        });
+        
+        // Remove duplicates
+        return [...new Set(validRelations)];
+    };
+
     const searchEntities = async (query) => {
+        setEntitySearchQuery(query);
+        
         if (!query || query.length < 2) {
             setEntitySearchResults([]);
             return;
@@ -245,52 +361,35 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             const response = await api.fetch(`/api/search/?q=${encodeURIComponent(query)}`);
             if (response.ok) {
                 const data = await response.json();
-                setEntitySearchResults(data);
+                
+                // Filter results to only show entity types that can be related to current entity
+                const validTypes = getValidEntityTypes(entity.type);
+                const filteredData = data.filter(result => validTypes.includes(result.type));
+                
+                setEntitySearchResults(filteredData);
             }
         } catch (error) {
             console.error('Failed to search entities:', error);
         }
     };
 
-    const fetchAvailableRelationTypes = async () => {
-        // Get all relation types from constants
-        const relationTypes = [
-            'IS_CHILD_OF',
-            'IS_PARENT_OF',
-            'IS_FRIEND_OF',
-            'IS_COLLEAGUE_OF',
-            'IS_SPOUSE_OF',
-            'IS_MANAGER_OF',
-            'WORKS_FOR_MGR',
-            'IS_STUDENT_OF',
-            'IS_TEACHER_OF',
-            'IS_RELATED_TO',
-            'LIVES_AT',
-            'HAS_RESIDENT',
-            'IS_LOCATED_IN',
-            'CONTAINS',
-            'HAS_ACTOR',
-            'ACTED_IN',
-            'HAS_DIRECTOR',
-            'DIRECTED',
-            'HAS_MUS_DIRECTOR',
-            'GAVE_MUSIC_TO',
-            'INSPIRED',
-            'IS_BASED_ON',
-            'HAS_AS_AUTHOR',
-            'IS_AUTHOR_OF',
-            'IS_LOCATION_OF',
-            'IS_CONTAINED_IN',
-            'IS_LOCATED_AT',
-            'HAS',
-            'HAS_EMPLOYEE',
-            'WORKS_AT',
-            'HAS_MEMBER',
-            'IS_MEMBER_OF',
-            'HAS_STUDENT',
-            'STUDIES_AT'
-        ];
-        setAvailableRelationTypes(relationTypes);
+    const fetchAvailableRelationTypes = () => {
+        // If a target entity is selected, filter relation types based on both entity types
+        if (newRelation.targetEntityData) {
+            const validRelations = getValidRelationTypes(entity.type, newRelation.targetEntityData.type);
+            setAvailableRelationTypes(validRelations);
+        } else {
+            // No target entity selected yet - show all possible relations for current entity
+            const allRelations = new Set();
+            const validTypes = getValidEntityTypes(entity.type);
+            
+            validTypes.forEach(targetType => {
+                const relations = getValidRelationTypes(entity.type, targetType);
+                relations.forEach(rel => allRelations.add(rel));
+            });
+            
+            setAvailableRelationTypes(Array.from(allRelations));
+        }
     };
 
     const handleAddRelation = async () => {
@@ -314,8 +413,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
 
             if (response.ok) {
                 setIsAddingRelation(false);
-                setNewRelation({ targetEntity: '', relationType: '' });
+                setNewRelation({ targetEntity: '', relationType: '', targetEntityData: null });
                 setEntitySearchResults([]);
+                setEntitySearchQuery('');
                 fetchRelations(); // Refresh relations list
             } else {
                 const error = await response.json();
@@ -378,11 +478,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             for (const file of newPhotos) {
                 try {
                     const uploadResult = await uploadFile(file);
-                    // Store object with url, thumbnail_url, and original filename
+                    // Store object with url, thumbnail_url, original filename, and caption
                     uploadedPhotos.push({
                         url: uploadResult.url,
                         thumbnail_url: uploadResult.thumbnail_url || uploadResult.url,
                         filename: file.name, // Store original filename
+                        caption: file.caption || '', // Store caption if provided
                     });
                 } catch (error) {
                     console.error('Failed to upload photo:', error);
@@ -394,10 +495,11 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             for (const file of newAttachments) {
                 try {
                     const uploadResult = await uploadFile(file);
-                    // Store object with url, original filename, and thumbnails if available
+                    // Store object with url, original filename, caption, and thumbnails if available
                     const attachmentData = {
                         url: uploadResult.url,
                         filename: file.name, // Store original filename
+                        caption: file.caption || '', // Store caption if provided
                     };
                     if (uploadResult.thumbnail_url) {
                         attachmentData.thumbnail_url = uploadResult.thumbnail_url;
@@ -506,6 +608,11 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 setNewAttachments([]);
                 setDeletedPhotos([]);
                 setDeletedAttachments([]);
+                
+                // Navigate to detail view after save
+                if (savedEntity.id && savedEntity.id !== 'new') {
+                    navigate(`/entity/${savedEntity.id}`);
+                }
                 
                 // Notify parent component of the update or creation
                 if (isNewEntity && onCreate) {
@@ -695,7 +802,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     <div className="border-b border-gray-200 dark:border-gray-700 px-4">
                         <div className="flex gap-1">
                             <button
-                                onClick={() => setViewMode('details')}
+                                onClick={() => {
+                                    setViewMode('details');
+                                    if (entity?.id && entity.id !== 'new') {
+                                        navigate(`/entity/${entity.id}`);
+                                    }
+                                }}
                                 className={`px-4 py-2 font-medium transition-colors border-b-2 ${
                                     viewMode === 'details'
                                         ? 'border-blue-600 text-blue-600 dark:text-blue-400'
@@ -705,7 +817,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                 Details
                             </button>
                             <button
-                                onClick={() => setViewMode('relations')}
+                                onClick={() => {
+                                    setViewMode('relations');
+                                    if (entity?.id && entity.id !== 'new') {
+                                        navigate(`/entity/${entity.id}/relations`);
+                                    }
+                                }}
                                 className={`px-4 py-2 font-medium transition-colors border-b-2 ${
                                     viewMode === 'relations'
                                         ? 'border-blue-600 text-blue-600 dark:text-blue-400'
@@ -1013,16 +1130,6 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                         </section>
                     )}
 
-                    {/* URLs */}
-                    {displayEntity.urls && displayEntity.urls.length > 0 && (
-                        <section>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
-                                URLs
-                            </h3>
-                            {renderField('', displayEntity.urls, true, true)}
-                        </section>
-                    )}
-
                     {/* Locations */}
                     {displayEntity.locations && displayEntity.locations.length > 0 && (
                         <section>
@@ -1042,79 +1149,130 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             
                             {/* Existing Photos */}
                             {(editedEntity?.photos?.length > 0 || displayEntity.photos?.length > 0) && (
-                                <div className="grid grid-cols-2 gap-2 mb-4">
+                                <div className={`mb-4 ${isEditing ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'}`}>
                                     {(isEditing ? editedEntity.photos : displayEntity.photos)?.map((photo, idx) => {
                                         // Handle both old format (string) and new format (object)
                                         const photoUrl = typeof photo === 'string' ? photo : photo.url;
                                         const thumbnailUrl = typeof photo === 'string' ? photo : (photo.thumbnail_url || photo.url);
+                                        const photoCaption = typeof photo === 'string' ? '' : (photo.caption || '');
+                                        const photoFilename = typeof photo === 'string' ? photo.split('/').pop() : (photo.filename || photo.url.split('/').pop());
+                                        const displayCaption = photoCaption || photoFilename;
                                         const totalPhotos = (isEditing ? editedEntity.photos : displayEntity.photos).length;
                                         
-                                        return (
+                                        return isEditing ? (
+                                            // Edit Mode: Larger thumbnails with controls
                                             <div key={idx} className="relative group">
                                                 <img
                                                     src={getMediaUrl(thumbnailUrl)}
-                                                    alt={`Photo ${idx + 1}`}
+                                                    alt={displayCaption}
                                                     className="w-full h-auto rounded shadow cursor-pointer hover:opacity-80 transition"
                                                     onClick={() => {
                                                         // Build array of all photo URLs
-                                                        const allPhotos = (isEditing ? editedEntity.photos : displayEntity.photos).map(p => {
+                                                        const allPhotos = editedEntity.photos.map(p => {
                                                             const url = typeof p === 'string' ? p : p.url;
                                                             return getMediaUrl(url);
                                                         });
                                                         setLightboxImages(allPhotos);
                                                         setLightboxIndex(idx);
                                                     }}
-                                                    title="Click to view full size"
+                                                    title={displayCaption}
                                                 />
-                                                {isEditing && (
-                                                    <>
-                                                        {/* Delete Button */}
+                                                {/* Delete Button */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeletePhoto(photo);
+                                                    }}
+                                                    className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 shadow-lg"
+                                                    title="Delete photo"
+                                                >
+                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                                
+                                                {/* Reorder Buttons */}
+                                                <div className="absolute top-1 left-1 flex flex-col gap-1">
+                                                    {idx > 0 && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
-                                                                handleDeletePhoto(photo);
+                                                                movePhotoUp(idx);
                                                             }}
-                                                            className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 shadow-lg"
-                                                            title="Delete photo"
+                                                            className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 shadow-lg"
+                                                            title="Move up"
                                                         >
                                                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                                                             </svg>
                                                         </button>
-                                                        
-                                                        {/* Reorder Buttons */}
-                                                        <div className="absolute top-1 left-1 flex flex-col gap-1">
-                                                            {idx > 0 && (
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        movePhotoUp(idx);
-                                                                    }}
-                                                                    className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 shadow-lg"
-                                                                    title="Move up"
-                                                                >
-                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                                                    </svg>
-                                                                </button>
-                                                            )}
-                                                            {idx < totalPhotos - 1 && (
-                                                                <button
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        movePhotoDown(idx);
-                                                                    }}
-                                                                    className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 shadow-lg"
-                                                                    title="Move down"
-                                                                >
-                                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                                    </svg>
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </>
-                                                )}
+                                                    )}
+                                                    {idx < totalPhotos - 1 && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                movePhotoDown(idx);
+                                                            }}
+                                                            className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 shadow-lg"
+                                                            title="Move down"
+                                                        >
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                            </svg>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                
+                                                {/* Caption Input */}
+                                                <div className="mt-1">
+                                                    <input
+                                                        type="text"
+                                                        value={photoCaption}
+                                                        onChange={(e) => {
+                                                            const newPhotos = [...editedEntity.photos];
+                                                            if (typeof newPhotos[idx] === 'string') {
+                                                                // Convert string to object format
+                                                                newPhotos[idx] = {
+                                                                    url: newPhotos[idx],
+                                                                    caption: e.target.value
+                                                                };
+                                                            } else {
+                                                                newPhotos[idx] = {
+                                                                    ...newPhotos[idx],
+                                                                    caption: e.target.value
+                                                                };
+                                                            }
+                                                            setEditedEntity(prev => ({
+                                                                ...prev,
+                                                                photos: newPhotos
+                                                            }));
+                                                        }}
+                                                        placeholder={photoFilename}
+                                                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                    />
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            // Detail Mode: Grid item with square thumbnail
+                                            <div key={idx} className="flex flex-col items-center gap-1 p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                                                <img
+                                                    src={getMediaUrl(thumbnailUrl)}
+                                                    alt={displayCaption}
+                                                    className="w-full aspect-square object-cover rounded cursor-pointer hover:opacity-80 transition"
+                                                    onClick={() => {
+                                                        // Build array of all photo URLs
+                                                        const allPhotos = displayEntity.photos.map(p => {
+                                                            const url = typeof p === 'string' ? p : p.url;
+                                                            return getMediaUrl(url);
+                                                        });
+                                                        setLightboxImages(allPhotos);
+                                                        setLightboxIndex(idx);
+                                                    }}
+                                                    title={displayCaption}
+                                                />
+                                                <span className="text-xs text-gray-700 dark:text-gray-300 text-center w-full truncate px-1" title={displayCaption}>
+                                                    {displayCaption}
+                                                </span>
                                             </div>
                                         );
                                     })}
@@ -1142,6 +1300,20 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                                     </svg>
                                                 </button>
+                                                {/* Caption Input */}
+                                                <div className="mt-1">
+                                                    <input
+                                                        type="text"
+                                                        value={file.caption || ''}
+                                                        onChange={(e) => {
+                                                            const updatedPhotos = [...newPhotos];
+                                                            updatedPhotos[idx].caption = e.target.value;
+                                                            setNewPhotos(updatedPhotos);
+                                                        }}
+                                                        placeholder={file.name}
+                                                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                    />
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -1178,7 +1350,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             
                             {/* Existing Attachments */}
                             {(editedEntity?.attachments?.length > 0 || displayEntity.attachments?.length > 0) && (
-                                <div className="mb-4 space-y-2">
+                                <div className={`mb-4 ${isEditing ? 'space-y-2' : 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'}`}>
                                     {(isEditing ? editedEntity.attachments : displayEntity.attachments)?.map((attachment, idx) => {
                                         // Handle both old format (string) and new format (object)
                                         const attachmentUrl = typeof attachment === 'string' ? attachment : attachment.url;
@@ -1188,35 +1360,37 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         const filename = typeof attachment === 'string' 
                                             ? attachment.split('/').pop() 
                                             : (attachment.filename || attachment.url.split('/').pop());
+                                        const attachmentCaption = typeof attachment === 'string' ? '' : (attachment.caption || '');
+                                        // Display caption if available, otherwise show filename
+                                        const displayName = attachmentCaption || filename;
                                         const totalAttachments = (isEditing ? editedEntity.attachments : displayEntity.attachments).length;
                                         
-                                        return (
+                                        return isEditing ? (
+                                            // Edit Mode: Row layout with controls
                                             <div key={idx} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                                                {/* Reorder Buttons (Edit Mode) */}
-                                                {isEditing && (
-                                                    <div className="flex flex-col gap-1 flex-shrink-0">
-                                                        <button
-                                                            onClick={() => moveAttachmentUp(idx)}
-                                                            disabled={idx === 0}
-                                                            className="p-1 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                            title="Move up"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                                            </svg>
-                                                        </button>
-                                                        <button
-                                                            onClick={() => moveAttachmentDown(idx)}
-                                                            disabled={idx === totalAttachments - 1}
-                                                            className="p-1 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed"
-                                                            title="Move down"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                            </svg>
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                {/* Reorder Buttons */}
+                                                <div className="flex flex-col gap-1 flex-shrink-0">
+                                                    <button
+                                                        onClick={() => moveAttachmentUp(idx)}
+                                                        disabled={idx === 0}
+                                                        className="p-1 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                        title="Move up"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                                        </svg>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => moveAttachmentDown(idx)}
+                                                        disabled={idx === totalAttachments - 1}
+                                                        className="p-1 text-gray-600 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                        title="Move down"
+                                                    >
+                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
                                                 
                                                 {/* Thumbnail Preview */}
                                                 {thumbnailUrl && (
@@ -1235,27 +1409,100 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                 )}
                                                 
                                                 {/* File Info */}
-                                                <a 
-                                                    href={getMediaUrl(attachmentUrl)} 
-                                                    target="_blank" 
-                                                    rel="noopener noreferrer"
-                                                    className="text-blue-600 dark:text-blue-400 hover:underline truncate flex-1"
-                                                    title={`Download ${filename}`}
-                                                >
-                                                    {filename}
-                                                </a>
+                                                <div className="flex-1 min-w-0">
+                                                    <a 
+                                                        href={getMediaUrl(attachmentUrl)} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 dark:text-blue-400 hover:underline truncate block"
+                                                        title={`Download ${filename}`}
+                                                    >
+                                                        {displayName}
+                                                    </a>
+                                                    {/* Caption Input */}
+                                                    <input
+                                                        type="text"
+                                                        value={attachmentCaption}
+                                                        onChange={(e) => {
+                                                            const newAttachments = [...editedEntity.attachments];
+                                                            if (typeof newAttachments[idx] === 'string') {
+                                                                // Convert string to object format
+                                                                newAttachments[idx] = {
+                                                                    url: newAttachments[idx],
+                                                                    caption: e.target.value
+                                                                };
+                                                            } else {
+                                                                newAttachments[idx] = {
+                                                                    ...newAttachments[idx],
+                                                                    caption: e.target.value
+                                                                };
+                                                            }
+                                                            setEditedEntity(prev => ({
+                                                                ...prev,
+                                                                attachments: newAttachments
+                                                            }));
+                                                        }}
+                                                        placeholder={filename}
+                                                        className="w-full mt-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                    />
+                                                </div>
                                                 
                                                 {/* Delete Button */}
-                                                {isEditing && (
-                                                    <button
-                                                        onClick={() => handleDeleteAttachment(attachment)}
-                                                        className="p-1 text-red-600 hover:text-red-700 flex-shrink-0"
-                                                        title="Delete attachment"
-                                                    >
-                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
-                                                    </button>
+                                                <button
+                                                    onClick={() => handleDeleteAttachment(attachment)}
+                                                    className="p-1 text-red-600 hover:text-red-700 flex-shrink-0"
+                                                    title="Delete attachment"
+                                                >
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            // Detail Mode: Grid item layout
+                                            <div key={idx} className="flex flex-col items-center gap-1 p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                                                {thumbnailUrl ? (
+                                                    <>
+                                                        <img
+                                                            src={getMediaUrl(thumbnailUrl)}
+                                                            alt={filename}
+                                                            className="w-full aspect-square object-cover rounded cursor-pointer hover:opacity-80 transition"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                setLightboxImages([getMediaUrl(previewUrl || attachmentUrl)]);
+                                                                setLightboxIndex(0);
+                                                            }}
+                                                            title="Click to view preview"
+                                                        />
+                                                        <a 
+                                                            href={getMediaUrl(attachmentUrl)} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline text-center w-full truncate px-1"
+                                                            title={displayName}
+                                                        >
+                                                            {displayName}
+                                                        </a>
+                                                    </>
+                                                ) : (
+                                                    // No thumbnail - show file icon and name
+                                                    <>
+                                                        <div className="w-full aspect-square flex items-center justify-center bg-gray-200 dark:bg-gray-600 rounded">
+                                                            <svg className="w-12 h-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                            </svg>
+                                                        </div>
+                                                        <a 
+                                                            href={getMediaUrl(attachmentUrl)} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer"
+                                                            className="text-xs text-blue-600 dark:text-blue-400 hover:underline text-center w-full truncate px-1"
+                                                            title={displayName}
+                                                        >
+                                                            {displayName}
+                                                        </a>
+                                                    </>
                                                 )}
                                             </div>
                                         );
@@ -1269,19 +1516,33 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">New Attachments:</p>
                                     <div className="space-y-2">
                                         {newAttachments.map((file, idx) => (
-                                            <div key={idx} className="flex items-center justify-between p-2 bg-blue-50 dark:bg-blue-900 rounded">
-                                                <span className="text-gray-900 dark:text-gray-100 truncate flex-1">
-                                                    {file.name}
-                                                </span>
-                                                <button
-                                                    onClick={() => handleDeleteNewAttachment(idx)}
-                                                    className="ml-2 p-1 text-red-600 hover:text-red-700"
-                                                    title="Remove attachment"
-                                                >
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                </button>
+                                            <div key={idx} className="p-2 bg-blue-50 dark:bg-blue-900 rounded">
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <span className="text-gray-900 dark:text-gray-100 truncate flex-1">
+                                                        {file.name}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => handleDeleteNewAttachment(idx)}
+                                                        className="ml-2 p-1 text-red-600 hover:text-red-700 flex-shrink-0"
+                                                        title="Remove attachment"
+                                                    >
+                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                                {/* Caption Input */}
+                                                <input
+                                                    type="text"
+                                                    value={file.caption || ''}
+                                                    onChange={(e) => {
+                                                        const updatedAttachments = [...newAttachments];
+                                                        updatedAttachments[idx].caption = e.target.value;
+                                                        setNewAttachments(updatedAttachments);
+                                                    }}
+                                                    placeholder="Add caption (optional)"
+                                                    className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                />
                                             </div>
                                         ))}
                                     </div>
@@ -1303,6 +1564,128 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                             className="hidden"
                                         />
                                     </label>
+                                </div>
+                            )}
+                        </section>
+                    )}
+
+                    {/* URLs */}
+                    {(displayEntity.urls?.length > 0 || isEditing) && (
+                        <section>
+                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
+                                URLs
+                            </h3>
+                            
+                            {/* Existing URLs */}
+                            {(editedEntity?.urls?.length > 0 || displayEntity.urls?.length > 0) && (
+                                <div className={`mb-4 ${isEditing ? 'space-y-2' : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3'}`}>
+                                    {(isEditing ? editedEntity.urls : displayEntity.urls)?.map((urlItem, idx) => {
+                                        // Handle both old format (string) and new format (object)
+                                        const url = typeof urlItem === 'string' ? urlItem : urlItem.url;
+                                        const urlCaption = typeof urlItem === 'string' ? '' : (urlItem.caption || '');
+                                        // Display caption if available, otherwise show URL
+                                        const displayText = urlCaption || url;
+                                        // Shorten display text if necessary
+                                        const shortenedText = displayText.length > 40 ? displayText.substring(0, 37) + '...' : displayText;
+                                        
+                                        return isEditing ? (
+                                            // Edit Mode: Row layout with controls
+                                            <div key={idx} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                                                {/* URL Link */}
+                                                <div className="flex-1 min-w-0">
+                                                    <a 
+                                                        href={url} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="text-blue-600 dark:text-blue-400 hover:underline truncate block"
+                                                        title={url}
+                                                    >
+                                                        {shortenedText}
+                                                    </a>
+                                                    {/* Caption Input */}
+                                                    <input
+                                                        type="text"
+                                                        value={urlCaption}
+                                                        onChange={(e) => {
+                                                            const updatedUrls = [...editedEntity.urls];
+                                                            if (typeof updatedUrls[idx] === 'string') {
+                                                                updatedUrls[idx] = { url: updatedUrls[idx], caption: e.target.value };
+                                                            } else {
+                                                                updatedUrls[idx] = { ...updatedUrls[idx], caption: e.target.value };
+                                                            }
+                                                            setEditedEntity({ ...editedEntity, urls: updatedUrls });
+                                                        }}
+                                                        placeholder="Add caption (optional)"
+                                                        className="w-full px-2 py-1 mt-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                    />
+                                                </div>
+                                                
+                                                {/* Delete Button */}
+                                                <button
+                                                    onClick={() => {
+                                                        const updatedUrls = editedEntity.urls.filter((_, i) => i !== idx);
+                                                        setEditedEntity({ ...editedEntity, urls: updatedUrls });
+                                                    }}
+                                                    className="p-1 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 flex-shrink-0"
+                                                    title="Remove URL"
+                                                >
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            // Detail Mode: Grid item
+                                            <div key={idx} className="flex flex-col items-start gap-1 p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                                                <a 
+                                                    href={url} 
+                                                    target="_blank" 
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 dark:text-blue-400 hover:underline text-sm truncate w-full"
+                                                    title={displayText}
+                                                >
+                                                    {shortenedText}
+                                                </a>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            
+                            {/* Add URL Button */}
+                            {isEditing && (
+                                <div className="flex gap-2">
+                                    <input
+                                        type="url"
+                                        placeholder="Enter URL"
+                                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                        onKeyPress={(e) => {
+                                            if (e.key === 'Enter' && e.target.value.trim()) {
+                                                const newUrl = { url: e.target.value.trim(), caption: '' };
+                                                setEditedEntity({
+                                                    ...editedEntity,
+                                                    urls: [...(editedEntity.urls || []), newUrl]
+                                                });
+                                                e.target.value = '';
+                                            }
+                                        }}
+                                    />
+                                    <button
+                                        onClick={(e) => {
+                                            const input = e.target.previousElementSibling;
+                                            if (input.value.trim()) {
+                                                const newUrl = { url: input.value.trim(), caption: '' };
+                                                setEditedEntity({
+                                                    ...editedEntity,
+                                                    urls: [...(editedEntity.urls || []), newUrl]
+                                                });
+                                                input.value = '';
+                                            }
+                                        }}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    >
+                                        Add URL
+                                    </button>
                                 </div>
                             )}
                         </section>
@@ -1355,17 +1738,27 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                 <input
                                                     type="text"
                                                     placeholder="Type to search..."
+                                                    value={newRelation.targetEntityData ? (newRelation.targetEntityData.display || newRelation.targetEntityData.label) : entitySearchQuery}
                                                     onChange={(e) => searchEntities(e.target.value)}
                                                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                    disabled={!!newRelation.targetEntityData}
                                                 />
-                                                {entitySearchResults.length > 0 && (
+                                                {entitySearchResults.length > 0 && !newRelation.targetEntityData && (
                                                     <div className="mt-2 max-h-48 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-lg">
                                                         {entitySearchResults.map((result) => (
                                                             <button
                                                                 key={result.id}
                                                                 onClick={() => {
-                                                                    setNewRelation(prev => ({ ...prev, targetEntity: result.id }));
+                                                                    setNewRelation(prev => ({ 
+                                                                        ...prev, 
+                                                                        targetEntity: result.id,
+                                                                        targetEntityData: result
+                                                                    }));
                                                                     setEntitySearchResults([]);
+                                                                    setEntitySearchQuery('');
+                                                                    // Update available relation types based on selected entity
+                                                                    const validRelations = getValidRelationTypes(entity.type, result.type);
+                                                                    setAvailableRelationTypes(validRelations);
                                                                 }}
                                                                 className="w-full text-left px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
                                                             >
@@ -1379,10 +1772,27 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         ))}
                                                     </div>
                                                 )}
-                                                {newRelation.targetEntity && (
-                                                    <p className="mt-2 text-sm text-green-600 dark:text-green-400">
-                                                        Entity selected ✓
-                                                    </p>
+                                                {newRelation.targetEntityData && (
+                                                    <div className="mt-2 flex items-center justify-between">
+                                                        <p className="text-sm text-green-600 dark:text-green-400">
+                                                            {newRelation.targetEntityData.display || newRelation.targetEntityData.label} ({newRelation.targetEntityData.type}) selected ✓
+                                                        </p>
+                                                        <button
+                                                            onClick={() => {
+                                                                setNewRelation(prev => ({ 
+                                                                    ...prev, 
+                                                                    targetEntity: '',
+                                                                    targetEntityData: null,
+                                                                    relationType: ''
+                                                                }));
+                                                                setEntitySearchQuery('');
+                                                                fetchAvailableRelationTypes();
+                                                            }}
+                                                            className="text-sm text-red-600 dark:text-red-400 hover:underline"
+                                                        >
+                                                            Clear
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </div>
 
@@ -1416,8 +1826,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                 <button
                                                     onClick={() => {
                                                         setIsAddingRelation(false);
-                                                        setNewRelation({ targetEntity: '', relationType: '' });
+                                                        setNewRelation({ targetEntity: '', relationType: '', targetEntityData: null });
                                                         setEntitySearchResults([]);
+                                                        setEntitySearchQuery('');
                                                     }}
                                                     className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-900 dark:text-gray-100 rounded-lg hover:bg-gray-400 dark:hover:bg-gray-500 transition text-sm font-medium"
                                                 >
@@ -1432,6 +1843,60 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                             Relations ({relations.outgoing.length})
                                         </h3>
+                                        
+                                        {/* Filter and Expand/Collapse Controls */}
+                                        {relations.outgoing.length > 0 && (
+                                            <div className="mb-4 space-y-2">
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Filter entities by name..."
+                                                        value={relationsFilter}
+                                                        onChange={(e) => setRelationsFilter(e.target.value)}
+                                                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                                    />
+                                                    <button
+                                                        onClick={() => {
+                                                            const allTypes = Object.keys(relations.outgoing.reduce((groups, rel) => {
+                                                                groups[rel.relation_type] = true;
+                                                                return groups;
+                                                            }, {}));
+                                                            const expanded = {};
+                                                            allTypes.forEach(type => expanded[type] = true);
+                                                            setExpandedRelations(expanded);
+                                                        }}
+                                                        className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition whitespace-nowrap"
+                                                        title="Expand all relation groups"
+                                                    >
+                                                        Expand All
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            const allTypes = Object.keys(relations.outgoing.reduce((groups, rel) => {
+                                                                groups[rel.relation_type] = true;
+                                                                return groups;
+                                                            }, {}));
+                                                            const collapsed = {};
+                                                            allTypes.forEach(type => collapsed[type] = false);
+                                                            setExpandedRelations(collapsed);
+                                                        }}
+                                                        className="px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition whitespace-nowrap"
+                                                        title="Collapse all relation groups"
+                                                    >
+                                                        Collapse All
+                                                    </button>
+                                                </div>
+                                                {relationsFilter && (
+                                                    <button
+                                                        onClick={() => setRelationsFilter('')}
+                                                        className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                                                    >
+                                                        Clear filter
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                        
                                         {relations.outgoing.length === 0 ? (
                                             <p className="text-gray-500 dark:text-gray-400 text-sm">No relations</p>
                                         ) : (
@@ -1446,21 +1911,60 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         groups[type].push(rel);
                                                         return groups;
                                                     }, {})
-                                                ).map(([relationType, rels]) => (
-                                                    <div key={relationType} className="space-y-2">
-                                                        {/* Relation Type Header */}
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="px-2 py-1 text-xs font-semibold bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
-                                                                {relationType.replace(/_/g, ' ')}
-                                                            </span>
-                                                            <span className="text-sm text-gray-500 dark:text-gray-400">
-                                                                ({rels.length})
-                                                            </span>
-                                                        </div>
-                                                        
-                                                        {/* Entities with this relation type */}
-                                                        <div className="ml-4 space-y-2">
-                                                            {rels.map((rel) => (
+                                                ).map(([relationType, rels]) => {
+                                                    // Filter entities based on search
+                                                    const filteredRels = rels.filter((rel) => {
+                                                        if (!relationsFilter) return true;
+                                                        const entityName = (rel.entity.display || rel.entity.label || '').toLowerCase();
+                                                        return entityName.includes(relationsFilter.toLowerCase());
+                                                    });
+                                                    
+                                                    // Don't show relation type if no entities match filter
+                                                    if (filteredRels.length === 0) return null;
+                                                    
+                                                    const isExpanded = expandedRelations[relationType] !== false;
+                                                    
+                                                    return (
+                                                        <div key={relationType} className="space-y-2">
+                                                            {/* Relation Type Header */}
+                                                            <div className="flex items-center gap-2">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setExpandedRelations(prev => ({
+                                                                            ...prev,
+                                                                            [relationType]: !isExpanded
+                                                                        }));
+                                                                    }}
+                                                                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition"
+                                                                    title={isExpanded ? "Collapse" : "Expand"}
+                                                                >
+                                                                    <svg 
+                                                                        className={`w-4 h-4 text-gray-600 dark:text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                                                                        fill="none" 
+                                                                        stroke="currentColor" 
+                                                                        viewBox="0 0 24 24"
+                                                                    >
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                                    </svg>
+                                                                </button>
+                                                                <span className="px-2 py-1 text-xs font-semibold bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
+                                                                    {relationType.replace(/_/g, ' ')}
+                                                                </span>
+                                                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                                                    ({filteredRels.length}{relationsFilter && ` of ${rels.length}`})
+                                                                </span>
+                                                            </div>
+                                                            
+                                                            {/* Entities with this relation type */}
+                                                            {isExpanded && (
+                                                                <div className="ml-4 space-y-2">
+                                                                {filteredRels
+                                                                    .sort((a, b) => {
+                                                                        const aName = (a.entity.display || a.entity.label || '').toLowerCase();
+                                                                        const bName = (b.entity.display || b.entity.label || '').toLowerCase();
+                                                                        return aName.localeCompare(bName);
+                                                                    })
+                                                                    .map((rel) => (
                                                                 <div
                                                                     key={rel.id}
                                                                     className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg"
@@ -1485,12 +1989,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                                             className="text-gray-900 dark:text-gray-100 font-medium hover:text-blue-600 dark:hover:text-blue-400 hover:underline transition text-left"
                                                                             title={`View ${rel.entity.display || rel.entity.label}`}
                                                                         >
-                                                                            {rel.entity.display || rel.entity.label}
-                                                                        </button>
-                                                                        <div className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                                                                            {rel.entity.type}
-                                                                        </div>
-                                                                    </div>
+                                                                        {rel.entity.display || rel.entity.label}
+                                                                    </button>
+                                                                </div>
                                                                     {/* Delete Button - Only in Edit Mode */}
                                                                     {isEditing && (
                                                                         <button
@@ -1504,10 +2005,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                                         </button>
                                                                     )}
                                                                 </div>
-                                                            ))}
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
-                                                    </div>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         )}
                                     </section>

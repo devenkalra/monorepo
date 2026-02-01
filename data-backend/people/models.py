@@ -215,17 +215,39 @@ class EntityRelation(models.Model):
         super().save(*args, **kwargs)
         
         # Automatic Reverse Relation Logic
-        # 1. Find the reverse key for this relation type
+        # For relations with multiple schemas (same key, different entity types),
+        # we need to find the specific schema that matches our entity types
         reverse_key = None
         
-        # Check if it is a primary key in schema
-        if self.relation_type in RELATION_MAP:
-            reverse_key = RELATION_MAP[self.relation_type]['reverseKey']
-        else:
-            # It might be a reverse key itself. Find which primary key produces this reverse key.
-            for item in RELATION_SCHEMA:
-                if item['reverseKey'] == self.relation_type:
-                    reverse_key = item['key']
+        # Find the matching schema for this specific relation
+        for schema in RELATION_SCHEMA:
+            # Check if this is the forward direction
+            if schema['key'] == self.relation_type:
+                expected_from = schema.get('fromEntity')
+                expected_to = schema.get('toEntity')
+                
+                # Check if this schema matches our entity types
+                from_matches = (expected_from == '*' or expected_from == 'ANY' or 
+                              self.from_entity.type == expected_from)
+                to_matches = (expected_to == '*' or expected_to == 'ANY' or 
+                            self.to_entity.type == expected_to)
+                
+                if from_matches and to_matches:
+                    reverse_key = schema['reverseKey']
+                    break
+            # Check if this is the reverse direction
+            elif schema['reverseKey'] == self.relation_type:
+                expected_from = schema.get('toEntity')
+                expected_to = schema.get('fromEntity')
+                
+                # Check if this schema matches our entity types
+                from_matches = (expected_from == '*' or expected_from == 'ANY' or 
+                              self.from_entity.type == expected_from)
+                to_matches = (expected_to == '*' or expected_to == 'ANY' or 
+                            self.to_entity.type == expected_to)
+                
+                if from_matches and to_matches:
+                    reverse_key = schema['key']
                     break
         
         if reverse_key:
@@ -237,26 +259,51 @@ class EntityRelation(models.Model):
             ).exists()
             
             if not exists:
-                EntityRelation.objects.create(
-                    from_entity=self.to_entity,
-                    to_entity=self.from_entity,
-                    relation_type=reverse_key
-                )
+                # Create reverse relation - this will also validate against the schema
+                try:
+                    EntityRelation.objects.create(
+                        from_entity=self.to_entity,
+                        to_entity=self.from_entity,
+                        relation_type=reverse_key
+                    )
+                except ValidationError:
+                    # If reverse relation is invalid, just skip it
+                    # This can happen with asymmetric relations
+                    pass
 
     def delete(self, *args, **kwargs):
-        # Optional: Delete reverse relation too? 
-        # User didn't explicitly ask for cascade delete of reverse, but it's often expected for symmetric relations.
-        # For strict pairs (Child/Parent), deleting one usually implies deleting the other link in a graph.
-        # I will implement it for consistency.
-        
-        # Find reverse key logic (Duplicated from Save - could be refactored)
+        # Delete reverse relation too for consistency
+        # Find the matching schema for this specific relation
         reverse_key = None
-        if self.relation_type in RELATION_MAP:
-            reverse_key = RELATION_MAP[self.relation_type]['reverseKey']
-        else:
-            for item in RELATION_SCHEMA:
-                if item['reverseKey'] == self.relation_type:
-                    reverse_key = item['key']
+        
+        for schema in RELATION_SCHEMA:
+            # Check if this is the forward direction
+            if schema['key'] == self.relation_type:
+                expected_from = schema.get('fromEntity')
+                expected_to = schema.get('toEntity')
+                
+                # Check if this schema matches our entity types
+                from_matches = (expected_from == '*' or expected_from == 'ANY' or 
+                              self.from_entity.type == expected_from)
+                to_matches = (expected_to == '*' or expected_to == 'ANY' or 
+                            self.to_entity.type == expected_to)
+                
+                if from_matches and to_matches:
+                    reverse_key = schema['reverseKey']
+                    break
+            # Check if this is the reverse direction
+            elif schema['reverseKey'] == self.relation_type:
+                expected_from = schema.get('toEntity')
+                expected_to = schema.get('fromEntity')
+                
+                # Check if this schema matches our entity types
+                from_matches = (expected_from == '*' or expected_from == 'ANY' or 
+                              self.from_entity.type == expected_from)
+                to_matches = (expected_to == '*' or expected_to == 'ANY' or 
+                            self.to_entity.type == expected_to)
+                
+                if from_matches and to_matches:
+                    reverse_key = schema['key']
                     break
 
         super().delete(*args, **kwargs)

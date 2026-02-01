@@ -73,6 +73,66 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
             'outgoing': outgoing_data,
             'incoming': incoming_data
         })
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def export(self, request):
+        """Export all user's data (entities, notes, relations) as JSON"""
+        try:
+            from django.http import HttpResponse
+            import json
+            from datetime import datetime
+            
+            # Gather all user's data
+            entities = Entity.objects.filter(user=request.user)
+            people = Person.objects.filter(user=request.user)
+            notes = Note.objects.filter(user=request.user)
+            locations = Location.objects.filter(user=request.user)
+            movies = Movie.objects.filter(user=request.user)
+            books = Book.objects.filter(user=request.user)
+            containers = Container.objects.filter(user=request.user)
+            assets = Asset.objects.filter(user=request.user)
+            orgs = Org.objects.filter(user=request.user)
+            relations = EntityRelation.objects.filter(
+                from_entity__user=request.user,
+                to_entity__user=request.user
+            )
+            tags = Tag.objects.all()  # Tags are global, not user-specific
+            
+            export_data = {
+                'export_version': '1.0',
+                'export_date': datetime.now().isoformat(),
+                'user': {
+                    'username': request.user.username,
+                    'email': request.user.email
+                },
+                'entities': EntitySerializer(entities, many=True).data,
+                'people': PersonSerializer(people, many=True).data,
+                'notes': NoteSerializer(notes, many=True).data,
+                'locations': LocationSerializer(locations, many=True).data,
+                'movies': MovieSerializer(movies, many=True).data,
+                'books': BookSerializer(books, many=True).data,
+                'containers': ContainerSerializer(containers, many=True).data,
+                'assets': AssetSerializer(assets, many=True).data,
+                'orgs': OrgSerializer(orgs, many=True).data,
+                'relations': EntityRelationSerializer(relations, many=True).data,
+                'tags': TagSerializer(tags, many=True).data,
+            }
+            
+            # Create response with JSON file
+            response = HttpResponse(
+                json.dumps(export_data, indent=2, default=str),
+                content_type='application/json'
+            )
+            filename = f"entity_export_{request.user.username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            
+            return response
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Export failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
     """Return the most recently modified entities.
@@ -366,54 +426,6 @@ class OrgViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response(
                 {'error': f'Search failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-    
-    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
-    def export(self, request):
-        """Export all user's data (entities, notes, relations) as JSON"""
-        try:
-            from django.http import HttpResponse
-            import json
-            from datetime import datetime
-            
-            # Gather all user's data
-            entities = Entity.objects.filter(user=request.user)
-            people = Person.objects.filter(user=request.user)
-            notes = Note.objects.filter(user=request.user)
-            relations = EntityRelation.objects.filter(
-                from_entity__user=request.user,
-                to_entity__user=request.user
-            )
-            tags = Tag.objects.all()  # Tags are global, not user-specific
-            
-            export_data = {
-                'export_version': '1.0',
-                'export_date': datetime.now().isoformat(),
-                'user': {
-                    'username': request.user.username,
-                    'email': request.user.email
-                },
-                'entities': EntitySerializer(entities, many=True).data,
-                'people': PersonSerializer(people, many=True).data,
-                'notes': NoteSerializer(notes, many=True).data,
-                'relations': EntityRelationSerializer(relations, many=True).data,
-                'tags': TagSerializer(tags, many=True).data,
-            }
-            
-            # Create response with JSON file
-            response = HttpResponse(
-                json.dumps(export_data, indent=2, default=str),
-                content_type='application/json'
-            )
-            filename = f"entity_export_{request.user.username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            response['Content-Disposition'] = f'attachment; filename="{filename}"'
-            
-            return response
-            
-        except Exception as e:
-            return Response(
-                {'error': f'Export failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     

@@ -20,7 +20,7 @@ export default function UserMenu() {
   const handleExport = async () => {
     try {
       setShowMenu(false);
-      const response = await api.fetch('/api/notes/export/');
+      const response = await api.fetch('/api/entities/export/');
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');

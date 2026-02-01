@@ -2,11 +2,26 @@
 """
 Convert Neo4j test export to Django import format
 Handles all entity types, relationships, and tags
+
+Supported Entity Types (Neo4j labels with pkg_ prefix):
+- pkg_Person -> Person
+- pkg_Note -> Note
+- pkg_Event -> Note (mapped to Note type)
+- pkg_Location -> Location
+- pkg_Movie -> Movie
+- pkg_Book -> Book
+- pkg_Container -> Container
+- pkg_Asset -> Asset
+- pkg_Org -> Org
+
+The script automatically strips the pkg_ prefix from Neo4j labels to get the base entity type.
 """
 import json
 import uuid
+import os
 from datetime import datetime
 from collections import defaultdict
+from pathlib import Path
 
 # Generate a unique namespace for this conversion
 NAMESPACE_UUID = uuid.uuid4()
@@ -53,7 +68,16 @@ def is_entity_node(labels):
     return any(label.startswith('pkg_') for label in labels)
 
 def get_entity_type(labels):
-    """Extract entity type from labels"""
+    """
+    Extract entity type from labels.
+    Handles both pkg_ prefixed labels (pkg_Person, pkg_Note, etc.) and non-prefixed labels.
+    Returns the base type without the pkg_ prefix.
+    
+    Examples:
+        ['pkg_Person', 'u_123'] -> 'Person'
+        ['pkg_Note', 'u_456'] -> 'Note'
+        ['pkg_Event', 'u_789'] -> 'Event'
+    """
     for label in labels:
         if label.startswith('pkg_'):
             return label[4:]  # Remove 'pkg_' prefix
@@ -73,6 +97,176 @@ def parse_json_field(value):
         return json.loads(value)
     except:
         return []
+
+def convert_urls(urls_data):
+    """
+    Convert Neo4j URL format to Django format.
+    
+    Input format:
+    [{"label":"Website","name":"url","value":"https://example.com"}]
+    
+    Output format:
+    [{"caption":"Website","url":"https://example.com"}]
+    """
+    urls = parse_json_field(urls_data)
+    converted = []
+    
+    for url_item in urls:
+        if isinstance(url_item, str):
+            # Old format - just a URL string
+            converted.append({'url': url_item, 'caption': ''})
+            continue
+        
+        if not isinstance(url_item, dict):
+            continue
+            
+        url_value = url_item.get('value', '')
+        if not url_value:
+            continue
+        
+        converted.append({
+            'caption': url_item.get('label', ''),
+            'url': url_value
+        })
+    
+    return converted
+
+def find_thumbnail_file(media_root, value_path, base_filename):
+    """
+    Find which thumbnail file actually exists (png, jpg, or jpeg).
+    Returns the thumbnail path with the correct extension, or None if not found.
+    """
+    # Extract base name without extension
+    if '.' in base_filename:
+        base_name = base_filename.rsplit('.', 1)[0]
+    else:
+        base_name = base_filename
+    
+    # Get directory path
+    dir_path = '/'.join(value_path.split('/')[:-1])
+    
+    # Try different extensions
+    for ext in ['png', 'jpg', 'jpeg']:
+        thumb_filename = f"{base_name}_thumb.{ext}"
+        thumb_path = f"{dir_path}/{thumb_filename}"
+        full_path = os.path.join(media_root, thumb_path.lstrip('/'))
+        
+        if os.path.exists(full_path):
+            return thumb_path
+    
+    # If no thumbnail found, return None
+    return None
+
+def convert_photos(photos_data, media_root='/home/ubuntu/monorepo/data-backend/media'):
+    """
+    Convert Neo4j photo format to Django format.
+    Checks which thumbnail file actually exists (png, jpg, or jpeg).
+    
+    Input format:
+    [{"label":"Deven Passport 2032.jpg","name":"photo","value":"/c1e/604/c1e604699fa74c3a73395a4a5e89eb8efe5da6cfc0a9e58ae39cea87857282a7.jpg"}]
+    
+    Output format:
+    [{"caption":"Deven Passport 2032.jpg","filename":"c1e604699fa74c3a73395a4a5e89eb8efe5da6cfc0a9e58ae39cea87857282a7.jpg","url":"/media/c1e/604/c1e604699fa74c3a73395a4a5e89eb8efe5da6cfc0a9e58ae39cea87857282a7.jpg","thumbnail_url":"/media/c1e/604/c1e604699fa74c3a73395a4a5e89eb8efe5da6cfc0a9e58ae39cea87857282a7_thumb.png"}]
+    """
+    photos = parse_json_field(photos_data)
+    converted = []
+    
+    for photo in photos:
+        if isinstance(photo, str):
+            # Old format - just a URL string
+            converted.append(photo)
+            continue
+        
+        if not isinstance(photo, dict):
+            continue
+            
+        value = photo.get('value', '')
+        if not value:
+            continue
+        
+        # Extract filename from value (last part of path)
+        filename = value.split('/')[-1]
+        
+        # Find which thumbnail file actually exists
+        thumb_path = find_thumbnail_file(media_root, value, filename)
+        
+        photo_data = {
+            'caption': photo.get('label', ''),
+            'filename': filename,
+            'url': f"/media{value}"
+        }
+        
+        # Only add thumbnail_url if we found a thumbnail file
+        if thumb_path:
+            photo_data['thumbnail_url'] = f"/media{thumb_path}"
+        
+        converted.append(photo_data)
+    
+    return converted
+
+def convert_attachments(attachments_data, media_root='/home/ubuntu/monorepo/data-backend/media'):
+    """
+    Convert Neo4j attachment format to Django format.
+    Checks which preview and thumbnail files actually exist (png, jpg, or jpeg).
+    
+    Input format:
+    [{"label":"Vinoba - Introduction.pdf","name":"attachment","value":"/1f0/541/1f05414c757508e2fd759d41c2e2e1d67ce32f8f1974512d99d80e9b36931391.pdf","copy":false}]
+    
+    Output format:
+    [{"caption":"Vinoba - Introduction.pdf","filename":"1f05414c757508e2fd759d41c2e2e1d67ce32f8f1974512d99d80e9b36931391.pdf","url":"/media/1f0/541/1f05414c757508e2fd759d41c2e2e1d67ce32f8f1974512d99d80e9b36931391.pdf","preview_url":"/media/1f0/541/1f05414c757508e2fd759d41c2e2e1d67ce32f8f1974512d99d80e9b36931391_preview.jpg","thumbnail_url":"/media/1f0/541/1f05414c757508e2fd759d41c2e2e1d67ce32f8f1974512d99d80e9b36931391_thumb.png"}]
+    """
+    attachments = parse_json_field(attachments_data)
+    converted = []
+    
+    for attachment in attachments:
+        if isinstance(attachment, str):
+            # Old format - just a URL string
+            converted.append(attachment)
+            continue
+        
+        if not isinstance(attachment, dict):
+            continue
+            
+        value = attachment.get('value', '')
+        if not value:
+            continue
+        
+        # Extract filename from value (last part of path)
+        filename = value.split('/')[-1]
+        
+        # Extract base name without extension
+        if '.' in filename:
+            base_name = filename.rsplit('.', 1)[0]
+        else:
+            base_name = filename
+        
+        # Get directory path
+        dir_path = '/'.join(value.split('/')[:-1])
+        
+        attachment_data = {
+            'caption': attachment.get('label', ''),
+            'filename': filename,
+            'url': f"/media{value}"
+        }
+        
+        # Find preview file (try different extensions)
+        for ext in ['jpg', 'jpeg', 'png']:
+            preview_filename = f"{base_name}_preview.{ext}"
+            preview_path = f"{dir_path}/{preview_filename}"
+            full_path = os.path.join(media_root, preview_path.lstrip('/'))
+            
+            if os.path.exists(full_path):
+                attachment_data['preview_url'] = f"/media{preview_path}"
+                break
+        
+        # Find thumbnail file (try different extensions)
+        thumb_path = find_thumbnail_file(media_root, value, filename)
+        if thumb_path:
+            attachment_data['thumbnail_url'] = f"/media{thumb_path}"
+        
+        converted.append(attachment_data)
+    
+    return converted
 
 # Storage for converted data
 entities_by_id = {}
@@ -129,8 +323,10 @@ with open(input_file, 'r') as f:
                     continue
                 
                 # Handle Entity nodes
+                # Note: All Neo4j entity nodes have pkg_ prefix (pkg_Person, pkg_Note, etc.)
+                # The get_entity_type() function strips this prefix to get the base type
                 if is_entity_node(labels):
-                    entity_type = get_entity_type(labels)
+                    entity_type = get_entity_type(labels)  # e.g., 'Person', 'Note', 'Event', etc.
                     entity_uuid = generate_uuid(node_id, user_id)
                     id_mapping[node_id] = entity_uuid
                     
@@ -141,9 +337,9 @@ with open(input_file, 'r') as f:
                         'display': props.get('display', props.get('label', '')),
                         'description': props.get('description', ''),
                         'tags': [],  # Will be populated from __HAS_TAG relationships
-                        'urls': parse_json_field(props.get('url', props.get('urls', []))),
-                        'photos': parse_json_field(props.get('photo', props.get('photos', []))),
-                        'attachments': [],
+                        'urls': convert_urls(props.get('url', props.get('urls', []))),
+                        'photos': convert_photos(props.get('photo', props.get('photos', []))),
+                        'attachments': convert_attachments(props.get('attachment', props.get('attachments', []))),
                         'locations': []
                     }
                     

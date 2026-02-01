@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import EntityList from './components/EntityList';
 import SearchBar from './components/SearchBar';
 import ThemeToggle from './components/ThemeToggle';
@@ -8,6 +9,10 @@ import ConversationImport from './components/ConversationImport';
 import api from './services/api';
 
 function App() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  
   const [entities, setEntities] = useState([]);
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({
@@ -24,16 +29,91 @@ function App() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
+  // Handle URL changes (back/forward navigation)
+  useEffect(() => {
+    const path = location.pathname;
+    const entityIdMatch = path.match(/^\/entity\/([^\/]+)/);
+    // Extract view mode: can be 'details', 'relations', 'edit', or 'relations-edit'
+    // Handles: /entity/:id, /entity/:id/edit, /entity/:id/relations, /entity/:id/relations/edit
+    let viewMode = 'details';
+    if (path.includes('/relations/edit')) {
+      viewMode = 'relations-edit';
+    } else if (path.includes('/relations')) {
+      viewMode = 'relations';
+    } else if (path.endsWith('/edit')) {
+      viewMode = 'edit';
+    }
+    
+    if (path === '/import') {
+      setShowImport(true);
+      setShowDetail(false);
+    } else if (entityIdMatch) {
+      const entityId = entityIdMatch[1];
+      // Load entity if not already loaded or different
+      if (!selectedEntity || selectedEntity.id !== entityId) {
+        loadEntityById(entityId, viewMode);
+      } else {
+        // Same entity, just update view mode without reloading
+        setInitialViewMode(viewMode);
+        if (!showDetail) {
+          setShowDetail(true);
+        }
+      }
+    } else if (path === '/' || path === '') {
+      // Home page - close detail view
+      if (showDetail) {
+        setShowDetail(false);
+        setSelectedEntity(null);
+      }
+      if (showImport) {
+        setShowImport(false);
+      }
+    }
+    
+    // Handle search query from URL
+    const searchQuery = searchParams.get('q');
+    if (searchQuery && searchQuery !== query) {
+      setQuery(searchQuery);
+    }
+  }, [location.pathname, searchParams]);
+
+  // Load entity by ID from API
+  const loadEntityById = async (entityId, viewMode = 'details') => {
+    if (entityId === 'new') {
+      // Don't try to load 'new' entity from API
+      return;
+    }
+    
+    try {
+      const response = await api.fetch(`/api/entities/${entityId}/`);
+      if (!response.ok) {
+        throw new Error('Failed to load entity');
+      }
+      const entityData = await response.json();
+      setSelectedEntity(entityData);
+      setInitialViewMode(viewMode);
+      setShowDetail(true);
+    } catch (error) {
+      console.error('Error loading entity:', error);
+      // If entity not found, navigate back to home
+      navigate('/');
+    }
+  };
+
   const handleEntityClick = (entity) => {
     setInitialViewMode('details'); // Default to details view
     setSelectedEntity(entity);
     setShowDetail(true);
+    // Update URL
+    navigate(`/entity/${entity.id}`);
   };
 
   const handleCloseDetail = () => {
     setSelectedEntity(null);
     setShowDetail(false);
     setInitialViewMode('details'); // Reset to default
+    // Navigate back to home
+    navigate('/');
   };
 
   const handleEntityUpdate = (updatedEntity) => {
@@ -43,6 +123,8 @@ function App() {
       setEntities(prevEntities => 
         prevEntities.filter(entity => entity.id !== updatedEntity.id)
       );
+      // Navigate back to home after deletion
+      navigate('/');
       return;
     }
 
@@ -51,17 +133,12 @@ function App() {
       // Remove the navigation flags
       const { _navigate, _viewMode, ...entityData } = updatedEntity;
       // Set the initial view mode if specified
-      if (_viewMode) {
-        setInitialViewMode(_viewMode);
-      }
-      // Load the new entity into the detail panel
-      setSelectedEntity(null);
-      setShowDetail(false);
-      // Small delay to allow panel to close before opening with new entity
-      setTimeout(() => {
-        setSelectedEntity(entityData);
-        setShowDetail(true);
-      }, 100);
+      const viewMode = _viewMode || 'details';
+      
+      // Navigate to the new entity with appropriate view mode
+      // The URL effect will handle loading the entity
+      const viewPath = viewMode === 'details' ? '' : `/${viewMode}`;
+      navigate(`/entity/${entityData.id}${viewPath}`);
       return;
     }
     
@@ -78,7 +155,7 @@ function App() {
   const handleAddEntity = () => {
     // Create a blank entity object
     const blankEntity = {
-      id: null, // Will be assigned by backend
+      id: 'new', // Temporary ID for new entity
       type: 'Person', // Default type
       label: '',
       display: '',
@@ -121,6 +198,8 @@ function App() {
     setInitialViewMode('details'); // Default to details view for new entities
     setSelectedEntity(blankEntity);
     setShowDetail(true);
+    // Navigate to new entity URL
+    navigate('/entity/new/edit');
   };
 
   const handleEntityCreate = (createdEntity) => {
@@ -128,6 +207,8 @@ function App() {
     setEntities(prevEntities => [createdEntity, ...prevEntities]);
     // Update the selected entity with the created data
     setSelectedEntity(createdEntity);
+    // Navigate to the created entity's URL
+    navigate(`/entity/${createdEntity.id}`);
   };
 
   const fetchEntities = async () => {
@@ -172,6 +253,15 @@ function App() {
       setEntities([]);
     }
   };
+
+  // Update URL when search query changes
+  useEffect(() => {
+    if (query && !location.pathname.startsWith('/entity/')) {
+      navigate(`/?q=${encodeURIComponent(query)}`, { replace: true });
+    } else if (!query && searchParams.get('q')) {
+      navigate('/', { replace: true });
+    }
+  }, [query]);
 
   useEffect(() => {
     fetchEntities();
@@ -261,7 +351,10 @@ function App() {
       <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-30">
         {/* Import Conversations Button */}
         <button
-          onClick={() => setShowImport(true)}
+          onClick={() => {
+            setShowImport(true);
+            navigate('/import');
+          }}
           className="w-14 h-14 bg-purple-600 text-white rounded-full shadow-lg hover:bg-purple-700 transition-all hover:scale-110 flex items-center justify-center"
           aria-label="Import conversations"
           title="Import conversations"
@@ -295,10 +388,14 @@ function App() {
       
       {showImport && (
         <ConversationImport
-          onClose={() => setShowImport(false)}
+          onClose={() => {
+            setShowImport(false);
+            navigate('/');
+          }}
           onImportComplete={(result) => {
             // Optionally refresh entities list or show success message
             console.log('Import completed:', result);
+            fetchEntities(); // Refresh the list
           }}
         />
       )}

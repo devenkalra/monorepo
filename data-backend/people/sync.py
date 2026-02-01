@@ -179,6 +179,16 @@ class MeiliSync:
             self.helper.client.index(self.index_name).update_searchable_attributes([
                 'display', 'description', 'first_name', 'last_name', 'name'
             ])
+            
+            # Define displayed attributes (what gets returned in search results)
+            # By default MeiliSearch returns all fields, but if displayedAttributes was set before,
+            # we need to ensure urls, photos, and attachments are included
+            self.helper.client.index(self.index_name).update_displayed_attributes([
+                'id', 'type', 'display', 'description', 'tags', 'urls', 'photos', 'attachments',
+                'locations', 'user_id', 'first_name', 'last_name', 'emails', 'phones',
+                'profession', 'gender', 'dob', 'date', 'address1', 'address2', 'postal_code',
+                'city', 'state', 'country', 'year', 'language', 'name', 'kind'
+            ])
         except Exception as e:
             logger.error(f"Failed to init MeiliSearch: {e}")
             self.helper = None
@@ -193,6 +203,8 @@ class MeiliSync:
             'description': entity.description,
             'tags': entity.tags,
             'urls': entity.urls,
+            'photos': entity.photos,
+            'attachments': entity.attachments,
             'locations': entity.locations,
             'user_id': str(entity.user.id) if entity.user else None
         }
