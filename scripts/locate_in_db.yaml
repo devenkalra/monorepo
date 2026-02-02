@@ -1,0 +1,294 @@
+title: 'Locate Files in Database'
+description: 'Find files in database by computing hash and searching'
+command: 'python3 ~/monorepo/scripts/locate_in_db.py {files} {db_path} {metadata} {json_output} {show_hash} {summary}'
+working_dir: '~'
+window_size: '900x700'
+help_text: |
+  Locate Files in Database - Help
+  
+  This tool finds files in the media database by computing their hash
+  and searching for matches. Useful for finding duplicates, verifying
+  file locations, and checking if files are already indexed.
+  
+  HOW IT WORKS:
+  
+  1. Computes hash (SHA-256) of query file(s)
+  2. Searches database for matching hash
+  3. Displays all matches with details
+  4. Shows if files still exist at recorded paths
+  
+  USE CASES:
+  
+  - Check if file is already indexed
+  - Find all copies/duplicates of a file
+  - Verify file locations in database
+  - Find where identical files exist
+  - Detect missing or moved files
+  
+  PARAMETERS:
+  
+  Files (required):
+    - One or more files to search for
+    - Each file on a new line
+    - Drag and drop supported
+    - Examples:
+      /photos/photo1.jpg
+      /downloads/photo2.jpg
+      ./image.jpg
+  
+  Database Path (required):
+    - Path to media database file
+    - Created by index_media.py
+    - Example: media.db or /path/to/media.db
+  
+  Show Metadata:
+    - Include EXIF/video metadata in results
+    - Shows dimensions, camera, location, etc.
+    - Useful for detailed file information
+  
+  JSON Output:
+    - Output results as JSON
+    - Machine-readable format
+    - Useful for scripting and automation
+  
+  Show Hash:
+    - Display file hash in output
+    - Useful for verification
+    - Shows SHA-256 hash
+  
+  Summary Only:
+    - Show only statistics, not details
+    - Quick overview of results
+    - Good for multiple files
+  
+  OUTPUT:
+  
+  For each query file, shows:
+    - Number of matches in database
+    - File ID (database record)
+    - Full path
+    - Volume tag
+    - File size (human-readable)
+    - Modified date
+    - Indexed date
+    - Existence status (file still there?)
+  
+  With metadata enabled:
+    - Image: dimensions, camera, date, location, keywords
+    - Video: resolution, duration, codec, frame rate
+  
+  EXAMPLES:
+  
+  Example 1: Check if file is indexed
+    Files: /downloads/new_photo.jpg
+    Result: Shows if file (or identical copy) exists in database
+  
+  Example 2: Find all copies
+    Files: /photos/original.jpg
+    Result: Shows all locations with identical content
+  
+  Example 3: Verify locations
+    Files: /photos/photo1.jpg
+           /photos/photo2.jpg
+    Result: Shows if files still exist at recorded paths
+  
+  Example 4: Detailed metadata
+    Files: /photos/vacation.jpg
+    Show Metadata: ☑
+    Result: Includes EXIF data, location, camera info
+  
+  MATCH RESULTS:
+  
+  No matches:
+    - File not in database
+    - File content changed since indexing
+    - New file not yet indexed
+  
+  One match:
+    - File is indexed once
+    - Unique file in database
+  
+  Multiple matches:
+    - File has duplicates/copies
+    - Same content at different paths
+    - Backups or intentional copies
+  
+  FILE STATUS:
+  
+  ✓ File exists:
+    - File still at recorded path
+    - Database record is current
+  
+  ✗ File not found:
+    - File moved or deleted
+    - Database record outdated
+    - Path may have changed
+  
+  METADATA DETAILS:
+  
+  For Images:
+    - Dimensions (width x height)
+    - Date taken
+    - Camera make and model
+    - GPS coordinates
+    - Location (city, state, country)
+    - Keywords/tags
+  
+  For Videos:
+    - Resolution (width x height)
+    - Duration (minutes:seconds)
+    - Frame rate (fps)
+    - Video codec
+  
+  JSON OUTPUT FORMAT:
+  
+  {
+    "query_file": "photo.jpg",
+    "hash": "abc123...",
+    "match_count": 2,
+    "matches": [
+      {
+        "id": 123,
+        "fullpath": "/photos/photo.jpg",
+        "volume": "Photos",
+        "size": 2621440,
+        "exists": true,
+        ...
+      }
+    ]
+  }
+  
+  SUMMARY STATISTICS:
+  
+  When querying multiple files:
+    - Total files queried
+    - Files with matches
+    - Files without matches
+    - Total matches found
+    - Average matches per file
+  
+  TIPS:
+  
+  1. Check Before Indexing:
+     Use this to avoid indexing duplicates
+  
+  2. Find Duplicates:
+     Multiple matches = duplicate files
+  
+  3. Verify Backups:
+     Check if backup copies exist
+  
+  4. Detect Missing Files:
+     "File not found" means file moved/deleted
+  
+  5. Use JSON for Scripts:
+     JSON output perfect for automation
+  
+  6. Batch Processing:
+     Add multiple files to check many at once
+  
+  PERFORMANCE:
+  
+  - Hash computation: ~1-2 seconds per GB
+  - Database search: Milliseconds
+  - Very fast even with large databases
+  
+  HASH-BASED SEARCH:
+  
+  Searches by file content, not name:
+    - Same content = same hash
+    - Different name doesn't matter
+    - Modified file = different hash
+    - Rename doesn't change hash
+  
+  LIMITATIONS:
+  
+  - Requires file to exist (to compute hash)
+  - Database may be outdated
+  - Doesn't detect moved files
+  - Hash computation takes time for large files
+  
+  WORKFLOW:
+  
+  1. Drag files into "Files" field
+  2. Specify database path
+  3. Enable options as needed
+  4. Click "Execute Command"
+  5. Review results in output
+  
+  TROUBLESHOOTING:
+  
+  "Database file does not exist":
+    - Check database path
+    - Ensure database created with index_media.py
+  
+  "File not found":
+    - Check file path
+    - Ensure file exists
+    - Verify permissions
+  
+  "No matches found":
+    - File not indexed yet
+    - File modified since indexing
+    - Check correct database
+  
+  INTEGRATION:
+  
+  Works with:
+    - index_media.py (checks before indexing)
+    - move_media.py (verifies locations)
+    - manage_dupes.py (finds duplicates)
+    - remove_dupes.py (verifies removals)
+  
+  NOTES:
+  
+  - Hash is SHA-256 (secure, reliable)
+  - Same file = same hash always
+  - Database records show original index time
+  - Files may have moved since indexing
+  - Use regularly to verify database accuracy
+
+parameters:
+  - name: files
+    label: 'Files to Search'
+    type: text
+    flag: '--file'
+    multiple: true
+    required: true
+    help: 'Files to search for in database (one per line)'
+    default: ''
+  
+  - name: db_path
+    label: 'Database Path'
+    type: text
+    required: true
+    help: 'Path to media database file'
+    default: 'media.db'
+  
+  - name: metadata
+    label: 'Show Metadata'
+    type: checkbox
+    flag: '--metadata'
+    help: 'Include EXIF/video metadata in results'
+    default: false
+  
+  - name: json_output
+    label: 'JSON Output'
+    type: checkbox
+    flag: '--json'
+    help: 'Output results as JSON'
+    default: false
+  
+  - name: show_hash
+    label: 'Show Hash'
+    type: checkbox
+    flag: '--show-hash'
+    help: 'Display file hash in output'
+    default: false
+  
+  - name: summary
+    label: 'Summary Only'
+    type: checkbox
+    flag: '--summary'
+    help: 'Show only summary statistics'
+    default: false

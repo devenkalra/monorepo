@@ -1,0 +1,9 @@
+{
+  "version": "1.0",
+  "current_command": "index_media",
+  "parameters": {
+    "db_path": "/home/ubuntu/data/media-index/files.db",
+    "verbose": "1",
+    "dry_run": true
+  }
+}

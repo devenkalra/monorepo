@@ -1,0 +1,63 @@
+title: Apply EXIF Tags
+description: Apply EXIF/XMP tags to image files
+command: python3 ~/monorepo/scripts/apply_exif.py {dry_run} {set} {files} {add_keyword}
+  {caption} {place} {date} {offset}
+working_dir: '~'
+window_size: 1000x1200
+parameters:
+- name: files
+  label: Image Files
+  type: text
+  multiple: true
+  required: true
+  help: Space-separated list of image files or glob pattern
+  default: '*.jpg'
+- name: set
+  label: Tags (name=value)
+  type: text
+  multiple: true
+  required: false
+  help: Space-separated list of image files or glob pattern
+  default: ''
+- name: add_keyword
+  label: Add Keywords
+  type: text
+  multiple: true
+  help: Keywords to add (comma-separated)
+  default: ''
+  required: false
+- name: caption
+  label: Caption
+  type: text
+  help: Caption text
+  default: ''
+  required: false
+- name: place
+  label: Place
+  type: text
+  help: Location (e.g., "Fort Worth, Texas, USA")
+  default: ''
+  required: false
+- name: date
+  label: Date/Time
+  type: text
+  help: Date in YYYY:MM:DD HH:MM:SS format
+  default: ''
+  required: false
+- name: offset
+  label: UTC Offset
+  type: text
+  help: UTC offset (e.g., "-06:00")
+  default: ''
+  required: false
+- name: dry_run
+  label: Dry Run
+  type: checkbox
+  help: Preview changes without applying
+  default: true
+  required: false
+help_text: "Runs Exif tool\nPossible Tag Values \n  CAMERA INFO\n    Make\n    Model\n\
+  \    LensMake\n    LensModel\n    FNumber\n    ExposureTime\n    ISOSpeedRatings\n\
+  \    FocalLength\n    Flash\n  Location\n    GPSLatitude\n    GPSLongitude\n   \
+  \ GPSLatitudeRef\n    GPSLongitudeRef\n    GPSAltitude\n    GPSAltitudeRef\n   \
+  \ GPSDateStamp\n    GPSTimeStamp"

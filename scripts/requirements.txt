@@ -1,0 +1,21 @@
+# Photo Management Scripts - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# Image processing
+Pillow>=10.0.0
+
+# Geocoding and location services
+geopy>=2.3.0
+
+# HTTP requests
+requests>=2.31.0
+
+# YAML configuration
+PyYAML>=6.0
+
+# GUI (optional - for command_runner.py and image_process.py)
+# Note: tkinter comes with Python, but tkinterdnd2 is optional
+# tkinterdnd2>=0.3.0  # Uncomment if drag-and-drop is needed
+
+# Testing (optional - for development)
+# coverage>=7.0.0  # Uncomment for test coverage reports

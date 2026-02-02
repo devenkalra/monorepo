@@ -1,0 +1,290 @@
+title: 'Move Media Files'
+description: 'Move media files and update database with new locations'
+command: 'python3 ~/monorepo/scripts/move_media.py {files} {destination} --volume "{volume}" --db-path "{db_path}" {verbose} {dry_run}'
+working_dir: '~'
+window_size: '900x700'
+help_text: |
+  Move Media Files - Help
+  
+  This tool moves media files to a new destination directory and updates
+  the database with their new locations and metadata.
+  
+  WHAT IT DOES:
+  
+  1. Moves files from current location to destination
+  2. Updates database records with new paths
+  3. Re-indexes metadata (EXIF, video info)
+  4. Regenerates thumbnails
+  5. Maintains database integrity
+  
+  USE CASES:
+  
+  - Reorganize your media library
+  - Move files to different volumes
+  - Consolidate scattered files
+  - Archive old media
+  - Migrate to new storage
+  
+  PARAMETERS:
+  
+  Files (required):
+    - Files to move (one per line)
+    - Can use glob patterns (*.jpg)
+    - Can specify full paths
+    - Multiple files supported
+    - Example:
+      /photos/img1.jpg
+      /photos/img2.jpg
+      *.mp4
+  
+  Destination (required):
+    - Target directory for moved files
+    - Will be created if doesn't exist
+    - Can be absolute or relative path
+    - Example: /photos/2024/vacation
+  
+  Volume (required):
+    - Volume tag for the files
+    - Used to identify the collection
+    - Example: "MainLibrary", "Archive2024"
+  
+  Database Path (required):
+    - Path to SQLite database
+    - Must exist (use index_media.py to create)
+    - Example: media.db
+  
+  Verbosity:
+    0 = Quiet (only summary)
+    1 = Normal (file names and status)
+    2 = Detailed (operations and metadata)
+    3 = Debug (full details)
+  
+  Dry Run:
+    - Preview what would happen
+    - No files moved
+    - No database changes
+    - Safe to test
+  
+  HOW IT WORKS:
+  
+  For Each File:
+    1. Check if file exists
+    2. Move to destination directory
+    3. Handle filename conflicts (adds _1, _2, etc.)
+    4. Update database record if exists
+    5. Insert new record if not in database
+    6. Extract and store metadata
+    7. Generate thumbnail
+  
+  Database Updates:
+    - Updates fullpath to new location
+    - Updates volume tag
+    - Updates modified date
+    - Updates indexed date
+    - Preserves file hash
+    - Re-extracts metadata
+  
+  EXAMPLES:
+  
+  Move vacation photos:
+    Files: /photos/temp/img1.jpg
+           /photos/temp/img2.jpg
+    Destination: /photos/2024/vacation
+    Volume: Vacation2024
+    Database: media.db
+    Dry Run: ☑ (test first)
+  
+  Move all JPGs from directory:
+    Files: /downloads/*.jpg
+    Destination: /photos/archive
+    Volume: Archive
+    Database: media.db
+    Verbose: 2
+  
+  Reorganize library:
+    Files: /old_location/photo1.jpg
+           /old_location/photo2.jpg
+    Destination: /new_location/organized
+    Volume: MainLibrary
+    Database: media.db
+  
+  FILENAME CONFLICTS:
+  
+  If destination file exists:
+    - Original: photo.jpg
+    - Conflict: photo_1.jpg
+    - Another: photo_2.jpg
+    - And so on...
+  
+  DATABASE BEHAVIOR:
+  
+  File Already in Database:
+    - Updates existing record
+    - Changes fullpath to new location
+    - Updates volume tag
+    - Re-extracts metadata
+    - Regenerates thumbnail
+  
+  File Not in Database:
+    - Inserts new record
+    - Calculates hash
+    - Extracts metadata
+    - Generates thumbnail
+    - Links to volume
+  
+  METADATA PROCESSING:
+  
+  For Images:
+    - EXIF data (camera, lens, settings)
+    - GPS coordinates
+    - Date taken
+    - Keywords and captions
+    - Dimensions
+    - Thumbnail
+  
+  For Videos:
+    - Resolution
+    - Duration
+    - Codecs
+    - Frame rate
+    - Audio info
+    - Thumbnail
+  
+  SAFETY FEATURES:
+  
+  ✓ Dry-run mode (test before moving)
+  ✓ Filename conflict resolution
+  ✓ Database transaction (all or nothing)
+  ✓ Error handling (continues on errors)
+  ✓ Preserves original on error
+  
+  TIPS:
+  
+  1. Always Use Dry-Run First:
+     Test with --dry-run before actual move
+  
+  2. Backup Database:
+     cp media.db media.db.backup
+  
+  3. Check Destination Space:
+     Ensure enough disk space
+  
+  4. Use Absolute Paths:
+     More reliable than relative paths
+  
+  5. Organize by Date/Event:
+     Use meaningful destination folders
+  
+  6. Verify After Move:
+     Check a few files to ensure success
+  
+  WORKFLOW:
+  
+  1. Prepare:
+     - Identify files to move
+     - Decide destination structure
+     - Backup database
+  
+  2. Test:
+     - Run with --dry-run
+     - Review output
+     - Check for errors
+  
+  3. Execute:
+     - Run without --dry-run
+     - Monitor progress
+     - Check for errors
+  
+  4. Verify:
+     - Check files in destination
+     - Query database
+     - Spot-check metadata
+  
+  TROUBLESHOOTING:
+  
+  "Database file does not exist":
+    - Create database with index_media.py first
+    - Check database path
+  
+  "Source file not found":
+    - Check file paths
+    - Use absolute paths
+    - Verify files exist
+  
+  "Failed to move file":
+    - Check permissions
+    - Check disk space
+    - Check destination path
+  
+  "Database update failed":
+    - Check database permissions
+    - Ensure database not locked
+    - Check disk space
+  
+  NOTES:
+  
+  - Files are physically moved (not copied)
+  - Original location is emptied
+  - Database maintains file history
+  - Metadata is re-extracted
+  - Thumbnails are regenerated
+  - File hash is preserved
+  
+  INTEGRATION:
+  
+  Works with:
+    - index_media.py (creates database)
+    - manage_dupes.py (find duplicates)
+    - remove_dupes.py (clean database)
+  
+  Database Schema:
+    - Uses same tables as index_media.py
+    - Compatible with all media scripts
+    - Maintains referential integrity
+
+parameters:
+  - name: files
+    label: 'Files to Move'
+    type: text
+    flag: '--files'
+    multiple: true
+    required: true
+    help: 'Files to move (one per line, supports glob patterns)'
+    default: ''
+  
+  - name: destination
+    label: 'Destination Directory'
+    type: text
+    flag: '--destination'
+    required: true
+    help: 'Target directory for moved files'
+    default: ''
+  
+  - name: volume
+    label: 'Volume Tag'
+    type: text
+    required: true
+    help: 'Volume identifier for the files'
+    default: 'MainLibrary'
+  
+  - name: db_path
+    label: 'Database Path'
+    type: text
+    required: true
+    help: 'Path to media database file'
+    default: 'media.db'
+  
+  - name: verbose
+    label: 'Verbosity'
+    type: dropdown
+    flag: '--verbose'
+    options: ['0', '1', '2', '3']
+    help: 'Output verbosity (0=quiet, 3=debug)'
+    default: '1'
+  
+  - name: dry_run
+    label: 'Dry Run'
+    type: checkbox
+    flag: '--dry-run'
+    help: 'Preview without making changes'
+    default: true

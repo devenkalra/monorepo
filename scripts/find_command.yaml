@@ -1,0 +1,92 @@
+title: 'Find Files'
+description: 'Search for files using the find command'
+command: 'find {path} {name} {type} {size}'
+working_dir: '~'
+window_size: '800x600'
+help_text: |
+  Find Files - Help
+  
+  This tool uses the Unix 'find' command to search for files.
+  
+  PARAMETERS:
+  
+  Search Path (positional):
+    - Directory to start searching from
+    - No flag needed - this is a positional argument
+    - Default: . (current directory)
+    - Examples: /home/user, /tmp, .
+  
+  Name (with flag):
+    - File name pattern to match
+    - Uses -name flag
+    - Multiple patterns can be specified (one per line)
+    - Supports wildcards: *.jpg, file*.txt
+    - Examples:
+      *.jpg
+      *.png
+      myfile.txt
+  
+  Type (with flag):
+    - Type of file to search for
+    - Uses -type flag
+    - Options: f (file), d (directory), l (link)
+  
+  Size (with flag):
+    - File size criteria
+    - Uses -size flag
+    - Examples: +1M (larger than 1MB), -100k (smaller than 100KB)
+  
+  EXAMPLES:
+  
+  Find all JPG files in current directory:
+    Path: .
+    Name: *.jpg
+    
+  Find files in /home/user:
+    Path: /home/user
+    Name: *.txt
+    Type: f
+    
+  Find large files:
+    Path: /var/log
+    Type: f
+    Size: +100M
+
+parameters:
+  - name: path
+    label: 'Search Path'
+    type: text
+    flag: ''  # Empty flag means positional argument
+    required: true
+    help: 'Directory to search (positional argument, no flag)'
+    default: '.'
+  
+  - name: name
+    label: 'Name Pattern'
+    type: text
+    flag: '-name'
+    multiple: true
+    required: false
+    help: 'File name patterns to match (one per line)'
+    default: ''
+  
+  - name: type
+    label: 'Type'
+    type: choice
+    flag: '-type'
+    required: false
+    help: 'File type (f=file, d=directory, l=link)'
+    default: ''
+    choices:
+      - ''
+      - 'f'
+      - 'd'
+      - 'l'
+  
+  - name: size
+    label: 'Size'
+    type: text
+    flag: '-size'
+    required: false
+    help: 'Size criteria (e.g., +1M, -100k)'
+    default: ''

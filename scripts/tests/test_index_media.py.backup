@@ -1,0 +1,495 @@
+#!/usr/bin/env python3
+"""
+Comprehensive test suite for index_media.py
+
+Tests all functions, parameter combinations, and edge cases for 100% code coverage.
+"""
+
+import os
+import sys
+import sqlite3
+import tempfile
+import shutil
+import unittest
+from pathlib import Path
+from unittest.mock import patch, MagicMock, call
+from datetime import datetime
+
+# Add parent directory to path to import the module
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import index_media
+from media_utils import create_database_schema
+
+
+class TestIndexMediaHelpers(unittest.TestCase):
+    """Test helper functions in index_media.py"""
+    
+    def test_should_skip_path_literal(self):
+        """Test literal pattern matching for skip paths"""
+        # Literal string matching
+        self.assertTrue(index_media.should_skip_path("/path/to/thumb.jpg", ["thumb"], literal=True))
+        self.assertTrue(index_media.should_skip_path("/path/to/thumbnail/file.jpg", ["thumbnail"], literal=True))
+        self.assertFalse(index_media.should_skip_path("/path/to/photo.jpg", ["thumb"], literal=True))
+        
+        # Multiple patterns
+        self.assertTrue(index_media.should_skip_path("/path/@eaDir/file.jpg", ["@eaDir", ".DS_Store"], literal=True))
+        self.assertTrue(index_media.should_skip_path("/path/.DS_Store", ["@eaDir", ".DS_Store"], literal=True))
+        
+        # Empty patterns
+        self.assertFalse(index_media.should_skip_path("/path/to/file.jpg", [], literal=True))
+    
+    def test_should_skip_path_regex(self):
+        """Test regex pattern matching for skip paths"""
+        # Regex matching
+        self.assertTrue(index_media.should_skip_path("/path/to/thumb_001.jpg", [r"thumb_\d+"], literal=False))
+        self.assertTrue(index_media.should_skip_path("/path/to/file.bak", [r"\.bak$"], literal=False))
+        self.assertFalse(index_media.should_skip_path("/path/to/photo.jpg", [r"\.bak$"], literal=False))
+        
+        # Case sensitivity
+        self.assertTrue(index_media.should_skip_path("/path/THUMB/file.jpg", [r"(?i)thumb"], literal=False))
+        
+        # Invalid regex (should handle gracefully)
+        self.assertFalse(index_media.should_skip_path("/path/to/file.jpg", [r"[invalid("], literal=False))
+    
+    def test_matches_include_pattern_literal(self):
+        """Test literal pattern matching for include paths"""
+        # Literal string matching
+        self.assertTrue(index_media.matches_include_pattern("/path/to/photo.jpg", [".jpg"], literal=True))
+        self.assertTrue(index_media.matches_include_pattern("/path/2024/photo.jpg", ["2024"], literal=True))
+        self.assertFalse(index_media.matches_include_pattern("/path/to/photo.png", [".jpg"], literal=True))
+        
+        # Multiple patterns (OR logic)
+        self.assertTrue(index_media.matches_include_pattern("/path/to/photo.jpg", [".jpg", ".png"], literal=True))
+        self.assertTrue(index_media.matches_include_pattern("/path/to/photo.png", [".jpg", ".png"], literal=True))
+        
+        # Empty patterns (match all)
+        self.assertTrue(index_media.matches_include_pattern("/path/to/file.jpg", [], literal=True))
+    
+    def test_matches_include_pattern_regex(self):
+        """Test regex pattern matching for include paths"""
+        # Regex matching
+        self.assertTrue(index_media.matches_include_pattern("/path/to/photo.jpg", [r"\.(jpg|png)$"], literal=False))
+        self.assertTrue(index_media.matches_include_pattern("/path/2024/photo.jpg", [r"202[0-9]"], literal=False))
+        self.assertFalse(index_media.matches_include_pattern("/path/to/photo.gif", [r"\.(jpg|png)$"], literal=False))
+        
+        # Path separator matching
+        self.assertTrue(index_media.matches_include_pattern("/path/to/photo.jpg", [r"[/\\]photo\.jpg$"], literal=False))
+        
+        # Invalid regex (should handle gracefully)
+        self.assertFalse(index_media.matches_include_pattern("/path/to/file.jpg", [r"[invalid("], literal=False))
+
+
+class TestIndexMediaDatabase(unittest.TestCase):
+    """Test database operations in index_media.py"""
+    
+    def setUp(self):
+        """Create temporary database for testing"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test.db")
+        self.conn = sqlite3.connect(self.db_path)
+        create_database_schema(self.conn)
+    
+    def tearDown(self):
+        """Clean up temporary database"""
+        self.conn.close()
+        shutil.rmtree(self.temp_dir)
+    
+    def test_check_file_exists_fullpath(self):
+        """Test checking file existence by fullpath"""
+        # Insert test file
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        
+        # Test fullpath match
+        file_info = {"fullpath": "/path/to/photo.jpg", "volume": "TestVol"}
+        self.assertTrue(index_media.check_file_exists(file_info, ["fullpath"], self.conn))
+        
+        # Test fullpath no match
+        file_info = {"fullpath": "/path/to/other.jpg", "volume": "TestVol"}
+        self.assertFalse(index_media.check_file_exists(file_info, ["fullpath"], self.conn))
+    
+    def test_check_file_exists_volume(self):
+        """Test checking file existence by volume"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        
+        # Test volume match
+        file_info = {"fullpath": "/path/to/photo.jpg", "volume": "TestVol"}
+        self.assertTrue(index_media.check_file_exists(file_info, ["volume"], self.conn))
+        
+        # Test volume no match
+        file_info = {"fullpath": "/path/to/photo.jpg", "volume": "OtherVol"}
+        self.assertFalse(index_media.check_file_exists(file_info, ["volume"], self.conn))
+    
+    def test_check_file_exists_hash(self):
+        """Test checking file existence by hash"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        
+        # Test hash match
+        file_info = {"file_hash": "abc123", "volume": "TestVol"}
+        self.assertTrue(index_media.check_file_exists(file_info, ["hash"], self.conn))
+        
+        # Test hash no match
+        file_info = {"file_hash": "xyz789", "volume": "TestVol"}
+        self.assertFalse(index_media.check_file_exists(file_info, ["hash"], self.conn))
+    
+    def test_check_file_exists_multiple_criteria(self):
+        """Test checking file existence by multiple criteria"""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, filename, size, file_hash, mime_type, extension, modified_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        
+        # Test multiple criteria match
+        file_info = {
+            "fullpath": "/path/to/photo.jpg",
+            "volume": "TestVol",
+            "size": 1000,
+            "file_hash": "abc123"
+        }
+        self.assertTrue(index_media.check_file_exists(file_info, ["fullpath", "size", "hash"], self.conn))
+        
+        # Test partial match (should fail - all must match)
+        file_info = {
+            "fullpath": "/path/to/photo.jpg",
+            "volume": "TestVol",
+            "size": 2000,  # Different size
+            "file_hash": "abc123"
+        }
+        self.assertFalse(index_media.check_file_exists(file_info, ["fullpath", "size", "hash"], self.conn))
+    
+    def test_record_skipped_file(self):
+        """Test recording skipped files"""
+        timestamp = datetime.now().isoformat()
+        
+        # Record skipped file
+        index_media.record_skipped_file("/path/to/skip.jpg", "not_media_file", "TestVol", timestamp, self.conn)
+        
+        # Verify recorded
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM skipped_files WHERE fullpath = ?", ("/path/to/skip.jpg",))
+        result = cursor.fetchone()
+        
+        # Column order: id, run_timestamp, fullpath, skip_reason, volume, file_size, recorded_date
+        self.assertIsNotNone(result)
+        self.assertEqual(result[2], "/path/to/skip.jpg")  # fullpath (column index 2)
+        self.assertEqual(result[3], "not_media_file")  # skip_reason (column index 3)
+        self.assertEqual(result[4], "TestVol")  # volume (column index 4)
+
+
+class TestIndexMediaFileProcessing(unittest.TestCase):
+    """Test file processing in index_media.py"""
+    
+    def setUp(self):
+        """Create temporary directory and database"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test.db")
+        self.conn = sqlite3.connect(self.db_path)
+        create_database_schema(self.conn)
+        
+        # Create test image file
+        self.test_image = os.path.join(self.temp_dir, "test_photo.jpg")
+        # Create a minimal valid JPEG
+        with open(self.test_image, 'wb') as f:
+            # JPEG header
+            f.write(b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00')
+            # Some data
+            f.write(b'\x00' * 100)
+            # JPEG footer
+            f.write(b'\xFF\xD9')
+    
+    def tearDown(self):
+        """Clean up"""
+        self.conn.close()
+        shutil.rmtree(self.temp_dir)
+    
+    def test_process_file_new_image(self):
+        """Test processing a new image file (integration test)"""
+        timestamp = datetime.now().isoformat()
+        
+        # Process the actual test image file
+        success, skip_reason, was_update = index_media.process_file(
+            self.test_image, "TestVol", timestamp, ["fullpath"], 0, False, self.conn
+        )
+        
+        # File should be processed successfully
+        self.assertTrue(success)
+        self.assertIsNone(skip_reason)
+        self.assertFalse(was_update)
+        
+        # Verify file in database
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM files WHERE fullpath = ?", (self.test_image,))
+        result = cursor.fetchone()
+        self.assertIsNotNone(result)
+        
+        # Verify basic file info was stored
+        self.assertEqual(result[2], self.test_image)  # fullpath
+        self.assertEqual(result[1], "TestVol")  # volume
+    
+    def test_process_file_update_existing(self):
+        """Test updating an existing file (integration test)"""
+        # Insert existing file with old hash
+        cursor = self.conn.cursor()
+        old_hash = "old_hash_value"
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (self.test_image, "TestVol", "test_photo.jpg", 1000, old_hash, "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        
+        timestamp = datetime.now().isoformat()
+        # Use 'size' as check criteria - will find mismatch (size changed) and update
+        success, skip_reason, was_update = index_media.process_file(
+            self.test_image, "TestVol", timestamp, ["size"], 0, False, self.conn
+        )
+        
+        # Should succeed and be an update
+        self.assertTrue(success)
+        self.assertIsNone(skip_reason)
+        self.assertTrue(was_update)
+        
+        # Verify hash was updated
+        cursor.execute("SELECT file_hash FROM files WHERE fullpath = ?", (self.test_image,))
+        new_hash = cursor.fetchone()[0]
+        self.assertNotEqual(new_hash, old_hash)
+    
+    def test_process_file_dry_run(self):
+        """Test dry run mode"""
+        timestamp = datetime.now().isoformat()
+        success, skip_reason, was_update = index_media.process_file(
+            self.test_image, "TestVol", timestamp, ["fullpath"], 1, True, self.conn
+        )
+        
+        self.assertTrue(success)
+        self.assertIsNone(skip_reason)
+        
+        # Verify NOT in database (dry run)
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM files WHERE fullpath = ?", (self.test_image,))
+        result = cursor.fetchone()
+        self.assertIsNone(result)
+    
+    def test_process_file_already_exists(self):
+        """Test skipping file that already exists"""
+        # Insert existing file
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, filename, size, file_hash, mime_type, extension)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (self.test_image, "TestVol", "test_photo.jpg", os.path.getsize(self.test_image), "abc123", "image/jpeg", ".jpg"))
+        self.conn.commit()
+        
+        timestamp = datetime.now().isoformat()
+        success, skip_reason, was_update = index_media.process_file(
+            self.test_image, "TestVol", timestamp, ["fullpath"], 0, False, self.conn
+        )
+        
+        self.assertFalse(success)
+        self.assertIn("already_indexed", skip_reason)
+        self.assertFalse(was_update)
+    
+    def test_process_file_nonexistent(self):
+        """Test processing non-existent file"""
+        timestamp = datetime.now().isoformat()
+        success, skip_reason, was_update = index_media.process_file(
+            "/nonexistent/file.jpg", "TestVol", timestamp, ["fullpath"], 0, False, self.conn
+        )
+        
+        self.assertFalse(success)
+        self.assertIsNotNone(skip_reason)
+
+
+class TestIndexMediaScanDirectory(unittest.TestCase):
+    """Test directory scanning in index_media.py"""
+    
+    def setUp(self):
+        """Create test directory structure"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test.db")
+        self.conn = sqlite3.connect(self.db_path)
+        create_database_schema(self.conn)
+        
+        # Create directory structure
+        self.photo_dir = os.path.join(self.temp_dir, "photos")
+        self.sub_dir1 = os.path.join(self.photo_dir, "2024")
+        self.sub_dir2 = os.path.join(self.photo_dir, "2023")
+        self.thumb_dir = os.path.join(self.photo_dir, "thumbnails")
+        
+        os.makedirs(self.sub_dir1)
+        os.makedirs(self.sub_dir2)
+        os.makedirs(self.thumb_dir)
+        
+        # Create test files
+        self.create_test_image(os.path.join(self.sub_dir1, "photo1.jpg"))
+        self.create_test_image(os.path.join(self.sub_dir1, "photo2.jpg"))
+        self.create_test_image(os.path.join(self.sub_dir2, "photo3.jpg"))
+        self.create_test_image(os.path.join(self.thumb_dir, "thumb1.jpg"))
+        
+        # Create non-image file
+        with open(os.path.join(self.sub_dir1, "readme.txt"), 'w') as f:
+            f.write("test")
+    
+    def tearDown(self):
+        """Clean up"""
+        self.conn.close()
+        shutil.rmtree(self.temp_dir)
+    
+    def create_test_image(self, path):
+        """Create a minimal valid JPEG"""
+        with open(path, 'wb') as f:
+            f.write(b'\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00')
+            f.write(b'\x00' * 100)
+            f.write(b'\xFF\xD9')
+    
+    @patch('index_media.process_file')
+    def test_scan_directory_all_files(self, mock_process):
+        """Test scanning all files without filters"""
+        mock_process.return_value = (True, None, False)
+        
+        timestamp = datetime.now().isoformat()
+        added, updated, skipped = index_media.scan_directory(
+            self.photo_dir, "", "TestVol", [], [], None, ["fullpath"], 0, False, False, timestamp, self.conn
+        )
+        
+        # Should process 5 files total (4 images + 1 text file)
+        # process_file is called for all files, it filters out non-media inside
+        self.assertEqual(mock_process.call_count, 5)
+    
+    @patch('index_media.process_file')
+    def test_scan_directory_with_include_pattern(self, mock_process):
+        """Test scanning with include pattern"""
+        mock_process.return_value = (True, None, False)
+        
+        timestamp = datetime.now().isoformat()
+        added, updated, skipped = index_media.scan_directory(
+            self.photo_dir, "", "TestVol", [], ["2024"], None, ["fullpath"], 0, False, False, timestamp, self.conn
+        )
+        
+        # Should process only files in 2024 directory (2 images + 1 text file)
+        self.assertEqual(mock_process.call_count, 3)
+    
+    @patch('index_media.process_file')
+    def test_scan_directory_with_skip_pattern(self, mock_process):
+        """Test scanning with skip pattern"""
+        mock_process.return_value = (True, None, False)
+        
+        timestamp = datetime.now().isoformat()
+        added, updated, skipped = index_media.scan_directory(
+            self.photo_dir, "", "TestVol", ["thumbnails"], [], None, ["fullpath"], 0, False, False, timestamp, self.conn
+        )
+        
+        # Should skip thumbnails directory (3 images in 2024+2023 + 1 text file)
+        self.assertEqual(mock_process.call_count, 4)
+    
+    @patch('index_media.process_file')
+    def test_scan_directory_with_max_depth(self, mock_process):
+        """Test scanning with max depth limit"""
+        mock_process.return_value = (True, None, False)
+        
+        timestamp = datetime.now().isoformat()
+        added, updated, skipped = index_media.scan_directory(
+            self.photo_dir, "", "TestVol", [], [], 0, ["fullpath"], 0, False, False, timestamp, self.conn
+        )
+        
+        # Should not recurse into subdirectories
+        self.assertEqual(mock_process.call_count, 0)
+    
+    @patch('index_media.process_file')
+    def test_scan_directory_with_limit(self, mock_process):
+        """Test scanning with file limit"""
+        mock_process.return_value = (True, None, False)
+        
+        timestamp = datetime.now().isoformat()
+        added, updated, skipped = index_media.scan_directory(
+            self.photo_dir, "", "TestVol", [], [], None, ["fullpath"], 0, False, False, timestamp, self.conn, limit=2
+        )
+        
+        # Should process only 2 files
+        self.assertEqual(mock_process.call_count, 2)
+    
+    def test_scan_directory_nonexistent(self):
+        """Test scanning non-existent directory"""
+        timestamp = datetime.now().isoformat()
+        added, updated, skipped = index_media.scan_directory(
+            "/nonexistent", "", "TestVol", [], [], None, ["fullpath"], 0, False, False, timestamp, self.conn
+        )
+        
+        self.assertEqual(added, 0)
+        self.assertEqual(updated, 0)
+        self.assertEqual(skipped, 0)
+
+
+class TestIndexMediaCommandLine(unittest.TestCase):
+    """Test command-line argument parsing"""
+    
+    def test_argparse_required_arguments(self):
+        """Test that required arguments are enforced"""
+        with self.assertRaises(SystemExit):
+            # Missing --path and --volume
+            with patch('sys.argv', ['index_media.py']):
+                index_media.main()
+    
+    @patch('index_media.scan_directory')
+    @patch('index_media.create_database_schema')
+    def test_argparse_minimal_arguments(self, mock_schema, mock_scan):
+        """Test with minimal required arguments"""
+        mock_scan.return_value = (0, 0, 0)
+        
+        test_dir = tempfile.mkdtemp()
+        try:
+            with patch('sys.argv', ['index_media.py', '--path', test_dir, '--volume', 'Test']):
+                # Should not raise
+                index_media.main()
+        finally:
+            shutil.rmtree(test_dir)
+    
+    @patch('index_media.scan_directory')
+    @patch('index_media.create_database_schema')
+    def test_argparse_all_arguments(self, mock_schema, mock_scan):
+        """Test with all optional arguments"""
+        mock_scan.return_value = (1, 2, 3)
+        
+        test_dir = tempfile.mkdtemp()
+        db_path = os.path.join(test_dir, "test.db")
+        
+        try:
+            with patch('sys.argv', [
+                'index_media.py',
+                '--path', test_dir,
+                '--volume', 'Test',
+                '--db-path', db_path,
+                '--include-pattern', '.jpg',
+                '--include-pattern', '.png',
+                '--skip-pattern', 'thumb',
+                '--literal-patterns',
+                '--max-depth', '2',
+                '--check-existing', 'fullpath',
+                '--check-existing', 'hash',
+                '--verbose', '2',
+                '--dry-run',
+                '--limit', '10'
+            ]):
+                index_media.main()
+        finally:
+            shutil.rmtree(test_dir)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

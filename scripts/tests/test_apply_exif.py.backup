@@ -1,0 +1,629 @@
+#!/usr/bin/env python3
+"""
+Comprehensive test suite for apply_exif.py
+
+Tests all functions, parameter combinations, and edge cases for 100% code coverage.
+"""
+
+import os
+import sys
+import sqlite3
+import tempfile
+import shutil
+import unittest
+from pathlib import Path
+from unittest.mock import patch, MagicMock, call, mock_open
+import subprocess
+
+# Add parent directory to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import apply_exif
+from media_utils import create_database_schema
+
+
+class TestApplyExifHelpers(unittest.TestCase):
+    """Test helper functions in apply_exif.py"""
+    
+    def test_load_yaml_tags_valid(self):
+        """Test loading valid YAML tags"""
+        yaml_content = """
+XMP-dc:Subject: vacation
+IPTC:Keywords: beach, sunset
+Caption-Abstract: Beautiful sunset
+"""
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            tags = apply_exif.load_yaml_tags('test.yaml')
+            self.assertEqual(tags['XMP-dc:Subject'], 'vacation')
+            self.assertEqual(tags['IPTC:Keywords'], 'beach, sunset')
+            self.assertEqual(tags['Caption-Abstract'], 'Beautiful sunset')
+    
+    def test_load_yaml_tags_not_found(self):
+        """Test loading non-existent YAML file"""
+        with self.assertRaises(FileNotFoundError):
+            apply_exif.load_yaml_tags('/nonexistent/file.yaml')
+    
+    def test_load_yaml_tags_invalid_format(self):
+        """Test loading invalid YAML format"""
+        yaml_content = "- not a dict\n- list format"
+        with patch('builtins.open', mock_open(read_data=yaml_content)):
+            with self.assertRaises(ValueError):
+                apply_exif.load_yaml_tags('test.yaml')
+    
+    def test_parse_cli_tags_valid(self):
+        """Test parsing valid CLI tags"""
+        tag_list = ['XMP-dc:Subject=vacation', 'IPTC:Keywords=beach, sunset']
+        tags = apply_exif.parse_cli_tags(tag_list)
+        self.assertEqual(tags['XMP-dc:Subject'], 'vacation')
+        self.assertEqual(tags['IPTC:Keywords'], 'beach, sunset')
+    
+    def test_parse_cli_tags_with_equals(self):
+        """Test parsing tags with equals in value"""
+        tag_list = ['Caption-Abstract=Math: 2+2=4']
+        tags = apply_exif.parse_cli_tags(tag_list)
+        self.assertEqual(tags['Caption-Abstract'], 'Math: 2+2=4')
+    
+    def test_parse_cli_tags_invalid(self):
+        """Test parsing invalid CLI tags"""
+        tag_list = ['InvalidTagNoEquals']
+        with self.assertRaises(ValueError):
+            apply_exif.parse_cli_tags(tag_list)
+    
+    def test_build_exiftool_cmd_simple(self):
+        """Test building simple exiftool command"""
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        cmd = apply_exif.build_exiftool_cmd(files, tags, dry_run=False)
+        
+        self.assertIn('exiftool', cmd)
+        self.assertIn('-XMP-dc:Subject=vacation', cmd)
+        self.assertIn('-overwrite_original', cmd)
+        self.assertIn('/path/to/photo.jpg', cmd)
+    
+    def test_build_exiftool_cmd_dry_run(self):
+        """Test building exiftool command in dry-run mode"""
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        cmd = apply_exif.build_exiftool_cmd(files, tags, dry_run=True)
+        
+        self.assertNotIn('-overwrite_original', cmd)
+    
+    def test_build_exiftool_cmd_list_values(self):
+        """Test building command with list values (keywords)"""
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': ['vacation', 'beach', 'sunset']}
+        cmd = apply_exif.build_exiftool_cmd(files, tags, dry_run=False)
+        
+        # Should have commands to clear and add keywords
+        cmd_str = ' '.join(cmd)
+        self.assertIn('-XMP-dc:Subject=', cmd_str)
+    
+    def test_build_exiftool_cmd_multiple_files(self):
+        """Test building command with multiple files"""
+        files = ['/path/to/photo1.jpg', '/path/to/photo2.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        cmd = apply_exif.build_exiftool_cmd(files, tags, dry_run=False)
+        
+        self.assertIn('/path/to/photo1.jpg', cmd)
+        self.assertIn('/path/to/photo2.jpg', cmd)
+
+
+class TestApplyExifExecution(unittest.TestCase):
+    """Test exiftool execution"""
+    
+    @patch('subprocess.run')
+    def test_run_exiftool_success(self, mock_run):
+        """Test successful exiftool execution"""
+        mock_run.return_value = MagicMock(returncode=0, stdout='1 image files updated\n', stderr='')
+        
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        result = apply_exif.run_exiftool(files, tags, dry_run=False, verbose=0)
+        
+        self.assertTrue(result)
+        mock_run.assert_called_once()
+    
+    @patch('subprocess.run')
+    def test_run_exiftool_dry_run(self, mock_run):
+        """Test exiftool in dry-run mode"""
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        result = apply_exif.run_exiftool(files, tags, dry_run=True, verbose=0)
+        
+        self.assertTrue(result)
+        mock_run.assert_not_called()
+    
+    @patch('subprocess.run')
+    def test_run_exiftool_failure(self, mock_run):
+        """Test exiftool execution failure"""
+        mock_run.side_effect = subprocess.CalledProcessError(1, 'exiftool', stderr='Error')
+        
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        
+        with self.assertRaises(RuntimeError):
+            apply_exif.run_exiftool(files, tags, dry_run=False, verbose=0)
+    
+    @patch('subprocess.run')
+    def test_run_exiftool_not_found(self, mock_run):
+        """Test exiftool not installed"""
+        mock_run.side_effect = FileNotFoundError()
+        
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        
+        with self.assertRaises(RuntimeError):
+            apply_exif.run_exiftool(files, tags, dry_run=False, verbose=0)
+    
+    @patch('subprocess.run')
+    def test_run_exiftool_verbose(self, mock_run):
+        """Test exiftool with verbose output"""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='1 image files updated\n',
+            stderr=''
+        )
+        
+        files = ['/path/to/photo.jpg']
+        tags = {'XMP-dc:Subject': 'vacation'}
+        
+        # Test different verbosity levels
+        for verbose_level in [1, 2, 3]:
+            result = apply_exif.run_exiftool(files, tags, dry_run=False, verbose=verbose_level)
+            self.assertTrue(result)
+
+
+class TestApplyExifKeywords(unittest.TestCase):
+    """Test keyword manipulation"""
+    
+    @patch('subprocess.run')
+    def test_get_existing_keywords_success(self, mock_run):
+        """Test getting existing keywords from file"""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='vacation\nbeach\nsunset\n',
+            stderr=''
+        )
+        
+        keywords = apply_exif.get_existing_keywords('/path/to/photo.jpg')
+        
+        self.assertIn('XMP-dc:Subject', keywords)
+        self.assertIn('vacation', keywords['XMP-dc:Subject'])
+        self.assertIn('beach', keywords['XMP-dc:Subject'])
+    
+    @patch('subprocess.run')
+    def test_get_existing_keywords_no_keywords(self, mock_run):
+        """Test getting keywords from file with no keywords"""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='',
+            stderr=''
+        )
+        
+        keywords = apply_exif.get_existing_keywords('/path/to/photo.jpg')
+        
+        self.assertEqual(keywords['XMP-dc:Subject'], [])
+        self.assertEqual(keywords['IPTC:Keywords'], [])
+    
+    @patch('subprocess.run')
+    def test_get_existing_keywords_failure(self, mock_run):
+        """Test getting keywords when exiftool fails"""
+        mock_run.side_effect = subprocess.CalledProcessError(1, 'exiftool')
+        
+        keywords = apply_exif.get_existing_keywords('/path/to/photo.jpg')
+        
+        self.assertEqual(keywords['XMP-dc:Subject'], [])
+        self.assertEqual(keywords['IPTC:Keywords'], [])
+
+
+class TestApplyExifVerification(unittest.TestCase):
+    """Test EXIF verification"""
+    
+    @patch('subprocess.run')
+    def test_verify_exif_written_success(self, mock_run):
+        """Test successful EXIF verification"""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='32.7157',
+            stderr=''
+        )
+        
+        tags = {'GPSLatitude': '32.7157'}
+        result = apply_exif.verify_exif_written('/path/to/photo.jpg', tags, verbose=0)
+        
+        self.assertTrue(result)
+    
+    @patch('subprocess.run')
+    def test_verify_exif_written_no_tags(self, mock_run):
+        """Test verification with no verifiable tags"""
+        tags = {'Caption-Abstract': 'Test'}
+        result = apply_exif.verify_exif_written('/path/to/photo.jpg', tags, verbose=0)
+        
+        # Should return True (assume success)
+        self.assertTrue(result)
+        mock_run.assert_not_called()
+    
+    @patch('subprocess.run')
+    def test_verify_exif_written_failure(self, mock_run):
+        """Test EXIF verification failure"""
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='',  # Empty output means tag not found
+            stderr=''
+        )
+        
+        tags = {'GPSLatitude': '32.7157'}
+        result = apply_exif.verify_exif_written('/path/to/photo.jpg', tags, verbose=0)
+        
+        self.assertFalse(result)
+    
+    @patch('subprocess.run')
+    def test_verify_exif_written_exception(self, mock_run):
+        """Test EXIF verification with exception"""
+        mock_run.side_effect = Exception("Test error")
+        
+        tags = {'GPSLatitude': '32.7157'}
+        result = apply_exif.verify_exif_written('/path/to/photo.jpg', tags, verbose=0)
+        
+        # Should return True (assume success on error)
+        self.assertTrue(result)
+
+
+class TestApplyExifDatabase(unittest.TestCase):
+    """Test database integration"""
+    
+    def setUp(self):
+        """Create temporary database"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.temp_dir, "test.db")
+        self.conn = sqlite3.connect(self.db_path)
+        create_database_schema(self.conn)
+    
+    def tearDown(self):
+        """Clean up"""
+        self.conn.close()
+        shutil.rmtree(self.temp_dir)
+    
+    def test_check_file_in_database_exists(self):
+        """Test checking if file exists in database"""
+        # Insert test file
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        self.conn.close()
+        
+        result = apply_exif.check_file_in_database(self.db_path, "/path/to/photo.jpg")
+        self.assertTrue(result)
+    
+    def test_check_file_in_database_not_exists(self):
+        """Test checking if file doesn't exist in database"""
+        self.conn.close()
+        
+        result = apply_exif.check_file_in_database(self.db_path, "/path/to/other.jpg")
+        self.assertFalse(result)
+    
+    def test_check_file_in_database_no_db(self):
+        """Test checking file when database doesn't exist"""
+        result = apply_exif.check_file_in_database("/nonexistent/db.db", "/path/to/photo.jpg")
+        self.assertFalse(result)
+    
+    @patch('subprocess.run')
+    def test_reprocess_file_in_database_success(self, mock_run):
+        """Test successful file reprocessing"""
+        # Insert test file
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        self.conn.close()
+        
+        mock_run.return_value = MagicMock(returncode=0, stdout='Files updated: 1\n', stderr='')
+        
+        result = apply_exif.reprocess_file_in_database(self.db_path, "/path/to/photo.jpg", verbose=0)
+        self.assertTrue(result)
+    
+    def test_reprocess_file_in_database_not_found(self):
+        """Test reprocessing file not in database"""
+        self.conn.close()
+        
+        result = apply_exif.reprocess_file_in_database(self.db_path, "/path/to/other.jpg", verbose=0)
+        self.assertFalse(result)
+    
+    @patch('subprocess.run')
+    def test_reprocess_file_in_database_failure(self, mock_run):
+        """Test failed file reprocessing"""
+        # Insert test file
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        self.conn.close()
+        
+        mock_run.return_value = MagicMock(returncode=1, stdout='', stderr='Error')
+        
+        result = apply_exif.reprocess_file_in_database(self.db_path, "/path/to/photo.jpg", verbose=0)
+        self.assertFalse(result)
+    
+    @patch('subprocess.run')
+    def test_reprocess_file_in_database_timeout(self, mock_run):
+        """Test reprocessing timeout"""
+        # Insert test file
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        self.conn.commit()
+        self.conn.close()
+        
+        mock_run.side_effect = subprocess.TimeoutExpired('cmd', 60)
+        
+        result = apply_exif.reprocess_file_in_database(self.db_path, "/path/to/photo.jpg", verbose=0)
+        self.assertFalse(result)
+
+
+class TestApplyExifFileResolution(unittest.TestCase):
+    """Test file resolution logic"""
+    
+    def setUp(self):
+        """Create test files"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.test_file1 = os.path.join(self.temp_dir, "photo1.jpg")
+        self.test_file2 = os.path.join(self.temp_dir, "photo2.jpg")
+        
+        with open(self.test_file1, 'w') as f:
+            f.write("test")
+        with open(self.test_file2, 'w') as f:
+            f.write("test")
+    
+    def tearDown(self):
+        """Clean up"""
+        shutil.rmtree(self.temp_dir)
+    
+    def test_resolve_files_explicit(self):
+        """Test resolving explicitly specified files"""
+        args = MagicMock()
+        args.files = [[self.test_file1], [self.test_file2]]
+        args.pattern = None
+        
+        files = apply_exif.resolve_files(args)
+        
+        self.assertEqual(len(files), 2)
+        self.assertIn(self.test_file1, files)
+        self.assertIn(self.test_file2, files)
+    
+    def test_resolve_files_pattern(self):
+        """Test resolving files by pattern"""
+        args = MagicMock()
+        args.files = []
+        args.pattern = os.path.join(self.temp_dir, "*.jpg")
+        
+        files = apply_exif.resolve_files(args)
+        
+        self.assertEqual(len(files), 2)
+    
+    def test_resolve_files_none(self):
+        """Test resolving with no files specified"""
+        args = MagicMock()
+        args.files = []
+        args.pattern = None
+        
+        files = apply_exif.resolve_files(args)
+        
+        self.assertEqual(len(files), 0)
+    
+    def test_resolve_files_nonexistent(self):
+        """Test resolving non-existent files"""
+        args = MagicMock()
+        args.files = [["/nonexistent/file.jpg"]]
+        args.pattern = None
+        
+        files = apply_exif.resolve_files(args)
+        
+        self.assertEqual(len(files), 0)
+
+
+class TestApplyExifManualLocation(unittest.TestCase):
+    """Test manual location parameter handling"""
+    
+    def test_create_exif_metadata_from_manual_params_gps_only(self):
+        """Test creating metadata with GPS only"""
+        metadata = apply_exif.create_exif_metadata_from_manual_params(
+            latitude=32.7157,
+            longitude=-97.3308,
+            altitude=200.0,
+            city=None,
+            state=None,
+            country=None,
+            country_code=None,
+            coverage=None,
+            date_str="",
+            offset_str=""
+        )
+        
+        self.assertEqual(metadata['GPSLatitude'], 32.7157)
+        self.assertEqual(metadata['GPSLongitude'], -97.3308)
+        self.assertEqual(metadata['GPSAltitude'], 200.0)
+    
+    def test_create_exif_metadata_from_manual_params_location_only(self):
+        """Test creating metadata with location text only"""
+        metadata = apply_exif.create_exif_metadata_from_manual_params(
+            latitude=None,
+            longitude=None,
+            altitude=None,
+            city="Fort Worth",
+            state="Texas",
+            country="USA",
+            country_code="US",
+            coverage="123 Main St, Fort Worth, TX",
+            date_str="",
+            offset_str=""
+        )
+        
+        self.assertEqual(metadata['XMP-photoshop:City'], "Fort Worth")
+        self.assertEqual(metadata['XMP-photoshop:State'], "Texas")
+        self.assertEqual(metadata['XMP-photoshop:Country'], "USA")
+        self.assertEqual(metadata['XMP-iptcCore:CountryCode'], "US")
+        self.assertEqual(metadata['XMP-dc:Coverage'], "123 Main St, Fort Worth, TX")
+    
+    def test_create_exif_metadata_from_manual_params_all(self):
+        """Test creating metadata with all parameters"""
+        metadata = apply_exif.create_exif_metadata_from_manual_params(
+            latitude=32.7157,
+            longitude=-97.3308,
+            altitude=200.0,
+            city="Fort Worth",
+            state="Texas",
+            country="USA",
+            country_code="US",
+            coverage="123 Main St, Fort Worth, TX",
+            date_str="2024:01:01 12:00:00",
+            offset_str="-06:00"
+        )
+        
+        self.assertEqual(metadata['GPSLatitude'], 32.7157)
+        self.assertEqual(metadata['XMP-photoshop:City'], "Fort Worth")
+        self.assertEqual(metadata['DateTimeOriginal'], "2024:01:01 12:00:00")
+        self.assertEqual(metadata['OffsetTimeOriginal'], "-06:00")
+
+
+class TestApplyExifCommandLine(unittest.TestCase):
+    """Test command-line integration"""
+    
+    def setUp(self):
+        """Create test file"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.test_file = os.path.join(self.temp_dir, "photo.jpg")
+        with open(self.test_file, 'w') as f:
+            f.write("test")
+    
+    def tearDown(self):
+        """Clean up"""
+        shutil.rmtree(self.temp_dir)
+    
+    @patch('apply_exif.run_exiftool')
+    def test_main_dry_run(self, mock_run):
+        """Test main function in dry-run mode"""
+        mock_run.return_value = True
+        
+        with patch('sys.argv', [
+            'apply_exif.py',
+            '--dry-run',
+            '--files', self.test_file,
+            '--city', 'Fort Worth'
+        ]):
+            apply_exif.main()
+        
+        mock_run.assert_called_once()
+    
+    @patch('apply_exif.run_exiftool')
+    def test_main_with_place(self, mock_run):
+        """Test main function with place geocoding"""
+        mock_run.return_value = True
+        
+        with patch('apply_exif.create_exif_metadata') as mock_geo:
+            mock_geo.return_value = {
+                'GPSLatitude': 32.7157,
+                'GPSLongitude': -97.3308,
+                'XMP-photoshop:City': 'Fort Worth'
+            }
+            
+            with patch('sys.argv', [
+                'apply_exif.py',
+                '--dry-run',
+                '--files', self.test_file,
+                '--place', 'Fort Worth, Texas, USA'
+            ]):
+                apply_exif.main()
+            
+            mock_geo.assert_called_once()
+    
+    @patch('apply_exif.run_exiftool')
+    def test_main_with_keywords(self, mock_run):
+        """Test main function with keyword manipulation"""
+        mock_run.return_value = True
+        
+        with patch('apply_exif.get_existing_keywords') as mock_keywords:
+            mock_keywords.return_value = {
+                'XMP-dc:Subject': ['old_keyword'],
+                'IPTC:Keywords': []
+            }
+            
+            with patch('sys.argv', [
+                'apply_exif.py',
+                '--dry-run',
+                '--files', self.test_file,
+                '--add-keyword', 'new_keyword',
+                '--remove-keyword', 'old_keyword'
+            ]):
+                apply_exif.main()
+    
+    @patch('apply_exif.run_exiftool')
+    @patch('apply_exif.verify_exif_written')
+    @patch('apply_exif.reprocess_file_in_database')
+    def test_main_with_database_reprocess(self, mock_reprocess, mock_verify, mock_run):
+        """Test main function with database reprocessing"""
+        mock_run.return_value = True
+        mock_verify.return_value = True
+        mock_reprocess.return_value = True
+        
+        db_path = os.path.join(self.temp_dir, "test.db")
+        conn = sqlite3.connect(db_path)
+        create_database_schema(conn)
+        
+        # Insert test file
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO files (fullpath, volume, filename, size, file_hash, mime_type, extension)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (self.test_file, "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg"))
+        conn.commit()
+        conn.close()
+        
+        with patch('sys.argv', [
+            'apply_exif.py',
+            '--files', self.test_file,
+            '--city', 'Fort Worth',
+            '--db-path', db_path,
+            '--reprocess-db'
+        ]):
+            apply_exif.main()
+        
+        mock_reprocess.assert_called_once()
+    
+    @patch('apply_exif.run_exiftool')
+    def test_main_with_limit(self, mock_run):
+        """Test main function with file limit"""
+        mock_run.return_value = True
+        
+        file1 = os.path.join(self.temp_dir, "photo1.jpg")
+        file2 = os.path.join(self.temp_dir, "photo2.jpg")
+        
+        with open(file1, 'w') as f:
+            f.write("test")
+        with open(file2, 'w') as f:
+            f.write("test")
+        
+        with patch('sys.argv', [
+            'apply_exif.py',
+            '--dry-run',
+            '--files', file1,
+            '--files', file2,
+            '--city', 'Fort Worth',
+            '--limit', '1'
+        ]):
+            apply_exif.main()
+        
+        # Should only process 1 file
+        self.assertEqual(mock_run.call_count, 1)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

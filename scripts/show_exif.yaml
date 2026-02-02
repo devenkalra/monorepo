@@ -1,0 +1,134 @@
+title: 'Show EXIF Metadata'
+description: 'Display EXIF/metadata information from image and video files using exiftool'
+command: 'python3 ~/monorepo/scripts/show_exif.py {files} {mode} {grouped} {tags} {no_filenames}'
+working_dir: '~'
+window_size: '1000x700'
+
+parameters:
+  - name: 'files'
+    label: 'Files'
+    type: 'text'
+    flag: '--file'
+    help_text: 'One or more files to display EXIF data for (one per line for multiple files)'
+    required: true
+    multiple: true
+    default: ''
+
+  - name: 'mode'
+    label: 'Display Mode'
+    type: 'text'
+    flag: '--mode'
+    help_text: 'Type(s) of EXIF information to display (space-separated for multiple)'
+    required: false
+    default: 'common'
+    multiple: false
+
+  - name: 'grouped'
+    label: 'Group by Category'
+    type: 'checkbox'
+    flag: '--grouped'
+    help_text: 'Group tags by category (e.g., EXIF:, XMP:, IPTC:)'
+    default: false
+
+  - name: 'tags'
+    label: 'Specific Tags'
+    type: 'text'
+    flag: '--tags'
+    help_text: 'Space-separated list of specific tags (only for "specific" mode)'
+    required: false
+    multiple: false
+    default: ''
+
+  - name: 'no_filenames'
+    label: 'Hide Filenames'
+    type: 'checkbox'
+    flag: '--no-filenames'
+    help_text: 'Do not show filenames in output (values only)'
+    default: false
+
+help_text: |
+  Show EXIF Metadata - Help
+  =========================
+  
+  This tool displays EXIF/metadata information from image and video files
+  using exiftool.
+  
+  DISPLAY MODES
+  -------------
+  
+  common    - Show commonly used EXIF tags (dimensions, camera, dates, exposure)
+  gps       - Show GPS and location information
+  all       - Show all available EXIF tags
+  specific  - Show only specific tags (requires --tags parameter)
+  json      - Output all data in JSON format
+  keywords  - Show keywords, subjects, and captions
+  camera    - Show camera settings (ISO, aperture, shutter, lens, etc.)
+  video     - Show video-specific metadata (duration, codec, bitrate, etc.)
+  
+  PARAMETERS
+  ----------
+  
+  Files:
+    Specify one or more files to process. For multiple files, enter one
+    per line. Supports images (JPG, PNG, RAW formats) and videos.
+  
+  Display Mode:
+    Choose what information to display (see modes above).
+  
+  Group by Category:
+    When checked, tags are prefixed with their category (EXIF:, XMP:, IPTC:).
+    Useful for understanding where each tag comes from.
+  
+  Specific Tags:
+    For "specific" mode only. Enter space-separated tag names like:
+    Make Model ISO FocalLength
+    You can also use tag groups: GPS:all XMP:all
+  
+  Hide Filenames:
+    When checked, only values are shown (no tag names or filenames).
+    Useful for scripting or when processing single files.
+  
+  EXAMPLES
+  --------
+  
+  1. Show common tags from a photo:
+     Files: photo.jpg
+     Mode: common
+  
+  2. Show GPS location data:
+     Files: photo.jpg
+     Mode: gps
+  
+  3. Show all tags grouped by category:
+     Files: photo.jpg
+     Mode: all
+     Group by Category: ✓
+  
+  4. Show specific camera settings:
+     Files: photo.jpg
+     Mode: specific
+     Specific Tags: Make Model ISO FNumber ExposureTime FocalLength
+  
+  5. Export all metadata as JSON:
+     Files: photo.jpg
+     Mode: json
+  
+  6. Show video metadata:
+     Files: video.mp4
+     Mode: video
+  
+  7. Process multiple files:
+     Files: (enter one per line)
+       photo1.jpg
+       photo2.jpg
+       video.mp4
+     Mode: common
+  
+  NOTES
+  -----
+  
+  - Requires exiftool to be installed on your system
+  - Supports images: JPG, PNG, TIFF, RAW (CR2, RW2, NEF, etc.)
+  - Supports videos: MP4, MOV, AVI, MKV, etc.
+  - Tag names are case-insensitive
+  - Use --grouped to see tag groups (helpful for --set operations)
