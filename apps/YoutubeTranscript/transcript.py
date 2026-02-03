@@ -6,7 +6,7 @@ from openai import OpenAI
 from pytube import Playlist, YouTube
 
 
-OPENAIKEY=os.getenv("OPENAIKEY")
+OPENAIKEY=os.getenv("OPENAIKEY") # removed secret
 client = OpenAI(api_key=OPENAIKEY)
 from youtube_transcript_api import YouTubeTranscriptApi
 

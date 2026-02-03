@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 // --- add near top of server.mjs ---
-const GH_TOKEN = os.getenv("GH_TOKEN")
+const GH_TOKEN = os.getenv("GH_TOKEN") // removed secret
 const GH_BASE = "https://api.github.com";
 
 const app = express();
