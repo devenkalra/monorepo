@@ -1,642 +1,670 @@
-# Bldrdojo.com - Production Deployment Guide
+# Deployment Guide for bldrdojo.com on Linode Ubuntu 22.04
 
-Complete guide for deploying the Entity Management System (backend + frontend) to production using Docker Compose.
+This guide covers deploying the Django + React application to a Linode server using Docker and nginx.
 
 ## Table of Contents
-1. [Architecture Overview](#architecture-overview)
-2. [Prerequisites](#prerequisites)
-3. [Initial Setup](#initial-setup)
-4. [SSL Certificate Setup](#ssl-certificate-setup)
-5. [Environment Configuration](#environment-configuration)
-6. [Building and Deploying](#building-and-deploying)
-7. [Database Management](#database-management)
-8. [Monitoring and Maintenance](#monitoring-and-maintenance)
-9. [Troubleshooting](#troubleshooting)
-10. [Backup and Recovery](#backup-and-recovery)
+1. [Server Setup](#server-setup)
+2. [Install Dependencies](#install-dependencies)
+3. [Configure Domain and DNS](#configure-domain-and-dns)
+4. [Setup SSL Certificates](#setup-ssl-certificates)
+5. [Deploy Application](#deploy-application)
+6. [Post-Deployment](#post-deployment)
+7. [Maintenance](#maintenance)
 
 ---
 
-## Architecture Overview
+## 1. Server Setup
 
-### Services
+### Create Linode Server
+1. Log into Linode Cloud Manager
+2. Create a new Linode:
+   - **Distribution**: Ubuntu 22.04 LTS
+   - **Plan**: Dedicated 8GB+ (recommended for Neo4j, MeiliSearch, Vector service)
+   - **Region**: Choose closest to your users
+   - **Label**: bldrdojo-production
+3. Set a strong root password
+4. Boot the server
 
+### Initial Server Configuration
+
+```bash
+# SSH into your server
+ssh root@<your-server-ip>
+
+# Update system packages
+apt update && apt upgrade -y
+
+# Set timezone
+timedatectl set-timezone America/Los_Angeles  # or your timezone
+
+# Set hostname
+hostnamectl set-hostname bldrdojo
+
+# Create a non-root user with sudo privileges
+adduser deploy
+usermod -aG sudo deploy
+
+# Setup SSH key authentication for deploy user
+mkdir -p /home/deploy/.ssh
+cp /root/.ssh/authorized_keys /home/deploy/.ssh/
+chown -R deploy:deploy /home/deploy/.ssh
+chmod 700 /home/deploy/.ssh
+chmod 600 /home/deploy/.ssh/authorized_keys
+
+# Configure firewall
+ufw allow OpenSSH
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw enable
+
+# Disable root SSH login (optional but recommended)
+sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+systemctl restart sshd
+
+# Switch to deploy user
+su - deploy
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     bldrdojo.com (Port 80/443)              │
-│                                                             │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  Nginx (Frontend)                                     │  │
-│  │  - Serves React SPA                                   │  │
-│  │  - Proxies /api/ to backend                          │  │
-│  │  - SSL termination                                    │  │
-│  └──────────────────────────────────────────────────────┘  │
-│                          │                                  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  Django Backend (Port 8000)                          │  │
-│  │  - REST API                                           │  │
-│  │  - Admin interface                                    │  │
-│  │  - Authentication                                     │  │
-│  └──────────────────────────────────────────────────────┘  │
-│           │           │           │           │             │
-│  ┌────────┴─────┬─────┴─────┬─────┴─────┬────┴─────────┐  │
-│  │ PostgreSQL   │ Redis     │MeiliSearch│ Neo4j        │  │
-│  │ (Database)   │ (Cache)   │ (Search)  │ (Graph DB)   │  │
-│  └──────────────┴───────────┴───────────┴──────────────┘  │
-│                          │                                  │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │  Vector Service (Flask + ChromaDB)                   │  │
-│  │  - Semantic search                                    │  │
-│  └──────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Data Flow
-1. User accesses `https://bldrdojo.com`
-2. Nginx serves React frontend
-3. API requests go to `/api/*` → proxied to Django backend
-4. Backend queries PostgreSQL, Redis, MeiliSearch, Neo4j, and Vector Service
-5. Responses flow back through the chain
 
 ---
 
-## Prerequisites
+## 2. Install Dependencies
 
-### Server Requirements
-- **OS**: Ubuntu 20.04+ / Debian 11+ / RHEL 8+
-- **CPU**: 2+ cores (4+ recommended)
-- **RAM**: 4GB minimum (8GB+ recommended)
-- **Disk**: 50GB+ SSD storage
-- **Network**: Public IP address with ports 80/443 open
-
-### Software Requirements
-```bash
-# Docker
-Docker version 20.10+
-Docker Compose version 2.0+
-
-# Domain
-- bldrdojo.com pointing to server IP
-- www.bldrdojo.com pointing to server IP (optional)
-```
-
-### Install Docker and Docker Compose
+### Install Docker
 
 ```bash
-# Update system
-sudo apt-get update && sudo apt-get upgrade -y
-
 # Install Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 
-# Add user to docker group
-sudo usermod -aG docker $USER
-newgrp docker
+# Add deploy user to docker group
+sudo usermod -aG docker deploy
 
-# Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
+# Start Docker service
+sudo systemctl enable docker
+sudo systemctl start docker
 
-# Verify installation
+# Log out and back in for group changes to take effect
+exit
+# SSH back in as deploy user
+ssh deploy@<your-server-ip>
+
+# Verify Docker installation
 docker --version
-docker-compose --version
+docker compose version
+```
+
+### Install Additional Tools
+
+```bash
+# Install git
+sudo apt install -y git
+
+# Install certbot for SSL certificates
+sudo apt install -y certbot
+
+# Install monitoring tools (optional)
+sudo apt install -y htop iotop nethogs
 ```
 
 ---
 
-## Initial Setup
+## 3. Configure Domain and DNS
 
-### 1. Clone Repository
+### DNS Configuration in Your Domain Registrar
 
-```bash
-cd /opt
-sudo mkdir bldrdojo
-sudo chown $USER:$USER bldrdojo
-cd bldrdojo
+Add the following DNS records for `bldrdojo.com`:
 
-# Clone or copy your repository here
-# For this guide, assume files are in /opt/bldrdojo/
+```
+Type    Name    Value                       TTL
+A       @       <your-linode-ip>           300
+A       www     <your-linode-ip>           300
 ```
 
-### 2. Create Directory Structure
+### Verify DNS Propagation
 
 ```bash
-cd /opt/bldrdojo
+# Wait for DNS to propagate (can take up to 48 hours, usually minutes)
+dig bldrdojo.com
+dig www.bldrdojo.com
 
-# Create required directories
-mkdir -p ssl backups logs logs/nginx
-
-# Set permissions
-chmod 700 ssl
-chmod 755 backups logs
+# Or use online tools like https://dnschecker.org/
 ```
 
 ---
 
-## SSL Certificate Setup
+## 4. Setup SSL Certificates
 
-### Option 1: Let's Encrypt (Recommended for Production)
+### Option A: Let's Encrypt with Certbot (Recommended)
 
 ```bash
-# Install certbot
-sudo apt-get install certbot
+# Stop any running containers first
+cd /home/deploy/data-backend
+docker compose down
 
-# Stop any running services on port 80
-docker-compose down
+# Obtain SSL certificate
+sudo certbot certonly --standalone -d bldrdojo.com -d www.bldrdojo.com
 
-# Obtain certificate
-sudo certbot certonly --standalone \
-  -d bldrdojo.com \
-  -d www.bldrdojo.com \
-  --email admin@bldrdojo.com \
-  --agree-tos \
-  --non-interactive
+# Certificates will be stored at:
+# /etc/letsencrypt/live/bldrdojo.com/fullchain.pem
+# /etc/letsencrypt/live/bldrdojo.com/privkey.pem
 
-# Copy certificates to project directory
-sudo cp /etc/letsencrypt/live/bldrdojo.com/fullchain.pem ssl/
-sudo cp /etc/letsencrypt/live/bldrdojo.com/privkey.pem ssl/
-sudo chown $USER:$USER ssl/*.pem
-sudo chmod 600 ssl/*.pem
+# Create SSL directory for Docker
+mkdir -p /home/deploy/data-backend/ssl
 
-# Set up auto-renewal
-sudo crontab -e
-# Add this line:
-# 0 3 * * * certbot renew --quiet && cp /etc/letsencrypt/live/bldrdojo.com/*.pem /opt/bldrdojo/ssl/ && docker-compose -f /opt/bldrdojo/docker-compose.yml restart frontend
+# Copy certificates (or create symlinks)
+sudo cp /etc/letsencrypt/live/bldrdojo.com/fullchain.pem /home/deploy/data-backend/ssl/
+sudo cp /etc/letsencrypt/live/bldrdojo.com/privkey.pem /home/deploy/data-backend/ssl/
+sudo chown -R deploy:deploy /home/deploy/data-backend/ssl
+sudo chmod 644 /home/deploy/data-backend/ssl/fullchain.pem
+sudo chmod 600 /home/deploy/data-backend/ssl/privkey.pem
+
+# Setup auto-renewal
+sudo systemctl enable certbot.timer
+sudo systemctl start certbot.timer
+
+# Create renewal hook to copy new certificates
+sudo tee /etc/letsencrypt/renewal-hooks/deploy/copy-certs.sh << 'EOF'
+#!/bin/bash
+cp /etc/letsencrypt/live/bldrdojo.com/fullchain.pem /home/deploy/data-backend/ssl/
+cp /etc/letsencrypt/live/bldrdojo.com/privkey.pem /home/deploy/data-backend/ssl/
+chown deploy:deploy /home/deploy/data-backend/ssl/*.pem
+chmod 644 /home/deploy/data-backend/ssl/fullchain.pem
+chmod 600 /home/deploy/data-backend/ssl/privkey.pem
+cd /home/deploy/data-backend && docker compose restart frontend
+EOF
+
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/copy-certs.sh
 ```
 
-### Option 2: Self-Signed Certificate (Development/Testing Only)
+### Option B: Self-Signed Certificate (Development/Testing Only)
 
 ```bash
-cd ssl
+mkdir -p /home/deploy/data-backend/ssl
+cd /home/deploy/data-backend/ssl
 
 # Generate self-signed certificate
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
   -keyout privkey.pem \
   -out fullchain.pem \
-  -subj "/C=US/ST=State/L=City/O=Organization/OU=IT/CN=bldrdojo.com"
+  -subj "/C=US/ST=State/L=City/O=Organization/CN=bldrdojo.com"
 
-chmod 600 *.pem
+chmod 644 fullchain.pem
+chmod 600 privkey.pem
 ```
 
 ---
 
-## Environment Configuration
+## 5. Deploy Application
 
-### 1. Create Environment File
+### Clone Repository
 
 ```bash
-cd /opt/bldrdojo
-cp .env.example .env
+# Create application directory
+cd /home/deploy
+git clone <your-repo-url> data-backend
+cd data-backend
+
+# Or if you're deploying from local machine, use rsync:
+# From your local machine:
+# rsync -avz --exclude 'node_modules' --exclude '__pycache__' --exclude '.git' \
+#   /home/ubuntu/monorepo/data-backend/ deploy@<your-server-ip>:/home/deploy/data-backend/
 ```
 
-### 2. Generate Secure Secrets
+### Create Environment File
 
 ```bash
-# Generate Django secret key
-python3 -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+cd /home/deploy/data-backend
 
-# Generate other passwords
-openssl rand -base64 32  # For PostgreSQL
-openssl rand -base64 32  # For Redis
-openssl rand -base64 32  # For MeiliSearch
-openssl rand -base64 32  # For Neo4j
-openssl rand -base64 32  # For JWT
-```
-
-### 3. Edit .env File
-
-```bash
-nano .env
-```
-
-**Required Changes:**
-```bash
-# Django - Update these!
-DJANGO_SECRET_KEY=<your-generated-secret-key>
+# Create .env file
+cat > .env << 'EOF'
+# Django Settings
+DJANGO_SECRET_KEY=<generate-a-strong-random-key>
 DJANGO_DEBUG=False
 DJANGO_ALLOWED_HOSTS=bldrdojo.com,www.bldrdojo.com
+DJANGO_CSRF_TRUSTED_ORIGINS=https://bldrdojo.com,https://www.bldrdojo.com
 
-# Database - Update password!
-POSTGRES_PASSWORD=<your-secure-password>
+# Database
+POSTGRES_DB=entitydb
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<generate-strong-password>
 
-# Redis - Update password!
-REDIS_PASSWORD=<your-secure-password>
+# Redis
+REDIS_PASSWORD=<generate-strong-password>
 
-# MeiliSearch - Update key!
-MEILI_MASTER_KEY=<your-secure-key>
+# MeiliSearch
+MEILI_MASTER_KEY=<generate-strong-key>
 
-# Neo4j - Update password!
-NEO4J_PASSWORD=<your-secure-password>
+# Neo4j
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=<generate-strong-password>
 
-# Email - Configure for production
+# Email (configure based on your provider)
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
 EMAIL_HOST_USER=your-email@gmail.com
 EMAIL_HOST_PASSWORD=your-app-password
 
-# Google OAuth - Add your credentials
-GOOGLE_CLIENT_ID=your-actual-client-id.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=your-actual-client-secret
+# Optional: Sentry for error tracking
+# SENTRY_DSN=your-sentry-dsn
+EOF
 
-# JWT
-JWT_SECRET_KEY=<your-jwt-secret>
+# Secure the .env file
+chmod 600 .env
 
-# CORS
-CORS_ALLOWED_ORIGINS=https://bldrdojo.com,https://www.bldrdojo.com
+# Generate Django secret key
+python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'
+# Copy the output and update DJANGO_SECRET_KEY in .env
+
+# Generate other passwords
+openssl rand -base64 32  # Use for POSTGRES_PASSWORD
+openssl rand -base64 32  # Use for REDIS_PASSWORD
+openssl rand -base64 32  # Use for MEILI_MASTER_KEY
+openssl rand -base64 32  # Use for NEO4J_PASSWORD
 ```
 
-Save and exit (Ctrl+X, Y, Enter in nano).
-
-### 4. Verify Environment File
+### Create Required Directories
 
 ```bash
-# Check for required variables
-grep -E "change-this|your-" .env
+cd /home/deploy/data-backend
 
-# If output shows any placeholders, update them!
+# Create directories for logs and backups
+mkdir -p logs logs/nginx backups
+
+# Set permissions
+chmod 755 logs backups
+```
+
+### Build and Start Services
+
+```bash
+cd /home/deploy/data-backend
+
+# Build Docker images
+docker compose build
+
+# Start services
+docker compose up -d
+
+# Check service status
+docker compose ps
+
+# View logs
+docker compose logs -f
+
+# Wait for all services to be healthy (may take 2-3 minutes)
+watch docker compose ps
+```
+
+### Initialize Database and Create Superuser
+
+```bash
+# Run migrations (should already run via docker-compose command)
+docker compose exec backend python manage.py migrate
+
+# Create Django superuser
+docker compose exec backend python manage.py createsuperuser
+
+# Create initial data (if you have fixtures)
+# docker compose exec backend python manage.py loaddata initial_data.json
+
+# Index data in MeiliSearch
+docker compose exec backend python manage.py sync_meilisearch
 ```
 
 ---
 
-## Building and Deploying
+## 6. Post-Deployment
 
-### 1. Build Docker Images
-
-```bash
-cd /opt/bldrdojo
-
-# Build all images
-docker-compose build
-
-# This will take 5-15 minutes depending on your server
-```
-
-### 2. Start Services
-
-```bash
-# Start in detached mode
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Check status
-docker-compose ps
-```
-
-### 3. Initialize Database
-
-```bash
-# Wait for services to be healthy (30-60 seconds)
-docker-compose ps
-
-# Run migrations
-docker-compose exec backend python manage.py migrate
-
-# Create superuser
-docker-compose exec backend python manage.py createsuperuser
-
-# Collect static files
-docker-compose exec backend python manage.py collectstatic --noinput
-```
-
-### 4. Configure Google OAuth
-
-```bash
-# Access Django shell
-docker-compose exec backend python manage.py shell
-
-# Run these Python commands:
-from django.contrib.sites.models import Site
-from allauth.socialaccount.models import SocialApp
-
-# Update site
-site = Site.objects.get_current()
-site.domain = 'bldrdojo.com'
-site.name = 'Bldrdojo'
-site.save()
-
-# Create Google OAuth app
-google_app, created = SocialApp.objects.get_or_create(
-    provider='google',
-    defaults={
-        'name': 'Google',
-        'client_id': 'YOUR_GOOGLE_CLIENT_ID',
-        'secret': 'YOUR_GOOGLE_CLIENT_SECRET',
-    }
-)
-google_app.sites.add(site)
-google_app.save()
-
-exit()
-```
-
-### 5. Verify Deployment
+### Verify Deployment
 
 ```bash
 # Check all containers are running
-docker-compose ps
+docker compose ps
 
-# Test backend health
-curl http://localhost:8000/api/health/
+# Test backend API
+curl https://bldrdojo.com/api/health/
 
 # Test frontend
-curl http://localhost/health
+curl https://bldrdojo.com/
 
-# View logs
-docker-compose logs backend
-docker-compose logs frontend
+# Check logs for errors
+docker compose logs backend | tail -100
+docker compose logs frontend | tail -100
 ```
 
-### 6. Access Your Application
+### Access Admin Panel
 
-- **Frontend**: https://bldrdojo.com
-- **API**: https://bldrdojo.com/api/
-- **Admin Panel**: https://bldrdojo.com/admin/
+1. Navigate to `https://bldrdojo.com/admin/`
+2. Login with superuser credentials
+3. Verify data is accessible
 
----
-
-## Database Management
-
-### Backup Database
+### Setup Monitoring
 
 ```bash
-# Manual backup
-docker-compose exec db pg_dump -U postgres entitydb > backups/backup_$(date +%Y%m%d_%H%M%S).sql
+# Monitor container resource usage
+docker stats
 
-# Or use postgres in container
-docker-compose exec db pg_dump -U postgres -Fc entitydb > backups/backup_$(date +%Y%m%d_%H%M%S).dump
+# View logs in real-time
+docker compose logs -f --tail=100
+
+# Check disk usage
+df -h
+docker system df
 ```
 
-### Automated Backups
-
-Create backup script:
+### Setup Automated Backups
 
 ```bash
-cat > /opt/bldrdojo/backup.sh << 'EOF'
+# Create backup script
+cat > /home/deploy/backup.sh << 'EOF'
 #!/bin/bash
-cd /opt/bldrdojo
+BACKUP_DIR="/home/deploy/data-backend/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
-docker-compose exec -T db pg_dump -U postgres -Fc entitydb > backups/backup_$DATE.dump
 
-# Keep only last 30 days
-find backups/ -name "backup_*.dump" -mtime +30 -delete
+# Backup PostgreSQL
+docker compose exec -T db pg_dump -U postgres entitydb | gzip > "$BACKUP_DIR/postgres_$DATE.sql.gz"
 
-echo "Backup completed: backup_$DATE.dump"
+# Backup volumes
+docker run --rm -v bldrdojo-postgres-data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/postgres_volume_$DATE.tar.gz -C /data .
+docker run --rm -v bldrdojo-neo4j-data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/neo4j_volume_$DATE.tar.gz -C /data .
+docker run --rm -v bldrdojo-media:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/media_$DATE.tar.gz -C /data .
+
+# Keep only last 7 days of backups
+find $BACKUP_DIR -name "*.gz" -mtime +7 -delete
+
+echo "Backup completed: $DATE"
 EOF
 
-chmod +x /opt/bldrdojo/backup.sh
+chmod +x /home/deploy/backup.sh
 
 # Add to crontab (daily at 2 AM)
-crontab -e
-# Add line:
-# 0 2 * * * /opt/bldrdojo/backup.sh >> /opt/bldrdojo/logs/backup.log 2>&1
-```
-
-### Restore Database
-
-```bash
-# Stop backend
-docker-compose stop backend
-
-# Restore from backup
-docker-compose exec -T db psql -U postgres entitydb < backups/backup_20260130_020000.sql
-
-# Or from .dump file
-docker-compose exec -T db pg_restore -U postgres -d entitydb -c < backups/backup_20260130_020000.dump
-
-# Start backend
-docker-compose start backend
+(crontab -l 2>/dev/null; echo "0 2 * * * /home/deploy/backup.sh >> /home/deploy/logs/backup.log 2>&1") | crontab -
 ```
 
 ---
 
-## Monitoring and Maintenance
+## 7. Maintenance
+
+### Update Application
+
+```bash
+cd /home/deploy/data-backend
+
+# Pull latest code
+git pull origin main
+
+# Rebuild and restart services
+docker compose build
+docker compose up -d
+
+# Run migrations
+docker compose exec backend python manage.py migrate
+
+# Collect static files
+docker compose exec backend python manage.py collectstatic --noinput
+
+# Restart services
+docker compose restart
+```
 
 ### View Logs
 
 ```bash
 # All services
-docker-compose logs -f
+docker compose logs -f
 
 # Specific service
-docker-compose logs -f backend
-docker-compose logs -f frontend
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f db
 
 # Last 100 lines
-docker-compose logs --tail=100 backend
+docker compose logs --tail=100 backend
 ```
 
-### Check Resource Usage
+### Restart Services
 
 ```bash
-# Container stats
-docker stats
+# Restart all services
+docker compose restart
 
-# Disk usage
+# Restart specific service
+docker compose restart backend
+docker compose restart frontend
+
+# Stop all services
+docker compose down
+
+# Start all services
+docker compose up -d
+```
+
+### Database Management
+
+```bash
+# Access PostgreSQL
+docker compose exec db psql -U postgres -d entitydb
+
+# Backup database
+docker compose exec db pg_dump -U postgres entitydb > backup.sql
+
+# Restore database
+cat backup.sql | docker compose exec -T db psql -U postgres -d entitydb
+
+# Access Neo4j browser
+# Navigate to http://<server-ip>:7474 (you may need to open this port temporarily)
+# Or use cypher-shell:
+docker compose exec neo4j cypher-shell -u neo4j -p <NEO4J_PASSWORD>
+```
+
+### Clean Up Docker Resources
+
+```bash
+# Remove unused images
+docker image prune -a
+
+# Remove unused volumes (BE CAREFUL!)
+docker volume prune
+
+# Remove unused networks
+docker network prune
+
+# Full cleanup (BE VERY CAREFUL!)
+docker system prune -a --volumes
+```
+
+### Monitor Resource Usage
+
+```bash
+# Check disk space
+df -h
+
+# Check Docker disk usage
 docker system df
 
-# Clean up unused resources
-docker system prune -a
+# Monitor container resources
+docker stats
+
+# Check memory usage
+free -h
+
+# Check CPU usage
+htop
 ```
 
-### Update Application
+### Troubleshooting
 
-```bash
-cd /opt/bldrdojo
-
-# Pull latest changes
-git pull
-
-# Rebuild and restart
-docker-compose down
-docker-compose build
-docker-compose up -d
-
-# Run migrations
-docker-compose exec backend python manage.py migrate
-
-# Collect static files
-docker-compose exec backend python manage.py collectstatic --noinput
-```
-
-### Scale Services
-
-```bash
-# Scale backend workers
-docker-compose up -d --scale backend=3
-
-# Note: You may need a load balancer for multiple backend instances
-```
-
----
-
-## Troubleshooting
-
-### Service Won't Start
+#### Container won't start
 
 ```bash
 # Check logs
-docker-compose logs <service-name>
+docker compose logs <service-name>
 
-# Check configuration
-docker-compose config
+# Check container status
+docker compose ps
 
-# Restart service
-docker-compose restart <service-name>
+# Restart container
+docker compose restart <service-name>
+
+# Rebuild container
+docker compose up -d --build <service-name>
 ```
 
-### Database Connection Issues
+#### Database connection issues
 
 ```bash
 # Check database is running
-docker-compose ps db
+docker compose ps db
 
-# Test connection
-docker-compose exec backend python manage.py dbshell
+# Check database logs
+docker compose logs db
 
-# Check DATABASE_URL in .env
-docker-compose exec backend env | grep DATABASE
+# Verify environment variables
+docker compose exec backend env | grep DATABASE
+
+# Test database connection
+docker compose exec backend python manage.py dbshell
 ```
 
-### SSL Certificate Issues
+#### SSL certificate issues
 
 ```bash
-# Verify certificate files exist
-ls -la ssl/
+# Check certificate files exist
+ls -la /home/deploy/data-backend/ssl/
 
-# Check nginx config
-docker-compose exec frontend nginx -t
+# Check certificate expiry
+sudo certbot certificates
 
-# View nginx logs
-docker-compose logs frontend
+# Renew certificate manually
+sudo certbot renew
+
+# Copy new certificates
+sudo /etc/letsencrypt/renewal-hooks/deploy/copy-certs.sh
 ```
 
-### Memory Issues
+#### Out of disk space
 
 ```bash
-# Check available memory
-free -h
+# Check disk usage
+df -h
 
-# Add swap if needed
-sudo fallocate -l 4G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-```
+# Clean Docker resources
+docker system prune -a
 
-### High CPU Usage
+# Remove old backups
+find /home/deploy/data-backend/backups -mtime +30 -delete
 
-```bash
-# Identify culprit
-docker stats
+# Check log file sizes
+du -sh /home/deploy/data-backend/logs/*
 
-# Check backend workers
-docker-compose exec backend ps aux
-
-# Restart service
-docker-compose restart backend
+# Rotate logs
+docker compose logs --tail=1000 backend > /tmp/backend.log
+docker compose restart backend
 ```
 
 ---
 
-## Backup and Recovery
+## Security Checklist
 
-### Full System Backup
+- [ ] Firewall configured (UFW)
+- [ ] SSH key authentication enabled
+- [ ] Root login disabled
+- [ ] Strong passwords for all services
+- [ ] SSL certificates installed
+- [ ] Django DEBUG=False
+- [ ] Django SECRET_KEY is random and secure
+- [ ] ALLOWED_HOSTS configured
+- [ ] CSRF_TRUSTED_ORIGINS configured
+- [ ] Database passwords are strong
+- [ ] .env file permissions set to 600
+- [ ] Regular backups configured
+- [ ] Log monitoring setup
+- [ ] Security headers configured in nginx
+
+---
+
+## Performance Tuning
+
+### For 8GB+ Linode
+
+Update `docker-compose.yml` resource limits:
+
+```yaml
+# Increase Neo4j memory
+neo4j:
+  environment:
+    - NEO4J_dbms_memory_pagecache_size=1G
+    - NEO4J_dbms_memory_heap_initial__size=1G
+    - NEO4J_dbms_memory_heap_max__size=2G
+
+# Increase backend workers
+backend:
+  command: >
+    sh -c "
+      python manage.py migrate &&
+      python manage.py collectstatic --noinput &&
+      gunicorn --bind 0.0.0.0:8000 --workers 8 --timeout 120 config.wsgi:application
+    "
+```
+
+---
+
+## Quick Reference Commands
 
 ```bash
-#!/bin/bash
-# full-backup.sh
+# Start services
+docker compose up -d
 
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR=/opt/bldrdojo/backups/full_$DATE
+# Stop services
+docker compose down
 
-mkdir -p $BACKUP_DIR
+# View logs
+docker compose logs -f
+
+# Restart a service
+docker compose restart backend
+
+# Rebuild and restart
+docker compose up -d --build
+
+# Run Django management command
+docker compose exec backend python manage.py <command>
+
+# Access Django shell
+docker compose exec backend python manage.py shell
+
+# Create superuser
+docker compose exec backend python manage.py createsuperuser
+
+# Run migrations
+docker compose exec backend python manage.py migrate
 
 # Backup database
-docker-compose exec -T db pg_dump -U postgres -Fc entitydb > $BACKUP_DIR/database.dump
+docker compose exec db pg_dump -U postgres entitydb > backup.sql
 
-# Backup volumes
-docker run --rm -v bldrdojo-postgres-data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/postgres-data.tar.gz -C /data .
-docker run --rm -v bldrdojo-media:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/media.tar.gz -C /data .
-docker run --rm -v bldrdojo-vector-data:/data -v $BACKUP_DIR:/backup alpine tar czf /backup/vector-data.tar.gz -C /data .
+# Check service status
+docker compose ps
 
-# Backup .env file
-cp .env $BACKUP_DIR/
-
-# Create archive
-tar czf backups/full_backup_$DATE.tar.gz -C backups full_$DATE
-
-# Clean up temp directory
-rm -rf $BACKUP_DIR
-
-echo "Full backup completed: full_backup_$DATE.tar.gz"
-```
-
-### Disaster Recovery
-
-```bash
-# 1. Extract backup
-tar xzf full_backup_20260130_020000.tar.gz
-
-# 2. Stop services
-docker-compose down -v
-
-# 3. Restore volumes
-docker run --rm -v bldrdojo-postgres-data:/data -v $(pwd)/full_20260130_020000:/backup alpine tar xzf /backup/postgres-data.tar.gz -C /data
-docker run --rm -v bldrdojo-media:/data -v $(pwd)/full_20260130_020000:/backup alpine tar xzf /backup/media.tar.gz -C /data
-docker run --rm -v bldrdojo-vector-data:/data -v $(pwd)/full_20260130_020000:/backup alpine tar xzf /backup/vector-data.tar.gz -C /data
-
-# 4. Restore .env
-cp full_20260130_020000/.env .env
-
-# 5. Start services
-docker-compose up -d
-
-# 6. Restore database
-docker-compose exec -T db pg_restore -U postgres -d entitydb -c < full_20260130_020000/database.dump
+# View resource usage
+docker stats
 ```
 
 ---
 
-## Production Checklist
+## Support and Troubleshooting
 
-- [ ] SSL certificates installed and working
-- [ ] All secrets changed from defaults in `.env`
-- [ ] `DJANGO_DEBUG=False` in production
-- [ ] Google OAuth configured with production credentials
-- [ ] Email configuration tested
-- [ ] Automated backups configured
-- [ ] Monitoring/alerting setup
-- [ ] Firewall configured (only 80, 443, 22 open)
-- [ ] Regular security updates scheduled
-- [ ] Log rotation configured
-- [ ] Domain DNS pointing to server
-- [ ] Health checks passing
+If you encounter issues:
 
----
+1. Check logs: `docker compose logs -f`
+2. Verify all services are healthy: `docker compose ps`
+3. Check disk space: `df -h`
+4. Verify DNS: `dig bldrdojo.com`
+5. Test SSL: `curl -I https://bldrdojo.com`
+6. Check firewall: `sudo ufw status`
 
-## Security Best Practices
-
-1. **Keep secrets secure**: Never commit `.env` to version control
-2. **Regular updates**: Update Docker images monthly
-3. **Monitor logs**: Check for suspicious activity
-4. **Limit access**: Use SSH keys, disable password auth
-5. **Backup regularly**: Test restore procedures
-6. **Use strong passwords**: 32+ character random strings
-7. **Enable firewall**: Only expose necessary ports
-8. **SSL only**: Force HTTPS redirect
-
----
-
-## Support
-
-For issues or questions:
-- Check logs: `docker-compose logs -f`
-- Review documentation: This file
-- Test locally first
-- Contact system administrator
-
----
-
-**Last Updated**: 2026-01-30  
-**Version**: 1.0.0
+For additional help, check:
+- Django logs: `/home/deploy/data-backend/logs/`
+- Nginx logs: `/home/deploy/data-backend/logs/nginx/`
+- Docker logs: `docker compose logs`
