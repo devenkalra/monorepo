@@ -1,18 +1,10 @@
 import React from 'react';
+import { getMediaUrl } from '../utils/apiUrl';
 
 function EntityList({ entities, onEntityClick }) {
     if (!entities.length) {
         return <p className="text-center text-gray-500">No entities found.</p>;
     }
-
-    const getMediaUrl = (url) => {
-        if (!url) return url;
-        if (url.startsWith('http')) return url;
-        if (url.startsWith('/media/')) {
-            return `http://localhost:8000${url}`;
-        }
-        return url;
-    };
 
     const getFirstPhotoThumbnail = (entity) => {
         if (!entity.photos || entity.photos.length === 0) return null;

@@ -29,12 +29,12 @@ sys.path.append(str(LIBS_DIR / 'py-string-helpers'))
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-4!!v@8jh2)275w*ulh922wn^nq&v)2q%%q&l4uz_ga(&%8ehxd'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-4!!v@8jh2)275w*ulh922wn^nq&v)2q%%q&l4uz_ga(&%8ehxd')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.environ.get('DJANGO_ALLOWED_HOSTS') else ['localhost', '127.0.0.1']
 
 
 # Application definition
@@ -148,7 +148,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_DIRS = [
     BASE_DIR / 'static',
@@ -167,23 +167,29 @@ NEO4J_AUTH = (
 )
 
 # MeiliSearch Configuration
-MEILI_URL = os.environ.get('MEILISEARCH_URL', 'http://localhost:7700')
-MEILI_KEY = os.environ.get('MEILI_MASTER_KEY', 'fLu2dwdPwSjCFr_jisqxN-qumCCshfGj3P16zVeijJ8')
+MEILISEARCH_URL = os.environ.get('MEILISEARCH_URL', 'http://localhost:7700')
+MEILI_MASTER_KEY = os.environ.get('MEILI_MASTER_KEY', 'fLu2dwdPwSjCFr_jisqxN-qumCCshfGj3P16zVeijJ8')
 
 # Vector Database Configuration (ChromaDB)
 VECTOR_DB_PATH = BASE_DIR / 'vector_db'
 VECTOR_MODEL = 'all-MiniLM-L6-v2'  # Sentence transformer model for embeddings
-VECTOR_SERVICE_URL = 'http://localhost:8002'  # Standalone vector search service
+VECTOR_SERVICE_URL = os.environ.get('VECTOR_SERVICE_URL', 'http://localhost:8002')
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-    "http://127.0.0.1:5174",
-]
+# Parse CORS_ALLOWED_ORIGINS from environment or use defaults for development
+cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
+if cors_origins_env:
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',')]
+else:
+    # Development defaults
+    CORS_ALLOWED_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+    ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -213,14 +219,19 @@ REST_FRAMEWORK = {
 # JWT Configuration
 from datetime import timedelta
 
+# Use separate JWT secret key if provided, otherwise fall back to Django SECRET_KEY
+JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', SECRET_KEY)
+JWT_ACCESS_TOKEN_LIFETIME_MINUTES = int(os.environ.get('JWT_ACCESS_TOKEN_LIFETIME_MINUTES', '60'))
+JWT_REFRESH_TOKEN_LIFETIME_DAYS = int(os.environ.get('JWT_REFRESH_TOKEN_LIFETIME_DAYS', '7'))
+
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=JWT_ACCESS_TOKEN_LIFETIME_MINUTES),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=JWT_REFRESH_TOKEN_LIFETIME_DAYS),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
+    'SIGNING_KEY': JWT_SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
     'USER_ID_FIELD': 'id',
@@ -268,4 +279,5 @@ REST_AUTH = {
     'JWT_AUTH_COOKIE': 'auth-token',
     'JWT_AUTH_REFRESH_COOKIE': 'refresh-token',
     'USER_DETAILS_SERIALIZER': 'people.serializers.UserSerializer',
+    'REGISTER_SERIALIZER': 'people.serializers.CustomRegisterSerializer',
 }

@@ -1,6 +1,7 @@
 from django.db.models import Q
 from django.contrib.auth.models import User
 from rest_framework import serializers
+from dj_rest_auth.registration.serializers import RegisterSerializer
 from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag
 
 class UserSerializer(serializers.ModelSerializer):
@@ -9,6 +10,34 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name']
         read_only_fields = ['id']
+
+
+class CustomRegisterSerializer(RegisterSerializer):
+    """Custom registration serializer that doesn't require username"""
+    username = None  # Remove username field
+    
+    def get_cleaned_data(self):
+        return {
+            'email': self.validated_data.get('email', ''),
+            'password1': self.validated_data.get('password1', ''),
+        }
+    
+    def save(self, request):
+        from allauth.account.utils import setup_user_email
+        from allauth.account.models import EmailAddress
+        
+        email = self.get_cleaned_data()['email']
+        password = self.get_cleaned_data()['password1']
+        
+        # Create user with email as username
+        user = User.objects.create_user(
+            username=email,  # Use email as username
+            email=email,
+            password=password
+        )
+        
+        setup_user_email(request, user, [])
+        return user
 
 
 class EntitySerializer(serializers.ModelSerializer):

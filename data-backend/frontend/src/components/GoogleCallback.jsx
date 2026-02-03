@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { getApiBaseUrl } from '../utils/apiUrl';
 
 export default function GoogleCallback() {
   const [searchParams] = useSearchParams();
@@ -27,8 +28,10 @@ export default function GoogleCallback() {
       }
 
       try {
+        const API_BASE = getApiBaseUrl();
+        
         // Exchange the authorization code for tokens
-        const response = await fetch('http://localhost:8000/api/auth/google/', {
+        const response = await fetch(`${API_BASE}/api/auth/google/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -48,7 +51,7 @@ export default function GoogleCallback() {
         localStorage.setItem('refresh_token', data.refresh);
 
         // Get user info
-        const userResponse = await fetch('http://localhost:8000/api/auth/user/', {
+        const userResponse = await fetch(`${API_BASE}/api/auth/user/`, {
           headers: {
             'Authorization': `Bearer ${data.access}`
           }

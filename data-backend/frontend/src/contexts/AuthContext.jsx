@@ -1,3 +1,4 @@
+import { getApiBaseUrl } from '../utils/apiUrl';
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { jwtDecode } from 'jwt-decode';
 
@@ -12,7 +13,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const token = localStorage.getItem('access_token');
     const userStr = localStorage.getItem('current_user');
-    
+
     if (token && userStr) {
       // Check if token is expired
       try {
@@ -33,7 +34,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async (email, password) => {
-    const response = await fetch('http://localhost:8000/api/auth/login/', {
+    const response = await fetch(`${getApiBaseUrl()}/api/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -45,20 +46,20 @@ export const AuthProvider = ({ children }) => {
     }
 
     const data = await response.json();
-    
+
     // Store tokens and user info
     localStorage.setItem('access_token', data.access);
     localStorage.setItem('refresh_token', data.refresh);
     localStorage.setItem('current_user', JSON.stringify(data.user));
-    
+
     setAccessToken(data.access);
     setUser(data.user);
-    
+
     return data.user;
   };
 
   const register = async (email, password1, password2) => {
-    const response = await fetch('http://localhost:8000/api/auth/registration/', {
+    const response = await fetch(`${getApiBaseUrl()}/api/auth/registration/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password1, password2 })
@@ -74,15 +75,15 @@ export const AuthProvider = ({ children }) => {
     }
 
     const data = await response.json();
-    
+
     // Store tokens and user info
     localStorage.setItem('access_token', data.access);
     localStorage.setItem('refresh_token', data.refresh);
     localStorage.setItem('current_user', JSON.stringify(data.user));
-    
+
     setAccessToken(data.access);
     setUser(data.user);
-    
+
     return data.user;
   };
 
@@ -90,7 +91,7 @@ export const AuthProvider = ({ children }) => {
     // Call logout endpoint
     if (accessToken) {
       try {
-        await fetch('http://localhost:8000/api/auth/logout/', {
+        await fetch(`${getApiBaseUrl()}/api/auth/logout/`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${accessToken}`
@@ -105,21 +106,21 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('current_user');
-    
+
     setAccessToken(null);
     setUser(null);
   };
 
   const refreshToken = async () => {
     const refresh = localStorage.getItem('refresh_token');
-    
+
     if (!refresh) {
       logout();
       return null;
     }
 
     try {
-      const response = await fetch('http://localhost:8000/api/auth/token/refresh/', {
+      const response = await fetch(`${getApiBaseUrl()}/api/auth/token/refresh/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refresh })

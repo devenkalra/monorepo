@@ -1,3 +1,4 @@
+import { getMediaUrl } from '../utils/apiUrl';
 import React, { useState } from 'react';
 import api from '../services/api';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -126,9 +127,7 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
             if (response.ok) {
                 const result = await response.json();
                 // Use the full URL from the upload result
-                const uploadedUrl = result.url.startsWith('http') 
-                    ? result.url 
-                    : `http://localhost:8000${result.url}`;
+		const uploadedUrl = getMediaUrl(result.url);
                 
                 editor.chain().focus().setImage({ src: uploadedUrl }).run();
                 setShowImageDialog(false);

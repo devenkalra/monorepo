@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getApiBaseUrl } from '../utils/apiUrl';
 
 export default function GoogleLoginButton() {
   const [loading, setLoading] = useState(false);
@@ -7,8 +8,10 @@ export default function GoogleLoginButton() {
     setLoading(true);
     
     try {
+      const API_BASE = getApiBaseUrl();
+      
       // Get the Google OAuth URL from the backend
-      const response = await fetch('http://localhost:8000/api/auth/google/url/');
+      const response = await fetch(`${API_BASE}/api/auth/google/url/`);
       const data = await response.json();
       
       if (data.url) {

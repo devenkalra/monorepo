@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import ImageLightbox from './ImageLightbox';
 import RichTextEditor from './RichTextEditor';
 import api from '../services/api';
+import { getMediaUrl } from '../utils/apiUrl';
 
 function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialViewMode }) {
     const navigate = useNavigate();
@@ -38,11 +39,11 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 photos: Array.isArray(entity.photos) ? entity.photos : (entity.photos ? [] : []),
                 attachments: Array.isArray(entity.attachments) ? entity.attachments : (entity.attachments ? [] : [])
             };
-            
+
             // Store entity for display during animations
             displayEntityRef.current = normalizedEntity;
             setEditedEntity(normalizedEntity);
-            
+
             // Handle initial view mode
             // initialViewMode can be: 'details', 'relations', 'edit', 'relations-edit'
             if (initialViewMode === 'edit') {
@@ -62,7 +63,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 setIsEditing(false);
                 setViewMode(initialViewMode || 'details');
             }
-            
+
             setNewPhotos([]);
             setNewAttachments([]);
             setDeletedPhotos([]);
@@ -130,7 +131,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         if (!confirm(confirmMessage)) return;
 
         try {
-            const endpoint = entity.type === 'Person' 
+            const endpoint = entity.type === 'Person'
                 ? `/api/people/${entity.id}/`
                 : entity.type === 'Note'
                 ? `/api/notes/${entity.id}/`
@@ -305,7 +306,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     // Get valid entity types that can be related to the current entity
     const getValidEntityTypes = (currentEntityType) => {
         const validTypes = new Set();
-        
+
         RELATION_SCHEMA.forEach(schema => {
             // Check forward direction
             if (schema.fromEntity === currentEntityType || schema.fromEntity === '*') {
@@ -325,34 +326,34 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 }
             }
         });
-        
+
         return Array.from(validTypes);
     };
 
     // Get valid relation types between two entity types
     const getValidRelationTypes = (fromType, toType) => {
         const validRelations = [];
-        
+
         RELATION_SCHEMA.forEach(schema => {
             // Check forward direction
-            if ((schema.fromEntity === fromType || schema.fromEntity === '*') && 
+            if ((schema.fromEntity === fromType || schema.fromEntity === '*') &&
                 (schema.toEntity === toType || schema.toEntity === '*')) {
                 validRelations.push(schema.key);
             }
             // Check reverse direction
-            if ((schema.toEntity === fromType || schema.toEntity === '*') && 
+            if ((schema.toEntity === fromType || schema.toEntity === '*') &&
                 (schema.fromEntity === toType || schema.fromEntity === '*')) {
                 validRelations.push(schema.reverseKey);
             }
         });
-        
+
         // Remove duplicates
         return [...new Set(validRelations)];
     };
 
     const searchEntities = async (query) => {
         setEntitySearchQuery(query);
-        
+
         if (!query || query.length < 2) {
             setEntitySearchResults([]);
             return;
@@ -361,11 +362,11 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             const response = await api.fetch(`/api/search/?q=${encodeURIComponent(query)}`);
             if (response.ok) {
                 const data = await response.json();
-                
+
                 // Filter results to only show entity types that can be related to current entity
                 const validTypes = getValidEntityTypes(entity.type);
                 const filteredData = data.filter(result => validTypes.includes(result.type));
-                
+
                 setEntitySearchResults(filteredData);
             }
         } catch (error) {
@@ -382,12 +383,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             // No target entity selected yet - show all possible relations for current entity
             const allRelations = new Set();
             const validTypes = getValidEntityTypes(entity.type);
-            
+
             validTypes.forEach(targetType => {
                 const relations = getValidRelationTypes(entity.type, targetType);
                 relations.forEach(rel => allRelations.add(rel));
             });
-            
+
             setAvailableRelationTypes(Array.from(allRelations));
         }
     };
@@ -540,7 +541,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             // Remove empty strings, empty arrays, and null values
             Object.keys(dataToSave).forEach(key => {
                 const value = dataToSave[key];
-                if (value === '' || value === null || 
+                if (value === '' || value === null ||
                     (Array.isArray(value) && value.length === 0)) {
                     delete dataToSave[key];
                 }
@@ -548,12 +549,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
 
             const isNewEntity = entity?.isNew === true;
             const method = isNewEntity ? 'POST' : 'PATCH';
-            
+
             // Determine endpoint based on type and whether it's new or existing
             let endpoint;
             if (isNewEntity) {
                 // For new entities, use the collection endpoint (without ID)
-                endpoint = editedEntity.type === 'Person' 
+                endpoint = editedEntity.type === 'Person'
                     ? `/api/people/`
                     : editedEntity.type === 'Note'
                     ? `/api/notes/`
@@ -572,7 +573,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     : `/api/entities/`;
             } else {
                 // For existing entities, use the detail endpoint (with ID)
-                endpoint = editedEntity.type === 'Person' 
+                endpoint = editedEntity.type === 'Person'
                     ? `/api/people/${editedEntity.id}/`
                     : editedEntity.type === 'Note'
                     ? `/api/notes/${editedEntity.id}/`
@@ -608,12 +609,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 setNewAttachments([]);
                 setDeletedPhotos([]);
                 setDeletedAttachments([]);
-                
+
                 // Navigate to detail view after save
                 if (savedEntity.id && savedEntity.id !== 'new') {
                     navigate(`/entity/${savedEntity.id}`);
                 }
-                
+
                 // Notify parent component of the update or creation
                 if (isNewEntity && onCreate) {
                     onCreate(savedEntity);
@@ -636,16 +637,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     if (!shouldRender) return null;
 
     const displayEntity = isEditing ? editedEntity : displayEntityRef.current;
-    
+
     // Helper to convert relative media URLs to full API URLs
-    const getMediaUrl = (url) => {
-        if (!url) return url;
-        if (url.startsWith('http')) return url; // Already absolute
-        if (url.startsWith('/media/')) {
-            return `http://localhost:8000${url}`;
-        }
-        return url;
-    };
 
     const formatDate = (dateString) => {
         if (!dateString) return 'N/A';
@@ -723,7 +716,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     onClick={handleClose}
                 />
             )}
-            
+
             {/* Detail Panel */}
             <div className={`fixed inset-0 bg-white dark:bg-gray-800 shadow-2xl z-50 overflow-y-auto transition-transform duration-300 ease-in-out ${
                 isAnimating ? 'translate-x-0' : 'translate-x-full'
@@ -849,26 +842,26 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             <>
                                 {renderField('ID', displayEntity?.id)}
                                 {renderField('Display Name', displayEntity?.display)}
-                                
+
                                 {/* Description - Render as HTML */}
                                 {displayEntity?.description && (
                                     <div className="mb-4">
                                         <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
                                             Description
                                         </h3>
-                                        <div 
+                                        <div
                                             className="prose dark:prose-invert max-w-none text-gray-900 dark:text-gray-100"
                                             dangerouslySetInnerHTML={{ __html: displayEntity.description }}
                                         />
                                     </div>
                                 )}
-                                
+
                                 {renderField('Type', displayEntity?.type)}
                             </>
                         ) : (
                             <>
                                 {!entity?.isNew && renderField('ID', displayEntity?.id)}
-                                
+
                                 {/* Type selector for new entities, read-only for existing */}
                                 {entity?.isNew ? (
                                     <div className="mb-4">
@@ -893,9 +886,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                 ) : (
                                     renderField('Type', displayEntity?.type)
                                 )}
-                                
+
                                 {renderEditableField('Display Name', 'display', editedEntity?.display)}
-                                
+
                                 {/* Description - Rich Text Editor */}
                                 <div className="mb-4">
                                     <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
@@ -1146,7 +1139,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                 Photos
                             </h3>
-                            
+
                             {/* Existing Photos */}
                             {(editedEntity?.photos?.length > 0 || displayEntity.photos?.length > 0) && (
                                 <div className={`mb-4 ${isEditing ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'}`}>
@@ -1158,7 +1151,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         const photoFilename = typeof photo === 'string' ? photo.split('/').pop() : (photo.filename || photo.url.split('/').pop());
                                         const displayCaption = photoCaption || photoFilename;
                                         const totalPhotos = (isEditing ? editedEntity.photos : displayEntity.photos).length;
-                                        
+
                                         return isEditing ? (
                                             // Edit Mode: Larger thumbnails with controls
                                             <div key={idx} className="relative group">
@@ -1190,7 +1183,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                                     </svg>
                                                 </button>
-                                                
+
                                                 {/* Reorder Buttons */}
                                                 <div className="absolute top-1 left-1 flex flex-col gap-1">
                                                     {idx > 0 && (
@@ -1222,7 +1215,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         </button>
                                                     )}
                                                 </div>
-                                                
+
                                                 {/* Caption Input */}
                                                 <div className="mt-1">
                                                     <input
@@ -1278,7 +1271,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     })}
                                 </div>
                             )}
-                            
+
                             {/* New Photos Preview */}
                             {isEditing && newPhotos.length > 0 && (
                                 <div className="mb-4">
@@ -1319,7 +1312,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     </div>
                                 </div>
                             )}
-                            
+
                             {/* Add Photos Button */}
                             {isEditing && (
                                 <div>
@@ -1347,7 +1340,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                 Attachments
                             </h3>
-                            
+
                             {/* Existing Attachments */}
                             {(editedEntity?.attachments?.length > 0 || displayEntity.attachments?.length > 0) && (
                                 <div className={`mb-4 ${isEditing ? 'space-y-2' : 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'}`}>
@@ -1357,14 +1350,14 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         const thumbnailUrl = typeof attachment === 'string' ? null : (attachment.thumbnail_url || attachment.preview_url);
                                         const previewUrl = typeof attachment === 'string' ? null : attachment.preview_url;
                                         // Use original filename if available, otherwise extract from URL
-                                        const filename = typeof attachment === 'string' 
-                                            ? attachment.split('/').pop() 
+                                        const filename = typeof attachment === 'string'
+                                            ? attachment.split('/').pop()
                                             : (attachment.filename || attachment.url.split('/').pop());
                                         const attachmentCaption = typeof attachment === 'string' ? '' : (attachment.caption || '');
                                         // Display caption if available, otherwise show filename
                                         const displayName = attachmentCaption || filename;
                                         const totalAttachments = (isEditing ? editedEntity.attachments : displayEntity.attachments).length;
-                                        
+
                                         return isEditing ? (
                                             // Edit Mode: Row layout with controls
                                             <div key={idx} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-700 rounded">
@@ -1391,7 +1384,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         </svg>
                                                     </button>
                                                 </div>
-                                                
+
                                                 {/* Thumbnail Preview */}
                                                 {thumbnailUrl && (
                                                     <img
@@ -1407,12 +1400,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         title="Click to view preview"
                                                     />
                                                 )}
-                                                
+
                                                 {/* File Info */}
                                                 <div className="flex-1 min-w-0">
-                                                    <a 
-                                                        href={getMediaUrl(attachmentUrl)} 
-                                                        target="_blank" 
+                                                    <a
+                                                        href={getMediaUrl(attachmentUrl)}
+                                                        target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="text-blue-600 dark:text-blue-400 hover:underline truncate block"
                                                         title={`Download ${filename}`}
@@ -1446,7 +1439,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         className="w-full mt-1 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                                                     />
                                                 </div>
-                                                
+
                                                 {/* Delete Button */}
                                                 <button
                                                     onClick={() => handleDeleteAttachment(attachment)}
@@ -1475,9 +1468,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                             }}
                                                             title="Click to view preview"
                                                         />
-                                                        <a 
-                                                            href={getMediaUrl(attachmentUrl)} 
-                                                            target="_blank" 
+                                                        <a
+                                                            href={getMediaUrl(attachmentUrl)}
+                                                            target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-xs text-blue-600 dark:text-blue-400 hover:underline text-center w-full truncate px-1"
                                                             title={displayName}
@@ -1493,9 +1486,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                                             </svg>
                                                         </div>
-                                                        <a 
-                                                            href={getMediaUrl(attachmentUrl)} 
-                                                            target="_blank" 
+                                                        <a
+                                                            href={getMediaUrl(attachmentUrl)}
+                                                            target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="text-xs text-blue-600 dark:text-blue-400 hover:underline text-center w-full truncate px-1"
                                                             title={displayName}
@@ -1509,7 +1502,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     })}
                                 </div>
                             )}
-                            
+
                             {/* New Attachments Preview */}
                             {isEditing && newAttachments.length > 0 && (
                                 <div className="mb-4">
@@ -1548,7 +1541,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     </div>
                                 </div>
                             )}
-                            
+
                             {/* Add Attachments Button */}
                             {isEditing && (
                                 <div>
@@ -1575,7 +1568,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                 URLs
                             </h3>
-                            
+
                             {/* Existing URLs */}
                             {(editedEntity?.urls?.length > 0 || displayEntity.urls?.length > 0) && (
                                 <div className={`mb-4 ${isEditing ? 'space-y-2' : 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3'}`}>
@@ -1587,15 +1580,15 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         const displayText = urlCaption || url;
                                         // Shorten display text if necessary
                                         const shortenedText = displayText.length > 40 ? displayText.substring(0, 37) + '...' : displayText;
-                                        
+
                                         return isEditing ? (
                                             // Edit Mode: Row layout with controls
                                             <div key={idx} className="flex items-center gap-3 p-2 bg-gray-50 dark:bg-gray-700 rounded">
                                                 {/* URL Link */}
                                                 <div className="flex-1 min-w-0">
-                                                    <a 
-                                                        href={url} 
-                                                        target="_blank" 
+                                                    <a
+                                                        href={url}
+                                                        target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="text-blue-600 dark:text-blue-400 hover:underline truncate block"
                                                         title={url}
@@ -1619,7 +1612,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         className="w-full px-2 py-1 mt-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                                                     />
                                                 </div>
-                                                
+
                                                 {/* Delete Button */}
                                                 <button
                                                     onClick={() => {
@@ -1637,9 +1630,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         ) : (
                                             // Detail Mode: Grid item
                                             <div key={idx} className="flex flex-col items-start gap-1 p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                                                <a 
-                                                    href={url} 
-                                                    target="_blank" 
+                                                <a
+                                                    href={url}
+                                                    target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="text-blue-600 dark:text-blue-400 hover:underline text-sm truncate w-full"
                                                     title={displayText}
@@ -1651,7 +1644,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     })}
                                 </div>
                             )}
-                            
+
                             {/* Add URL Button */}
                             {isEditing && (
                                 <div className="flex gap-2">
@@ -1729,7 +1722,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                             <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                                                 Add New Relation
                                             </h4>
-                                            
+
                                             {/* Entity Search */}
                                             <div className="mb-4">
                                                 <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
@@ -1749,8 +1742,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                             <button
                                                                 key={result.id}
                                                                 onClick={() => {
-                                                                    setNewRelation(prev => ({ 
-                                                                        ...prev, 
+                                                                    setNewRelation(prev => ({
+                                                                        ...prev,
                                                                         targetEntity: result.id,
                                                                         targetEntityData: result
                                                                     }));
@@ -1779,8 +1772,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         </p>
                                                         <button
                                                             onClick={() => {
-                                                                setNewRelation(prev => ({ 
-                                                                    ...prev, 
+                                                                setNewRelation(prev => ({
+                                                                    ...prev,
                                                                     targetEntity: '',
                                                                     targetEntityData: null,
                                                                     relationType: ''
@@ -1843,7 +1836,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                             Relations ({relations.outgoing.length})
                                         </h3>
-                                        
+
                                         {/* Filter and Expand/Collapse Controls */}
                                         {relations.outgoing.length > 0 && (
                                             <div className="mb-4 space-y-2">
@@ -1896,7 +1889,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                 )}
                                             </div>
                                         )}
-                                        
+
                                         {relations.outgoing.length === 0 ? (
                                             <p className="text-gray-500 dark:text-gray-400 text-sm">No relations</p>
                                         ) : (
@@ -1918,12 +1911,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         const entityName = (rel.entity.display || rel.entity.label || '').toLowerCase();
                                                         return entityName.includes(relationsFilter.toLowerCase());
                                                     });
-                                                    
+
                                                     // Don't show relation type if no entities match filter
                                                     if (filteredRels.length === 0) return null;
-                                                    
+
                                                     const isExpanded = expandedRelations[relationType] !== false;
-                                                    
+
                                                     return (
                                                         <div key={relationType} className="space-y-2">
                                                             {/* Relation Type Header */}
@@ -1938,10 +1931,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                                     className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition"
                                                                     title={isExpanded ? "Collapse" : "Expand"}
                                                                 >
-                                                                    <svg 
+                                                                    <svg
                                                                         className={`w-4 h-4 text-gray-600 dark:text-gray-400 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                                                                        fill="none" 
-                                                                        stroke="currentColor" 
+                                                                        fill="none"
+                                                                        stroke="currentColor"
                                                                         viewBox="0 0 24 24"
                                                                     >
                                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1954,7 +1947,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                                     ({filteredRels.length}{relationsFilter && ` of ${rels.length}`})
                                                                 </span>
                                                             </div>
-                                                            
+
                                                             {/* Entities with this relation type */}
                                                             {isExpanded && (
                                                                 <div className="ml-4 space-y-2">
@@ -2020,9 +2013,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     )}
                 </div>
             </div>
-            
+
             {/* Image Lightbox */}
-            <ImageLightbox 
+            <ImageLightbox
                 images={lightboxImages}
                 currentIndex={lightboxIndex}
                 onClose={() => {
