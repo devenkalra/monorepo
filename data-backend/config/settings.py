@@ -36,6 +36,17 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.environ.get('DJANGO_ALLOWED_HOSTS') else ['localhost', '127.0.0.1']
 
+# CSRF trusted origins for production
+csrf_origins_env = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
+if csrf_origins_env:
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        'http://localhost:5174',
+        'http://localhost:3000',
+        'http://127.0.0.1:5174',
+    ]
+
 
 # Application definition
 
@@ -211,11 +222,17 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
+# Exempt API endpoints from CSRF (using JWT authentication instead)
+CSRF_COOKIE_HTTPONLY = False
+CSRF_USE_SESSIONS = False
+# Don't enforce CSRF on API endpoints - we use JWT tokens
+from django.middleware.csrf import get_token
+CSRF_FAILURE_VIEW = 'django.views.csrf.csrf_failure'
+
 # REST Framework Configuration
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',

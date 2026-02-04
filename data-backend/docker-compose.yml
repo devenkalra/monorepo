@@ -116,7 +116,7 @@ services:
     restart: unless-stopped
     volumes:
       - static_volume:/app/staticfiles
-      - media_volume:/app/media
+      - /var/lib/bldrdojo/media:/app/media
       - ./logs:/app/logs
     environment:
       - DJANGO_SETTINGS_MODULE=config.settings
@@ -170,7 +170,7 @@ services:
       - "443:443"
     volumes:
       - static_volume:/app/staticfiles:ro
-      - media_volume:/app/media:ro
+      - /var/lib/bldrdojo/media:/app/media
       - ./ssl:/etc/nginx/ssl:ro
       - ./logs/nginx:/var/log/nginx
     depends_on:
@@ -198,8 +198,6 @@ volumes:
     name: bldrdojo-vector-data
   static_volume:
     name: bldrdojo-static
-  media_volume:
-    name: bldrdojo-media
 
 networks:
   backend-network:
