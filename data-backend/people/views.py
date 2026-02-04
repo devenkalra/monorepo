@@ -959,6 +959,18 @@ class SearchViewSet(viewsets.ViewSet):
             elif len(expanded_tags) == 1:
                 filters.append(f'tags = "{expanded_tags[0]}"')
         
+        # Handle display filter separately
+        display_val = request.query_params.get('display')
+        search_attributes = None
+        if display_val and not query:
+            # If only display filter is specified, use it as the search query restricted to display field
+            query = display_val
+            search_attributes = ['display']
+        elif display_val and query:
+            # If both query and display filter, combine them
+            query = f"{query} {display_val}"
+            search_attributes = ['display', 'description', 'tags']
+        
         # Handle other filters (exact match)
         other_filters = ['first_name', 'last_name', 'gender']
         for key in other_filters:
@@ -982,8 +994,8 @@ class SearchViewSet(viewsets.ViewSet):
         # Import global instance
         from .sync import meili_sync
         
-        # Perform Meilisearch query with user filter
-        results = meili_sync.search(query, filter_str=filter_str)
+        # Perform Meilisearch query with user filter and optional attribute restriction
+        results = meili_sync.search(query, filter_str=filter_str, attributes_to_search_on=search_attributes)
         
         # If we have relation filtering, intersect the results with relation entity IDs
         if relation_entity_ids is not None:

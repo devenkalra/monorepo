@@ -212,12 +212,12 @@ function App() {
   };
 
   const fetchEntities = async () => {
-    const searchQuery = [query, filters.display].filter(Boolean).join(' ').trim();
     const tagSet = new Set(filters.tags);
     if (filters.primaryTag) tagSet.add(filters.primaryTag);
     const tagList = [...tagSet];
     const hasSearch =
-      Boolean(searchQuery) ||
+      Boolean(query) ||
+      Boolean(filters.display) ||
       tagList.length > 0 ||
       filters.types.length > 0 ||
       Boolean(filters.relation);
@@ -228,7 +228,8 @@ function App() {
       params.append('limit', '20');
     } else {
       url = '/api/search/';
-      if (searchQuery) params.append('q', searchQuery);
+      if (query) params.append('q', query);
+      if (filters.display) params.append('display', filters.display);
       if (filters.types.length) params.append('type', filters.types.join(','));
       if (tagList.length) params.append('tags', tagList.join(','));
       if (filters.relation) {

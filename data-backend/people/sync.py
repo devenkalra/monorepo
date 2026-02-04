@@ -280,11 +280,15 @@ class MeiliSync:
         except Exception as e:
             logger.error(f"Error deleting from MeiliSearch: {e}")
 
-    def search(self, query, filter_str=None):
+    def search(self, query, filter_str=None, attributes_to_search_on=None):
         if not self.helper: return []
         try:
             # Basic search
-            params = {'filter': filter_str} if filter_str else {}
+            params = {}
+            if filter_str:
+                params['filter'] = filter_str
+            if attributes_to_search_on:
+                params['attributesToSearchOn'] = attributes_to_search_on
             result = self.helper.client.index(self.index_name).search(query, params)
             return result.get('hits', [])
         except Exception as e:
