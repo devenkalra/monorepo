@@ -17,7 +17,7 @@ from io import StringIO
 import tempfile
 import os
 
-class EntityViewSet(viewsets.ReadOnlyModelViewSet):
+class EntityViewSet(viewsets.ModelViewSet):
     serializer_class = EntitySerializer
     permission_classes = [IsAuthenticated, IsOwner]
     filter_backends = [filters.SearchFilter, DjangoFilterBackend]
@@ -73,7 +73,346 @@ class EntityViewSet(viewsets.ReadOnlyModelViewSet):
             'outgoing': outgoing_data,
             'incoming': incoming_data
         })
-    
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated],
+            parser_classes=[MultiPartParser, FormParser])
+    def import_data(self, request):
+        """Import entities, notes, and relations from JSON file"""
+        from django.db import transaction
+        import logging
+        logger = logging.getLogger(__name__)
+
+        try:
+            if 'file' not in request.FILES:
+                return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+            uploaded_file = request.FILES['file']
+
+            # Read and parse JSON
+            try:
+                import json
+                content = uploaded_file.read().decode('utf-8')
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return Response({'error': 'Invalid JSON file'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Validate format
+            if 'export_version' not in data:
+                return Response({'error': 'Invalid export file format'}, status=status.HTTP_400_BAD_REQUEST)
+
+            logger.info(f"Starting import for user {request.user.email}")
+
+            # Track import statistics
+            stats = {
+                'entities_created': 0,
+                'entities_updated': 0,
+                'people_created': 0,
+                'people_updated': 0,
+                'notes_created': 0,
+                'notes_updated': 0,
+                'relations_created': 0,
+                'relations_updated': 0,
+                'tags_created': 0,
+                'errors': []
+            }
+
+            # Import tags first (they're referenced by other entities)
+            for tag_data in data.get('tags', []):
+                try:
+                    tag, created = Tag.objects.get_or_create(
+                        name=tag_data['name'],
+                        defaults={'count': 0}  # Will be recalculated
+                    )
+                    if created:
+                        stats['tags_created'] += 1
+                except Exception as e:
+                    stats['errors'].append(f"Tag import error: {str(e)}")
+
+            # Import entities (generic)
+            entity_id_map = {}  # Map old IDs to current IDs (for relations)
+            for entity_data in data.get('entities', []):
+                try:
+                    entity_id = entity_data['id']
+                    entity_data_clean = {k: v for k, v in entity_data.items()
+                                         if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    # Check if entity exists
+                    existing_entity = Entity.objects.filter(id=entity_id, user=request.user).first()
+
+                    if existing_entity:
+                        # Update existing entity
+                        for key, value in entity_data_clean.items():
+                            setattr(existing_entity, key, value)
+                        existing_entity.save()
+                        entity_id_map[entity_id] = existing_entity.id
+                        stats['entities_updated'] += 1
+                    else:
+                        # Create new entity with the same ID
+                        entity = Entity.objects.create(id=entity_id, user=request.user, **entity_data_clean)
+                        entity_id_map[entity_id] = entity.id
+                        stats['entities_created'] += 1
+                except Exception as e:
+                    stats['errors'].append(f"Entity import error: {str(e)}")
+
+            # Import people
+            logger.info(f"Importing {len(data.get('people', []))} people")
+            for person_data in data.get('people', []):
+                try:
+                    person_id = person_data['id']
+                    person_data_clean = {k: v for k, v in person_data.items()
+                                         if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    logger.info(f"Processing person {person_id}: {person_data_clean.get('display', 'N/A')}")
+
+                    # Check if person exists
+                    existing_person = Person.objects.filter(id=person_id, user=request.user).first()
+                    logger.info(f"Existing person check: {existing_person}")
+
+                    if existing_person:
+                        # Update existing person
+                        for key, value in person_data_clean.items():
+                            setattr(existing_person, key, value)
+                        existing_person.save()
+                        entity_id_map[person_id] = existing_person.id
+                        stats['people_updated'] += 1
+                        logger.info(f"Updated person {person_id}")
+                    else:
+                        # Create new person with the same ID
+                        person = Person.objects.create(id=person_id, user=request.user, **person_data_clean)
+                        entity_id_map[person_id] = person.id
+                        stats['people_created'] += 1
+                        logger.info(f"Created person {person_id}")
+                except Exception as e:
+                    error_msg = f"Person import error: {str(e)}"
+                    logger.error(error_msg)
+                    stats['errors'].append(error_msg)
+
+            # Import notes
+            for note_data in data.get('notes', []):
+                try:
+                    note_id = note_data['id']
+                    note_data_clean = {k: v for k, v in note_data.items()
+                                       if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    # Check if note exists
+                    existing_note = Note.objects.filter(id=note_id, user=request.user).first()
+
+                    if existing_note:
+                        # Update existing note
+                        for key, value in note_data_clean.items():
+                            setattr(existing_note, key, value)
+                        existing_note.save()
+                        entity_id_map[note_id] = existing_note.id
+                        stats['notes_updated'] += 1
+                    else:
+                        # Create new note with the same ID
+                        note = Note.objects.create(id=note_id, user=request.user, **note_data_clean)
+                        entity_id_map[note_id] = note.id
+                        stats['notes_created'] += 1
+                except Exception as e:
+                    stats['errors'].append(f"Note import error: {str(e)}")
+
+            # Import locations
+            for location_data in data.get('locations', []):
+                try:
+                    location_id = location_data['id']
+                    location_data_clean = {k: v for k, v in location_data.items()
+                                           if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    # Check if location exists
+                    existing_location = Location.objects.filter(id=location_id, user=request.user).first()
+
+                    if existing_location:
+                        # Update existing location
+                        for key, value in location_data_clean.items():
+                            setattr(existing_location, key, value)
+                        existing_location.save()
+                        entity_id_map[location_id] = existing_location.id
+                        stats['locations_updated'] = stats.get('locations_updated', 0) + 1
+                    else:
+                        # Create new location with the same ID
+                        location = Location.objects.create(id=location_id, user=request.user, **location_data_clean)
+                        entity_id_map[location_id] = location.id
+                        stats['locations_created'] = stats.get('locations_created', 0) + 1
+                except Exception as e:
+                    stats['errors'].append(f"Location import error: {str(e)}")
+
+            # Import movies
+            for movie_data in data.get('movies', []):
+                try:
+                    movie_id = movie_data['id']
+                    movie_data_clean = {k: v for k, v in movie_data.items()
+                                        if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    # Check if movie exists
+                    existing_movie = Movie.objects.filter(id=movie_id, user=request.user).first()
+
+                    if existing_movie:
+                        # Update existing movie
+                        for key, value in movie_data_clean.items():
+                            setattr(existing_movie, key, value)
+                        existing_movie.save()
+                        entity_id_map[movie_id] = existing_movie.id
+                        stats['movies_updated'] = stats.get('movies_updated', 0) + 1
+                    else:
+                        # Create new movie with the same ID
+                        movie = Movie.objects.create(id=movie_id, user=request.user, **movie_data_clean)
+                        entity_id_map[movie_id] = movie.id
+                        stats['movies_created'] = stats.get('movies_created', 0) + 1
+                except Exception as e:
+                    stats['errors'].append(f"Movie import error: {str(e)}")
+
+            # Import books
+            for book_data in data.get('books', []):
+                try:
+                    book_id = book_data['id']
+                    book_data_clean = {k: v for k, v in book_data.items()
+                                       if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    # Check if book exists
+                    existing_book = Book.objects.filter(id=book_id, user=request.user).first()
+
+                    if existing_book:
+                        # Update existing book
+                        for key, value in book_data_clean.items():
+                            setattr(existing_book, key, value)
+                        existing_book.save()
+                        entity_id_map[book_id] = existing_book.id
+                        stats['books_updated'] = stats.get('books_updated', 0) + 1
+                    else:
+                        # Create new book with the same ID
+                        book = Book.objects.create(id=book_id, user=request.user, **book_data_clean)
+                        entity_id_map[book_id] = book.id
+                        stats['books_created'] = stats.get('books_created', 0) + 1
+                except Exception as e:
+                    stats['errors'].append(f"Book import error: {str(e)}")
+
+            # Import containers
+            for container_data in data.get('containers', []):
+                try:
+                    container_id = container_data['id']
+                    container_data_clean = {k: v for k, v in container_data.items()
+                                            if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    existing_container = Container.objects.filter(id=container_id, user=request.user).first()
+
+                    if existing_container:
+                        for key, value in container_data_clean.items():
+                            setattr(existing_container, key, value)
+                        existing_container.save()
+                        entity_id_map[container_id] = existing_container.id
+                        stats['containers_updated'] = stats.get('containers_updated', 0) + 1
+                    else:
+                        container = Container.objects.create(id=container_id, user=request.user, **container_data_clean)
+                        entity_id_map[container_id] = container.id
+                        stats['containers_created'] = stats.get('containers_created', 0) + 1
+                except Exception as e:
+                    stats['errors'].append(f"Container import error: {str(e)}")
+
+            # Import assets
+            for asset_data in data.get('assets', []):
+                try:
+                    asset_id = asset_data['id']
+                    asset_data_clean = {k: v for k, v in asset_data.items()
+                                        if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    existing_asset = Asset.objects.filter(id=asset_id, user=request.user).first()
+
+                    if existing_asset:
+                        for key, value in asset_data_clean.items():
+                            setattr(existing_asset, key, value)
+                        existing_asset.save()
+                        entity_id_map[asset_id] = existing_asset.id
+                        stats['assets_updated'] = stats.get('assets_updated', 0) + 1
+                    else:
+                        asset = Asset.objects.create(id=asset_id, user=request.user, **asset_data_clean)
+                        entity_id_map[asset_id] = asset.id
+                        stats['assets_created'] = stats.get('assets_created', 0) + 1
+                except Exception as e:
+                    stats['errors'].append(f"Asset import error: {str(e)}")
+
+            # Import orgs
+            for org_data in data.get('orgs', []):
+                try:
+                    org_id = org_data['id']
+                    org_data_clean = {k: v for k, v in org_data.items()
+                                      if k not in ['id', 'user', 'created_at', 'updated_at']}
+
+                    existing_org = Org.objects.filter(id=org_id, user=request.user).first()
+
+                    if existing_org:
+                        for key, value in org_data_clean.items():
+                            setattr(existing_org, key, value)
+                        existing_org.save()
+                        entity_id_map[org_id] = existing_org.id
+                        stats['orgs_updated'] = stats.get('orgs_updated', 0) + 1
+                    else:
+                        org = Org.objects.create(id=org_id, user=request.user, **org_data_clean)
+                        entity_id_map[org_id] = org.id
+                        stats['orgs_created'] = stats.get('orgs_created', 0) + 1
+                except Exception as e:
+                    stats['errors'].append(f"Org import error: {str(e)}")
+
+            # Import relations (after all entities exist)
+            for relation_data in data.get('relations', []):
+                try:
+                    relation_id = relation_data.get('id')
+                    old_from_id = relation_data.get('from_entity') or relation_data.get('source_entity')
+                    old_to_id = relation_data.get('to_entity') or relation_data.get('target_entity')
+
+                    # Map old IDs to current IDs
+                    if old_from_id in entity_id_map and old_to_id in entity_id_map:
+                        from_entity_id = entity_id_map[old_from_id]
+                        to_entity_id = entity_id_map[old_to_id]
+                        relation_type = relation_data['relation_type']
+
+                        # Check if relation exists (by ID or by unique constraint)
+                        existing_relation = None
+                        if relation_id:
+                            existing_relation = EntityRelation.objects.filter(id=relation_id).first()
+
+                        if not existing_relation:
+                            # Check by unique constraint (from_entity, to_entity, relation_type)
+                            existing_relation = EntityRelation.objects.filter(
+                                from_entity_id=from_entity_id,
+                                to_entity_id=to_entity_id,
+                                relation_type=relation_type
+                            ).first()
+
+                        if existing_relation:
+                            # Relation already exists, just count as updated
+                            stats['relations_updated'] += 1
+                        else:
+                            # Create new relation
+                            if relation_id:
+                                EntityRelation.objects.create(
+                                    id=relation_id,
+                                    from_entity_id=from_entity_id,
+                                    to_entity_id=to_entity_id,
+                                    relation_type=relation_type
+                                )
+                            else:
+                                EntityRelation.objects.create(
+                                    from_entity_id=from_entity_id,
+                                    to_entity_id=to_entity_id,
+                                    relation_type=relation_type
+                                )
+                            stats['relations_created'] += 1
+                except Exception as e:
+                    stats['errors'].append(f"Relation import error: {str(e)}")
+
+            return Response({
+                'success': True,
+                'message': 'Import completed',
+                'stats': stats
+            })
+
+        except Exception as e:
+            return Response(
+                {'error': f'Import failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def export(self, request):
         """Export all user's data (entities, notes, relations) as JSON"""
@@ -187,10 +526,57 @@ class NoteViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return only notes owned by the current user"""
         return Note.objects.filter(user=self.request.user)
-    
+
+
     def perform_create(self, serializer):
         """Auto-assign current user on create"""
         serializer.save(user=self.request.user)
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], parser_classes=[MultiPartParser, FormParser])
+    def import_file(self, request):
+        """Import conversations as Note entities from uploaded JSON file"""
+        if 'file' not in request.FILES:
+            return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        file_obj = request.FILES['file']
+        source = request.POST.get('source', 'unknown')
+        
+        try:
+            import json
+            content = file_obj.read().decode('utf-8')
+            data = json.loads(content)
+            
+            stats = {
+                'notes_created': 0,
+                'errors': []
+            }
+            
+            # Import conversations as notes
+            conversations = data if isinstance(data, list) else [data]
+            
+            for conv in conversations:
+                try:
+                    # Create note from conversation
+                    note = Note.objects.create(
+                        user=request.user,
+                        display=conv.get('title', 'Imported Conversation'),
+                        description=conv.get('mapping', {}) if isinstance(conv.get('mapping'), dict) else str(conv),
+                        tags=[source, 'imported'],
+                        date=conv.get('create_time') or conv.get('update_time')
+                    )
+                    stats['notes_created'] += 1
+                except Exception as e:
+                    stats['errors'].append(str(e))
+            
+            return Response({
+                'success': True,
+                'stats': stats
+            })
+        except Exception as e:
+            return Response(
+                {'error': f'Import failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class LocationViewSet(viewsets.ModelViewSet):
     serializer_class = LocationSerializer
@@ -429,343 +815,7 @@ class OrgViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
-    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], parser_classes=[MultiPartParser, FormParser])
-    def import_data(self, request):
-        """Import entities, notes, and relations from JSON file"""
-        from django.db import transaction
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        try:
-            if 'file' not in request.FILES:
-                return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            uploaded_file = request.FILES['file']
-            
-            # Read and parse JSON
-            try:
-                import json
-                content = uploaded_file.read().decode('utf-8')
-                data = json.loads(content)
-            except json.JSONDecodeError:
-                return Response({'error': 'Invalid JSON file'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            # Validate format
-            if 'export_version' not in data:
-                return Response({'error': 'Invalid export file format'}, status=status.HTTP_400_BAD_REQUEST)
-            
-            logger.info(f"Starting import for user {request.user.email}")
-            
-            # Track import statistics
-            stats = {
-                'entities_created': 0,
-                'entities_updated': 0,
-                'people_created': 0,
-                'people_updated': 0,
-                'notes_created': 0,
-                'notes_updated': 0,
-                'relations_created': 0,
-                'relations_updated': 0,
-                'tags_created': 0,
-                'errors': []
-            }
-            
-            # Import tags first (they're referenced by other entities)
-            for tag_data in data.get('tags', []):
-                try:
-                    tag, created = Tag.objects.get_or_create(
-                        name=tag_data['name'],
-                        defaults={'count': 0}  # Will be recalculated
-                    )
-                    if created:
-                        stats['tags_created'] += 1
-                except Exception as e:
-                    stats['errors'].append(f"Tag import error: {str(e)}")
-            
-            # Import entities (generic)
-            entity_id_map = {}  # Map old IDs to current IDs (for relations)
-            for entity_data in data.get('entities', []):
-                try:
-                    entity_id = entity_data['id']
-                    entity_data_clean = {k: v for k, v in entity_data.items() 
-                                        if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    # Check if entity exists
-                    existing_entity = Entity.objects.filter(id=entity_id, user=request.user).first()
-                    
-                    if existing_entity:
-                        # Update existing entity
-                        for key, value in entity_data_clean.items():
-                            setattr(existing_entity, key, value)
-                        existing_entity.save()
-                        entity_id_map[entity_id] = existing_entity.id
-                        stats['entities_updated'] += 1
-                    else:
-                        # Create new entity with the same ID
-                        entity = Entity.objects.create(id=entity_id, user=request.user, **entity_data_clean)
-                        entity_id_map[entity_id] = entity.id
-                        stats['entities_created'] += 1
-                except Exception as e:
-                    stats['errors'].append(f"Entity import error: {str(e)}")
-            
-            # Import people
-            logger.info(f"Importing {len(data.get('people', []))} people")
-            for person_data in data.get('people', []):
-                try:
-                    person_id = person_data['id']
-                    person_data_clean = {k: v for k, v in person_data.items() 
-                                        if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    logger.info(f"Processing person {person_id}: {person_data_clean.get('display', 'N/A')}")
-                    
-                    # Check if person exists
-                    existing_person = Person.objects.filter(id=person_id, user=request.user).first()
-                    logger.info(f"Existing person check: {existing_person}")
-                    
-                    if existing_person:
-                        # Update existing person
-                        for key, value in person_data_clean.items():
-                            setattr(existing_person, key, value)
-                        existing_person.save()
-                        entity_id_map[person_id] = existing_person.id
-                        stats['people_updated'] += 1
-                        logger.info(f"Updated person {person_id}")
-                    else:
-                        # Create new person with the same ID
-                        person = Person.objects.create(id=person_id, user=request.user, **person_data_clean)
-                        entity_id_map[person_id] = person.id
-                        stats['people_created'] += 1
-                        logger.info(f"Created person {person_id}")
-                except Exception as e:
-                    error_msg = f"Person import error: {str(e)}"
-                    logger.error(error_msg)
-                    stats['errors'].append(error_msg)
-            
-            # Import notes
-            for note_data in data.get('notes', []):
-                try:
-                    note_id = note_data['id']
-                    note_data_clean = {k: v for k, v in note_data.items() 
-                                      if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    # Check if note exists
-                    existing_note = Note.objects.filter(id=note_id, user=request.user).first()
-                    
-                    if existing_note:
-                        # Update existing note
-                        for key, value in note_data_clean.items():
-                            setattr(existing_note, key, value)
-                        existing_note.save()
-                        entity_id_map[note_id] = existing_note.id
-                        stats['notes_updated'] += 1
-                    else:
-                        # Create new note with the same ID
-                        note = Note.objects.create(id=note_id, user=request.user, **note_data_clean)
-                        entity_id_map[note_id] = note.id
-                        stats['notes_created'] += 1
-                except Exception as e:
-                    stats['errors'].append(f"Note import error: {str(e)}")
-            
-            # Import locations
-            for location_data in data.get('locations', []):
-                try:
-                    location_id = location_data['id']
-                    location_data_clean = {k: v for k, v in location_data.items() 
-                                          if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    # Check if location exists
-                    existing_location = Location.objects.filter(id=location_id, user=request.user).first()
-                    
-                    if existing_location:
-                        # Update existing location
-                        for key, value in location_data_clean.items():
-                            setattr(existing_location, key, value)
-                        existing_location.save()
-                        entity_id_map[location_id] = existing_location.id
-                        stats['locations_updated'] = stats.get('locations_updated', 0) + 1
-                    else:
-                        # Create new location with the same ID
-                        location = Location.objects.create(id=location_id, user=request.user, **location_data_clean)
-                        entity_id_map[location_id] = location.id
-                        stats['locations_created'] = stats.get('locations_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Location import error: {str(e)}")
-            
-            # Import movies
-            for movie_data in data.get('movies', []):
-                try:
-                    movie_id = movie_data['id']
-                    movie_data_clean = {k: v for k, v in movie_data.items() 
-                                       if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    # Check if movie exists
-                    existing_movie = Movie.objects.filter(id=movie_id, user=request.user).first()
-                    
-                    if existing_movie:
-                        # Update existing movie
-                        for key, value in movie_data_clean.items():
-                            setattr(existing_movie, key, value)
-                        existing_movie.save()
-                        entity_id_map[movie_id] = existing_movie.id
-                        stats['movies_updated'] = stats.get('movies_updated', 0) + 1
-                    else:
-                        # Create new movie with the same ID
-                        movie = Movie.objects.create(id=movie_id, user=request.user, **movie_data_clean)
-                        entity_id_map[movie_id] = movie.id
-                        stats['movies_created'] = stats.get('movies_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Movie import error: {str(e)}")
-            
-            # Import books
-            for book_data in data.get('books', []):
-                try:
-                    book_id = book_data['id']
-                    book_data_clean = {k: v for k, v in book_data.items() 
-                                      if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    # Check if book exists
-                    existing_book = Book.objects.filter(id=book_id, user=request.user).first()
-                    
-                    if existing_book:
-                        # Update existing book
-                        for key, value in book_data_clean.items():
-                            setattr(existing_book, key, value)
-                        existing_book.save()
-                        entity_id_map[book_id] = existing_book.id
-                        stats['books_updated'] = stats.get('books_updated', 0) + 1
-                    else:
-                        # Create new book with the same ID
-                        book = Book.objects.create(id=book_id, user=request.user, **book_data_clean)
-                        entity_id_map[book_id] = book.id
-                        stats['books_created'] = stats.get('books_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Book import error: {str(e)}")
-            
-            # Import containers
-            for container_data in data.get('containers', []):
-                try:
-                    container_id = container_data['id']
-                    container_data_clean = {k: v for k, v in container_data.items() 
-                                           if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    existing_container = Container.objects.filter(id=container_id, user=request.user).first()
-                    
-                    if existing_container:
-                        for key, value in container_data_clean.items():
-                            setattr(existing_container, key, value)
-                        existing_container.save()
-                        entity_id_map[container_id] = existing_container.id
-                        stats['containers_updated'] = stats.get('containers_updated', 0) + 1
-                    else:
-                        container = Container.objects.create(id=container_id, user=request.user, **container_data_clean)
-                        entity_id_map[container_id] = container.id
-                        stats['containers_created'] = stats.get('containers_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Container import error: {str(e)}")
-            
-            # Import assets
-            for asset_data in data.get('assets', []):
-                try:
-                    asset_id = asset_data['id']
-                    asset_data_clean = {k: v for k, v in asset_data.items() 
-                                       if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    existing_asset = Asset.objects.filter(id=asset_id, user=request.user).first()
-                    
-                    if existing_asset:
-                        for key, value in asset_data_clean.items():
-                            setattr(existing_asset, key, value)
-                        existing_asset.save()
-                        entity_id_map[asset_id] = existing_asset.id
-                        stats['assets_updated'] = stats.get('assets_updated', 0) + 1
-                    else:
-                        asset = Asset.objects.create(id=asset_id, user=request.user, **asset_data_clean)
-                        entity_id_map[asset_id] = asset.id
-                        stats['assets_created'] = stats.get('assets_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Asset import error: {str(e)}")
-            
-            # Import orgs
-            for org_data in data.get('orgs', []):
-                try:
-                    org_id = org_data['id']
-                    org_data_clean = {k: v for k, v in org_data.items() 
-                                     if k not in ['id', 'user', 'created_at', 'updated_at']}
-                    
-                    existing_org = Org.objects.filter(id=org_id, user=request.user).first()
-                    
-                    if existing_org:
-                        for key, value in org_data_clean.items():
-                            setattr(existing_org, key, value)
-                        existing_org.save()
-                        entity_id_map[org_id] = existing_org.id
-                        stats['orgs_updated'] = stats.get('orgs_updated', 0) + 1
-                    else:
-                        org = Org.objects.create(id=org_id, user=request.user, **org_data_clean)
-                        entity_id_map[org_id] = org.id
-                        stats['orgs_created'] = stats.get('orgs_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Org import error: {str(e)}")
-            
-            # Import relations (after all entities exist)
-            for relation_data in data.get('relations', []):
-                try:
-                    relation_id = relation_data.get('id')
-                    old_from_id = relation_data.get('from_entity') or relation_data.get('source_entity')
-                    old_to_id = relation_data.get('to_entity') or relation_data.get('target_entity')
-                    
-                    # Map old IDs to current IDs
-                    if old_from_id in entity_id_map and old_to_id in entity_id_map:
-                        from_entity_id = entity_id_map[old_from_id]
-                        to_entity_id = entity_id_map[old_to_id]
-                        relation_type = relation_data['relation_type']
-                        
-                        # Check if relation exists (by ID or by unique constraint)
-                        existing_relation = None
-                        if relation_id:
-                            existing_relation = EntityRelation.objects.filter(id=relation_id).first()
-                        
-                        if not existing_relation:
-                            # Check by unique constraint (from_entity, to_entity, relation_type)
-                            existing_relation = EntityRelation.objects.filter(
-                                from_entity_id=from_entity_id,
-                                to_entity_id=to_entity_id,
-                                relation_type=relation_type
-                            ).first()
-                        
-                        if existing_relation:
-                            # Relation already exists, just count as updated
-                            stats['relations_updated'] += 1
-                        else:
-                            # Create new relation
-                            if relation_id:
-                                EntityRelation.objects.create(
-                                    id=relation_id,
-                                    from_entity_id=from_entity_id,
-                                    to_entity_id=to_entity_id,
-                                    relation_type=relation_type
-                                )
-                            else:
-                                EntityRelation.objects.create(
-                                    from_entity_id=from_entity_id,
-                                    to_entity_id=to_entity_id,
-                                    relation_type=relation_type
-                                )
-                            stats['relations_created'] += 1
-                except Exception as e:
-                    stats['errors'].append(f"Relation import error: {str(e)}")
-            
-            return Response({
-                'success': True,
-                'message': 'Import completed',
-                'stats': stats
-            })
-            
-        except Exception as e:
-            return Response(
-                {'error': f'Import failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+
 
 class EntityRelationViewSet(viewsets.ModelViewSet):
     serializer_class = EntityRelationSerializer

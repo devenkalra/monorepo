@@ -49,7 +49,7 @@ export default function UserMenu() {
       const formData = new FormData();
       formData.append('file', file);
 
-      const response = await api.fetch('/api/notes/import_data/', {
+      const response = await api.fetch('/api/entities/import_data/', {
         method: 'POST',
         body: formData,
       });

@@ -105,12 +105,20 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# Always use PostgreSQL (Docker)
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('POSTGRES_DB', 'entitydb'),
+        'USER': os.environ.get('POSTGRES_USER', 'postgres'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
+        'HOST': os.environ.get('POSTGRES_HOST', 'db'),
+        'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        'CONN_MAX_AGE': 600,
+        'CONN_HEALTH_CHECKS': True,
     }
 }
+
 
 
 # Password validation
@@ -244,11 +252,14 @@ AUTHENTICATION_BACKENDS = [
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_USERNAME_REQUIRED = False
+# New django-allauth configuration (v0.57+)
+ACCOUNT_LOGIN_METHODS = {'email'}  # Only allow email login
+ACCOUNT_SIGNUP_FIELDS = ['email', 'password1', 'password2']  # Don't require username in signup form
 ACCOUNT_EMAIL_VERIFICATION = 'none'  # Disable email verification for local testing
 ACCOUNT_UNIQUE_EMAIL = True
+# We still use the username field internally (Django User model requires it)
+# but we'll auto-populate it with email in our CustomRegisterSerializer
+ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 
 # Email backend for local testing (console)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
@@ -271,6 +282,12 @@ SOCIALACCOUNT_PROVIDERS = {
         ],
     }
 }
+
+# Google OAuth Callback URL (should match frontend URL)
+GOOGLE_OAUTH_CALLBACK_URL = os.environ.get(
+    'GOOGLE_OAUTH_CALLBACK_URL',
+    'http://localhost:5174/auth/google/callback'  # Development default
+)
 
 # dj-rest-auth Configuration
 REST_AUTH = {

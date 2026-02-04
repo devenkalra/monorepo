@@ -531,9 +531,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 attachments: updatedAttachments.length > 0 ? updatedAttachments : null,
             };
 
-            // Remove temporary flags and null id for new entities
+            // Remove temporary flags and invalid id for new entities
             delete dataToSave.isNew;
-            if (dataToSave.id === null) {
+            if (dataToSave.id === null || dataToSave.id === 'new') {
                 delete dataToSave.id;
             }
 

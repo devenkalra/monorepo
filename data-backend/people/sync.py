@@ -158,7 +158,7 @@ class Neo4jSync:
 class MeiliSync:
     def __init__(self):
         try:
-            self.helper = MeiliHelper(settings.MEILI_URL, settings.MEILI_KEY)
+            self.helper = MeiliHelper(settings.MEILISEARCH_URL, settings.MEILI_MASTER_KEY)
             self.index_name = 'entities'
             
             # Create index with explicit primary key if it doesn't exist

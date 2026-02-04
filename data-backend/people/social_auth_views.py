@@ -22,7 +22,7 @@ class GoogleLogin(SocialLoginView):
     }
     """
     adapter_class = GoogleOAuth2Adapter
-    callback_url = "http://localhost:5174/auth/google/callback"  # Your frontend callback URL
+    callback_url = settings.GOOGLE_OAUTH_CALLBACK_URL  # Frontend callback URL from settings
     client_class = OAuth2Client
 
 
@@ -44,8 +44,8 @@ def google_login_redirect(request):
         # Get Google OAuth app credentials
         social_app = SocialApp.objects.get(provider=GoogleProvider.id)
         
-        # Build OAuth URL
-        redirect_uri = "http://localhost:5174/auth/google/callback"
+        # Build OAuth URL using configured callback URL
+        redirect_uri = settings.GOOGLE_OAUTH_CALLBACK_URL
         scope = "openid profile email"
         
         auth_url = (

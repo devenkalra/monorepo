@@ -12,32 +12,73 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
 
-class CustomRegisterSerializer(RegisterSerializer):
+class CustomRegisterSerializer(serializers.Serializer):
     """Custom registration serializer that doesn't require username"""
-    username = None  # Remove username field
+    username = serializers.CharField(required=False, allow_blank=True, write_only=True)
+    email = serializers.EmailField(required=True)
+    password1 = serializers.CharField(write_only=True, required=True)
+    password2 = serializers.CharField(write_only=True, required=True)
+    
+    def validate_email(self, email):
+        """Validate email is not already registered"""
+        from allauth.account.adapter import get_adapter
+        from allauth.account.models import EmailAddress
+        
+        email = get_adapter().clean_email(email)
+        if email and EmailAddress.objects.is_verified(email):
+            raise serializers.ValidationError('A user is already registered with this e-mail address.')
+        return email
+    
+    def validate_password1(self, password):
+        """Validate password meets requirements"""
+        from allauth.account.adapter import get_adapter
+        return get_adapter().clean_password(password)
+    
+    def validate(self, data):
+        """Validate passwords match and set username to email if not provided"""
+        if data['password1'] != data['password2']:
+            raise serializers.ValidationError("The two password fields didn't match.")
+        
+        # If username is not provided or empty, use email as username
+        if not data.get('username'):
+            data['username'] = data['email']
+        
+        return data
     
     def get_cleaned_data(self):
+        """Return cleaned data with email as username if not provided"""
+        username = self.validated_data.get('username', '') or self.validated_data.get('email', '')
         return {
-            'email': self.validated_data.get('email', ''),
+            'username': username,
             'password1': self.validated_data.get('password1', ''),
+            'email': self.validated_data.get('email', ''),
         }
     
     def save(self, request):
+        """Create and save the user"""
+        from allauth.account.adapter import get_adapter
         from allauth.account.utils import setup_user_email
-        from allauth.account.models import EmailAddress
         
-        email = self.get_cleaned_data()['email']
-        password = self.get_cleaned_data()['password1']
+        adapter = get_adapter()
+        user = adapter.new_user(request)
+        self.cleaned_data = self.get_cleaned_data()
+        user = adapter.save_user(request, user, self, commit=False)
         
-        # Create user with email as username
-        user = User.objects.create_user(
-            username=email,  # Use email as username
-            email=email,
-            password=password
-        )
+        # Clean password one more time before saving
+        if "password1" in self.cleaned_data:
+            try:
+                adapter.clean_password(self.cleaned_data['password1'], user=user)
+            except Exception as exc:
+                raise serializers.ValidationError(str(exc))
         
+        user.save()
+        self.custom_signup(request, user)
         setup_user_email(request, user, [])
         return user
+    
+    def custom_signup(self, request, user):
+        """Hook for custom signup logic"""
+        pass
 
 
 class EntitySerializer(serializers.ModelSerializer):

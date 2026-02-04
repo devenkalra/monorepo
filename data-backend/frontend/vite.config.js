@@ -12,4 +12,8 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    sourcemap: true,  // Generate source maps for debugging
+    minify: false,    // Disable minification for readable code (optional)
+  },
 })
