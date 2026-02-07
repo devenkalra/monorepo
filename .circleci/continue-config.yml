@@ -3,6 +3,7 @@ version: 2.1
 parameters:
   run-frontend: { type: boolean, default: false }
   run-backend: { type: boolean, default: false }
+  run-data-backend: { type: boolean, default: false }
 
 jobs:
   build-frontend:
@@ -17,6 +18,58 @@ jobs:
       - checkout
       - run: cd backend && pip install -r requirements.txt && pytest
 
+  build-data-backend:
+    docker:
+      - image: cimg/python:3.11
+      - image: cimg/postgres:15.3
+        environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: entitydb
+      - image: getmeili/meilisearch:v1.5
+        environment:
+          MEILI_MASTER_KEY: test_master_key
+          MEILI_ENV: development
+      - image: neo4j:5-community
+        environment:
+          NEO4J_AUTH: neo4j/testpassword
+          NEO4J_PLUGINS: '["apoc"]'
+      - image: cimg/redis:7.0
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            cd data-backend
+            pip install --upgrade pip
+            pip install -r requirements.txt
+      - run:
+          name: Wait for services
+          command: |
+            # Wait for PostgreSQL
+            for i in {1..30}; do
+              pg_isready -h localhost -p 5432 && break
+              echo "Waiting for PostgreSQL..."
+              sleep 2
+            done
+            # Wait for other services
+            sleep 10
+      - run:
+          name: Run tests
+          command: |
+            cd data-backend
+            python manage.py test people.tests.test_integration_full_stack
+          environment:
+            DATABASE_URL: postgresql://postgres:postgres@localhost:5432/entitydb
+            NEO4J_URI: bolt://localhost:7687
+            NEO4J_USER: neo4j
+            NEO4J_PASSWORD: testpassword
+            MEILI_HOST: http://localhost:7700
+            MEILI_MASTER_KEY: test_master_key
+            REDIS_URL: redis://localhost:6379
+            DJANGO_SETTINGS_MODULE: config.settings
+            SECRET_KEY: test-secret-key-for-ci
+
 workflows:
   frontend-workflow:
     when: << pipeline.parameters.run-frontend >>
@@ -27,3 +80,8 @@ workflows:
     when: << pipeline.parameters.run-backend >>
     jobs:
       - build-backend
+
+  data-backend-workflow:
+    when: << pipeline.parameters.run-data-backend >>
+    jobs:
+      - build-data-backend
