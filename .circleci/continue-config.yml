@@ -1,0 +1,29 @@
+version: 2.1
+
+parameters:
+  run-frontend: { type: boolean, default: false }
+  run-backend: { type: boolean, default: false }
+
+jobs:
+  build-frontend:
+    docker: [{ image: "cimg/node:current" }]
+    steps:
+      - checkout
+      - run: cd frontend && npm install && npm test
+
+  build-backend:
+    docker: [{ image: "cimg/python:3.10" }]
+    steps:
+      - checkout
+      - run: cd backend && pip install -r requirements.txt && pytest
+
+workflows:
+  frontend-workflow:
+    when: << pipeline.parameters.run-frontend >>
+    jobs:
+      - build-frontend
+
+  backend-workflow:
+    when: << pipeline.parameters.run-backend >>
+    jobs:
+      - build-backend
