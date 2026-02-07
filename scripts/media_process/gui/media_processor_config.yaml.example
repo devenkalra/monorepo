@@ -1,0 +1,23 @@
+# Media Processor GUI Configuration
+# This file is automatically created and updated when you click "Save Settings"
+# You can manually edit this file, but it's recommended to use the GUI
+
+# Last directory browsed
+current_directory: /home/user/Pictures
+
+# Path to the media database
+database_path: /home/user/media.db
+
+# Volume filter (optional - leave empty to show all volumes)
+volume_filter: MyPhotos2024
+
+# EXIF display filter (All, Common, GPS/Location, Camera, Keywords, Video)
+exif_filter: Common
+
+# File type filters (true/false)
+show_images: true
+show_videos: true
+show_other: false
+
+# Window size and position
+window_geometry: 1200x800+100+100

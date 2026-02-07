@@ -1,7 +1,7 @@
 import React from 'react';
 import { getMediaUrl } from '../utils/apiUrl';
 
-function EntityList({ entities, onEntityClick }) {
+function EntityList({ entities, onEntityClick, selectionMode = false, selectedEntityIds = new Set(), onToggleSelection }) {
     if (!entities.length) {
         return <p className="text-center text-gray-500">No entities found.</p>;
     }
@@ -22,14 +22,33 @@ function EntityList({ entities, onEntityClick }) {
         <ul className="space-y-2">
             {entities.map((entity) => {
                 const thumbnailUrl = getFirstPhotoThumbnail(entity);
+                const isSelected = selectedEntityIds.has(entity.id);
                 
                 return (
                     <li
                         key={entity.id}
-                        onClick={() => onEntityClick(entity)}
-                        className="p-3 rounded bg-white dark:bg-gray-800 shadow hover:shadow-md transition cursor-pointer"
+                        onClick={() => {
+                            if (selectionMode) {
+                                onToggleSelection(entity.id);
+                            } else {
+                                onEntityClick(entity);
+                            }
+                        }}
+                        className={`p-3 rounded bg-white dark:bg-gray-800 shadow hover:shadow-md transition cursor-pointer ${
+                            isSelected ? 'ring-2 ring-blue-500' : ''
+                        }`}
                     >
                         <div className="flex gap-3 items-center">
+                            {/* Checkbox in selection mode */}
+                            {selectionMode && (
+                                <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={() => onToggleSelection(entity.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                            )}
                             {/* Thumbnail Icon or Letter Avatar */}
                             {thumbnailUrl ? (
                                 <img

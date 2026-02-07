@@ -29,8 +29,11 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        client_id = options.get('client_id')
-        client_secret = options.get('client_secret')
+        import os
+        
+        # Try to get from command line args first, then fall back to environment variables
+        client_id = options.get('client_id') or os.environ.get('GOOGLE_CLIENT_ID')
+        client_secret = options.get('client_secret') or os.environ.get('GOOGLE_CLIENT_SECRET')
         domain = options.get('domain')
 
         self.stdout.write(self.style.WARNING('\n' + '='*70))

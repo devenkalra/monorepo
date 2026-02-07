@@ -253,12 +253,14 @@ function SearchBar({ query, setQuery, filters, setFilters, sortBy, setSortBy, sh
             </div>
 
             {showTagTree && (
-                <>
-                    <div
-                        className="fixed inset-0 bg-black bg-opacity-30 z-40"
+                <div className="fixed inset-0 z-40">
+                    <button
+                        className="absolute inset-0 bg-black/40"
                         onClick={closePanels}
+                        aria-label="Close tag tree panel"
                     />
                     <TagTreePanel
+                        key={`primary-tag-${filters.primaryTag || 'none'}`}
                         visible={showTagTree}
                         onClose={closePanels}
                         selectedTags={filters.primaryTag}
@@ -279,7 +281,7 @@ function SearchBar({ query, setQuery, filters, setFilters, sortBy, setSortBy, sh
                         }}
                         isPrimary={true}
                     />
-                </>
+                </div>
             )}
 
             {activePanel === 'tags' && (

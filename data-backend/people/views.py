@@ -74,6 +74,65 @@ class EntityViewSet(viewsets.ModelViewSet):
             'incoming': incoming_data
         })
 
+    def _import_entity_type(self, model_class, entity_data_list, entity_id_map, stats, type_name, request_user, logger):
+        """Helper function to import a specific entity type with detailed tracking"""
+        import uuid
+        created_key = f'{type_name}_created'
+        updated_key = f'{type_name}_updated'
+        skipped_key = f'{type_name}_skipped'
+        
+        for entity_data in entity_data_list:
+            try:
+                original_id = entity_data['id']
+                display_name = entity_data.get('display') or entity_data.get('name') or entity_data.get('first_name', 'N/A')
+                
+                # Clean data - remove fields that shouldn't be set directly
+                entity_data_clean = {k: v for k, v in entity_data.items()
+                                   if k not in ['id', 'user', 'created_at', 'updated_at']}
+                
+                # Check if entity with this ID exists for this user
+                existing_entity = model_class.objects.filter(id=original_id, user=request_user).first()
+                
+                if existing_entity:
+                    # Check if update is needed (compare data)
+                    needs_update = False
+                    for key, value in entity_data_clean.items():
+                        if getattr(existing_entity, key, None) != value:
+                            needs_update = True
+                            break
+                    
+                    if needs_update:
+                        # Update existing entity
+                        for key, value in entity_data_clean.items():
+                            setattr(existing_entity, key, value)
+                        existing_entity.save()
+                        entity_id_map[original_id] = existing_entity.id
+                        stats[updated_key] += 1
+                        logger.info(f"Updated {type_name} '{display_name}' ({original_id})")
+                    else:
+                        # Entity exists and is identical - skip
+                        entity_id_map[original_id] = existing_entity.id
+                        stats[skipped_key] += 1
+                        logger.info(f"Skipped {type_name} '{display_name}' ({original_id}) - already exists with same data")
+                else:
+                    # Entity doesn't exist for this user - create new one
+                    # Generate new UUID if the original ID is already taken by another user
+                    new_id = original_id
+                    if model_class.objects.filter(id=original_id).exists():
+                        # ID is taken by another user, generate new UUID
+                        new_id = uuid.uuid4()
+                        logger.info(f"ID {original_id} already exists for another user, using new ID {new_id}")
+                    
+                    entity = model_class.objects.create(id=new_id, user=request_user, **entity_data_clean)
+                    entity_id_map[original_id] = entity.id  # Map original ID to actual ID (may be different)
+                    stats[created_key] += 1
+                    logger.info(f"Created {type_name} '{display_name}' ({new_id})")
+                    
+            except Exception as e:
+                error_msg = f"{type_name} '{display_name}' ({original_id}): {str(e)}"
+                logger.error(error_msg)
+                stats['errors'].append(error_msg)
+
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated],
             parser_classes=[MultiPartParser, FormParser])
     def import_data(self, request):
@@ -102,308 +161,241 @@ class EntityViewSet(viewsets.ModelViewSet):
 
             logger.info(f"Starting import for user {request.user.email}")
 
-            # Track import statistics
+            # Track import statistics with detailed breakdown
             stats = {
+                # File contents
+                'file_summary': {
+                    'tags_in_file': len(data.get('tags', [])),
+                    'entities_in_file': len(data.get('entities', [])),
+                    'people_in_file': len(data.get('people', [])),
+                    'notes_in_file': len(data.get('notes', [])),
+                    'locations_in_file': len(data.get('locations', [])),
+                    'movies_in_file': len(data.get('movies', [])),
+                    'books_in_file': len(data.get('books', [])),
+                    'containers_in_file': len(data.get('containers', [])),
+                    'assets_in_file': len(data.get('assets', [])),
+                    'orgs_in_file': len(data.get('orgs', [])),
+                    'relations_in_file': len(data.get('relations', [])),
+                },
+                # Processing results
+                'tags_created': 0,
+                'tags_skipped': 0,
                 'entities_created': 0,
                 'entities_updated': 0,
+                'entities_skipped': 0,
                 'people_created': 0,
                 'people_updated': 0,
+                'people_skipped': 0,
                 'notes_created': 0,
                 'notes_updated': 0,
+                'notes_skipped': 0,
+                'locations_created': 0,
+                'locations_updated': 0,
+                'locations_skipped': 0,
+                'movies_created': 0,
+                'movies_updated': 0,
+                'movies_skipped': 0,
+                'books_created': 0,
+                'books_updated': 0,
+                'books_skipped': 0,
+                'containers_created': 0,
+                'containers_updated': 0,
+                'containers_skipped': 0,
+                'assets_created': 0,
+                'assets_updated': 0,
+                'assets_skipped': 0,
+                'orgs_created': 0,
+                'orgs_updated': 0,
+                'orgs_skipped': 0,
                 'relations_created': 0,
                 'relations_updated': 0,
-                'tags_created': 0,
-                'errors': []
+                'relations_skipped': 0,
+                'errors': [],
+                'warnings': []
             }
 
             # Import tags first (they're referenced by other entities)
             for tag_data in data.get('tags', []):
                 try:
+                    tag_name = tag_data['name']
                     tag, created = Tag.objects.get_or_create(
-                        name=tag_data['name'],
+                        name=tag_name,
+                        user=request.user,
                         defaults={'count': 0}  # Will be recalculated
                     )
                     if created:
                         stats['tags_created'] += 1
+                    else:
+                        stats['tags_skipped'] += 1
                 except Exception as e:
-                    stats['errors'].append(f"Tag import error: {str(e)}")
+                    stats['errors'].append(f"Tag '{tag_data.get('name', 'unknown')}': {str(e)}")
 
             # Import entities (generic)
             entity_id_map = {}  # Map old IDs to current IDs (for relations)
-            for entity_data in data.get('entities', []):
-                try:
-                    entity_id = entity_data['id']
-                    entity_data_clean = {k: v for k, v in entity_data.items()
-                                         if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    # Check if entity exists
-                    existing_entity = Entity.objects.filter(id=entity_id, user=request.user).first()
-
-                    if existing_entity:
-                        # Update existing entity
-                        for key, value in entity_data_clean.items():
-                            setattr(existing_entity, key, value)
-                        existing_entity.save()
-                        entity_id_map[entity_id] = existing_entity.id
-                        stats['entities_updated'] += 1
-                    else:
-                        # Create new entity with the same ID
-                        entity = Entity.objects.create(id=entity_id, user=request.user, **entity_data_clean)
-                        entity_id_map[entity_id] = entity.id
-                        stats['entities_created'] += 1
-                except Exception as e:
-                    stats['errors'].append(f"Entity import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('entities', []))} generic entities")
+            self._import_entity_type(Entity, data.get('entities', []), entity_id_map, stats, 'entities', request.user, logger)
 
             # Import people
             logger.info(f"Importing {len(data.get('people', []))} people")
-            for person_data in data.get('people', []):
-                try:
-                    person_id = person_data['id']
-                    person_data_clean = {k: v for k, v in person_data.items()
-                                         if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    logger.info(f"Processing person {person_id}: {person_data_clean.get('display', 'N/A')}")
-
-                    # Check if person exists
-                    existing_person = Person.objects.filter(id=person_id, user=request.user).first()
-                    logger.info(f"Existing person check: {existing_person}")
-
-                    if existing_person:
-                        # Update existing person
-                        for key, value in person_data_clean.items():
-                            setattr(existing_person, key, value)
-                        existing_person.save()
-                        entity_id_map[person_id] = existing_person.id
-                        stats['people_updated'] += 1
-                        logger.info(f"Updated person {person_id}")
-                    else:
-                        # Create new person with the same ID
-                        person = Person.objects.create(id=person_id, user=request.user, **person_data_clean)
-                        entity_id_map[person_id] = person.id
-                        stats['people_created'] += 1
-                        logger.info(f"Created person {person_id}")
-                except Exception as e:
-                    error_msg = f"Person import error: {str(e)}"
-                    logger.error(error_msg)
-                    stats['errors'].append(error_msg)
+            self._import_entity_type(Person, data.get('people', []), entity_id_map, stats, 'people', request.user, logger)
 
             # Import notes
-            for note_data in data.get('notes', []):
-                try:
-                    note_id = note_data['id']
-                    note_data_clean = {k: v for k, v in note_data.items()
-                                       if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    # Check if note exists
-                    existing_note = Note.objects.filter(id=note_id, user=request.user).first()
-
-                    if existing_note:
-                        # Update existing note
-                        for key, value in note_data_clean.items():
-                            setattr(existing_note, key, value)
-                        existing_note.save()
-                        entity_id_map[note_id] = existing_note.id
-                        stats['notes_updated'] += 1
-                    else:
-                        # Create new note with the same ID
-                        note = Note.objects.create(id=note_id, user=request.user, **note_data_clean)
-                        entity_id_map[note_id] = note.id
-                        stats['notes_created'] += 1
-                except Exception as e:
-                    stats['errors'].append(f"Note import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('notes', []))} notes")
+            self._import_entity_type(Note, data.get('notes', []), entity_id_map, stats, 'notes', request.user, logger)
 
             # Import locations
-            for location_data in data.get('locations', []):
-                try:
-                    location_id = location_data['id']
-                    location_data_clean = {k: v for k, v in location_data.items()
-                                           if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    # Check if location exists
-                    existing_location = Location.objects.filter(id=location_id, user=request.user).first()
-
-                    if existing_location:
-                        # Update existing location
-                        for key, value in location_data_clean.items():
-                            setattr(existing_location, key, value)
-                        existing_location.save()
-                        entity_id_map[location_id] = existing_location.id
-                        stats['locations_updated'] = stats.get('locations_updated', 0) + 1
-                    else:
-                        # Create new location with the same ID
-                        location = Location.objects.create(id=location_id, user=request.user, **location_data_clean)
-                        entity_id_map[location_id] = location.id
-                        stats['locations_created'] = stats.get('locations_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Location import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('locations', []))} locations")
+            self._import_entity_type(Location, data.get('locations', []), entity_id_map, stats, 'locations', request.user, logger)
 
             # Import movies
-            for movie_data in data.get('movies', []):
-                try:
-                    movie_id = movie_data['id']
-                    movie_data_clean = {k: v for k, v in movie_data.items()
-                                        if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    # Check if movie exists
-                    existing_movie = Movie.objects.filter(id=movie_id, user=request.user).first()
-
-                    if existing_movie:
-                        # Update existing movie
-                        for key, value in movie_data_clean.items():
-                            setattr(existing_movie, key, value)
-                        existing_movie.save()
-                        entity_id_map[movie_id] = existing_movie.id
-                        stats['movies_updated'] = stats.get('movies_updated', 0) + 1
-                    else:
-                        # Create new movie with the same ID
-                        movie = Movie.objects.create(id=movie_id, user=request.user, **movie_data_clean)
-                        entity_id_map[movie_id] = movie.id
-                        stats['movies_created'] = stats.get('movies_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Movie import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('movies', []))} movies")
+            self._import_entity_type(Movie, data.get('movies', []), entity_id_map, stats, 'movies', request.user, logger)
 
             # Import books
-            for book_data in data.get('books', []):
-                try:
-                    book_id = book_data['id']
-                    book_data_clean = {k: v for k, v in book_data.items()
-                                       if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    # Check if book exists
-                    existing_book = Book.objects.filter(id=book_id, user=request.user).first()
-
-                    if existing_book:
-                        # Update existing book
-                        for key, value in book_data_clean.items():
-                            setattr(existing_book, key, value)
-                        existing_book.save()
-                        entity_id_map[book_id] = existing_book.id
-                        stats['books_updated'] = stats.get('books_updated', 0) + 1
-                    else:
-                        # Create new book with the same ID
-                        book = Book.objects.create(id=book_id, user=request.user, **book_data_clean)
-                        entity_id_map[book_id] = book.id
-                        stats['books_created'] = stats.get('books_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Book import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('books', []))} books")
+            self._import_entity_type(Book, data.get('books', []), entity_id_map, stats, 'books', request.user, logger)
 
             # Import containers
-            for container_data in data.get('containers', []):
-                try:
-                    container_id = container_data['id']
-                    container_data_clean = {k: v for k, v in container_data.items()
-                                            if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    existing_container = Container.objects.filter(id=container_id, user=request.user).first()
-
-                    if existing_container:
-                        for key, value in container_data_clean.items():
-                            setattr(existing_container, key, value)
-                        existing_container.save()
-                        entity_id_map[container_id] = existing_container.id
-                        stats['containers_updated'] = stats.get('containers_updated', 0) + 1
-                    else:
-                        container = Container.objects.create(id=container_id, user=request.user, **container_data_clean)
-                        entity_id_map[container_id] = container.id
-                        stats['containers_created'] = stats.get('containers_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Container import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('containers', []))} containers")
+            self._import_entity_type(Container, data.get('containers', []), entity_id_map, stats, 'containers', request.user, logger)
 
             # Import assets
-            for asset_data in data.get('assets', []):
-                try:
-                    asset_id = asset_data['id']
-                    asset_data_clean = {k: v for k, v in asset_data.items()
-                                        if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    existing_asset = Asset.objects.filter(id=asset_id, user=request.user).first()
-
-                    if existing_asset:
-                        for key, value in asset_data_clean.items():
-                            setattr(existing_asset, key, value)
-                        existing_asset.save()
-                        entity_id_map[asset_id] = existing_asset.id
-                        stats['assets_updated'] = stats.get('assets_updated', 0) + 1
-                    else:
-                        asset = Asset.objects.create(id=asset_id, user=request.user, **asset_data_clean)
-                        entity_id_map[asset_id] = asset.id
-                        stats['assets_created'] = stats.get('assets_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Asset import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('assets', []))} assets")
+            self._import_entity_type(Asset, data.get('assets', []), entity_id_map, stats, 'assets', request.user, logger)
 
             # Import orgs
-            for org_data in data.get('orgs', []):
-                try:
-                    org_id = org_data['id']
-                    org_data_clean = {k: v for k, v in org_data.items()
-                                      if k not in ['id', 'user', 'created_at', 'updated_at']}
-
-                    existing_org = Org.objects.filter(id=org_id, user=request.user).first()
-
-                    if existing_org:
-                        for key, value in org_data_clean.items():
-                            setattr(existing_org, key, value)
-                        existing_org.save()
-                        entity_id_map[org_id] = existing_org.id
-                        stats['orgs_updated'] = stats.get('orgs_updated', 0) + 1
-                    else:
-                        org = Org.objects.create(id=org_id, user=request.user, **org_data_clean)
-                        entity_id_map[org_id] = org.id
-                        stats['orgs_created'] = stats.get('orgs_created', 0) + 1
-                except Exception as e:
-                    stats['errors'].append(f"Org import error: {str(e)}")
+            logger.info(f"Importing {len(data.get('orgs', []))} orgs")
+            self._import_entity_type(Org, data.get('orgs', []), entity_id_map, stats, 'orgs', request.user, logger)
 
             # Import relations (after all entities exist)
+            logger.info(f"Importing {len(data.get('relations', []))} relations")
             for relation_data in data.get('relations', []):
                 try:
                     relation_id = relation_data.get('id')
                     old_from_id = relation_data.get('from_entity') or relation_data.get('source_entity')
                     old_to_id = relation_data.get('to_entity') or relation_data.get('target_entity')
+                    relation_type = relation_data.get('relation_type')
+
+                    # Check if entities exist in the map
+                    if old_from_id not in entity_id_map:
+                        stats['warnings'].append(f"Relation skipped: from_entity {old_from_id} not found")
+                        stats['relations_skipped'] += 1
+                        continue
+                    
+                    if old_to_id not in entity_id_map:
+                        stats['warnings'].append(f"Relation skipped: to_entity {old_to_id} not found")
+                        stats['relations_skipped'] += 1
+                        continue
 
                     # Map old IDs to current IDs
-                    if old_from_id in entity_id_map and old_to_id in entity_id_map:
-                        from_entity_id = entity_id_map[old_from_id]
-                        to_entity_id = entity_id_map[old_to_id]
-                        relation_type = relation_data['relation_type']
+                    from_entity_id = entity_id_map[old_from_id]
+                    to_entity_id = entity_id_map[old_to_id]
 
-                        # Check if relation exists (by ID or by unique constraint)
-                        existing_relation = None
+                    # Check if relation exists (by ID or by unique constraint)
+                    existing_relation = None
+                    if relation_id:
+                        existing_relation = EntityRelation.objects.filter(id=relation_id).first()
+
+                    if not existing_relation:
+                        # Check by unique constraint (from_entity, to_entity, relation_type)
+                        existing_relation = EntityRelation.objects.filter(
+                            from_entity_id=from_entity_id,
+                            to_entity_id=to_entity_id,
+                            relation_type=relation_type
+                        ).first()
+
+                    if existing_relation:
+                        # Relation already exists, count as skipped
+                        stats['relations_skipped'] += 1
+                        logger.info(f"Skipped relation {relation_type} ({relation_id}) - already exists")
+                    else:
+                        # Create new relation
                         if relation_id:
-                            existing_relation = EntityRelation.objects.filter(id=relation_id).first()
-
-                        if not existing_relation:
-                            # Check by unique constraint (from_entity, to_entity, relation_type)
-                            existing_relation = EntityRelation.objects.filter(
+                            EntityRelation.objects.create(
+                                id=relation_id,
                                 from_entity_id=from_entity_id,
                                 to_entity_id=to_entity_id,
                                 relation_type=relation_type
-                            ).first()
-
-                        if existing_relation:
-                            # Relation already exists, just count as updated
-                            stats['relations_updated'] += 1
+                            )
                         else:
-                            # Create new relation
-                            if relation_id:
-                                EntityRelation.objects.create(
-                                    id=relation_id,
-                                    from_entity_id=from_entity_id,
-                                    to_entity_id=to_entity_id,
-                                    relation_type=relation_type
-                                )
-                            else:
-                                EntityRelation.objects.create(
-                                    from_entity_id=from_entity_id,
-                                    to_entity_id=to_entity_id,
-                                    relation_type=relation_type
-                                )
-                            stats['relations_created'] += 1
+                            EntityRelation.objects.create(
+                                from_entity_id=from_entity_id,
+                                to_entity_id=to_entity_id,
+                                relation_type=relation_type
+                            )
+                        stats['relations_created'] += 1
+                        logger.info(f"Created relation {relation_type} ({relation_id})")
                 except Exception as e:
-                    stats['errors'].append(f"Relation import error: {str(e)}")
+                    error_msg = f"Relation {relation_type} ({relation_id}): {str(e)}"
+                    logger.error(error_msg)
+                    stats['errors'].append(error_msg)
 
+            # Calculate totals
+            total_created = sum([
+                stats.get('entities_created', 0),
+                stats.get('people_created', 0),
+                stats.get('notes_created', 0),
+                stats.get('locations_created', 0),
+                stats.get('movies_created', 0),
+                stats.get('books_created', 0),
+                stats.get('containers_created', 0),
+                stats.get('assets_created', 0),
+                stats.get('orgs_created', 0),
+            ])
+            
+            total_updated = sum([
+                stats.get('entities_updated', 0),
+                stats.get('people_updated', 0),
+                stats.get('notes_updated', 0),
+                stats.get('locations_updated', 0),
+                stats.get('movies_updated', 0),
+                stats.get('books_updated', 0),
+                stats.get('containers_updated', 0),
+                stats.get('assets_updated', 0),
+                stats.get('orgs_updated', 0),
+            ])
+            
+            total_skipped = sum([
+                stats.get('entities_skipped', 0),
+                stats.get('people_skipped', 0),
+                stats.get('notes_skipped', 0),
+                stats.get('locations_skipped', 0),
+                stats.get('movies_skipped', 0),
+                stats.get('books_skipped', 0),
+                stats.get('containers_skipped', 0),
+                stats.get('assets_skipped', 0),
+                stats.get('orgs_skipped', 0),
+            ])
+            
+            # Add summary
+            stats['summary'] = {
+                'total_entities_in_file': sum([
+                    stats['file_summary']['entities_in_file'],
+                    stats['file_summary']['people_in_file'],
+                    stats['file_summary']['notes_in_file'],
+                    stats['file_summary']['locations_in_file'],
+                    stats['file_summary']['movies_in_file'],
+                    stats['file_summary']['books_in_file'],
+                    stats['file_summary']['containers_in_file'],
+                    stats['file_summary']['assets_in_file'],
+                    stats['file_summary']['orgs_in_file'],
+                ]),
+                'total_created': total_created,
+                'total_updated': total_updated,
+                'total_skipped': total_skipped,
+                'total_errors': len(stats['errors']),
+                'total_warnings': len(stats['warnings']),
+                'tags_created': stats['tags_created'],
+                'tags_skipped': stats['tags_skipped'],
+                'relations_created': stats['relations_created'],
+                'relations_skipped': stats['relations_skipped'],
+            }
+            
+            logger.info(f"Import completed: {total_created} created, {total_updated} updated, {total_skipped} skipped, {len(stats['errors'])} errors")
+            
             return Response({
                 'success': True,
-                'message': 'Import completed',
+                'message': f'Import completed: {total_created} created, {total_updated} updated, {total_skipped} skipped',
                 'stats': stats
             })
 
@@ -861,16 +853,8 @@ class TagViewSet(viewsets.ModelViewSet):
     lookup_value_regex = '.+'
     
     def get_queryset(self):
-        """Return tags from user's entities only"""
-        # Get all unique tag names from user's entities
-        user_entities = Entity.objects.filter(user=self.request.user)
-        all_tags = set()
-        for entity in user_entities:
-            if entity.tags:
-                all_tags.update(entity.tags)
-        
-        # Return Tag objects for these names
-        return Tag.objects.filter(name__in=all_tags)
+        """Return all tags for the current user"""
+        return Tag.objects.filter(user=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
         """Delete a tag and remove it from user's entities.
@@ -892,6 +876,222 @@ class TagViewSet(viewsets.ModelViewSet):
 class SearchViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
     
+    @action(detail=False, methods=['post'])
+    def delete_all(self, request):
+        """Delete all entities matching the search/filter criteria"""
+        query = request.query_params.get('q', '')
+        
+        # Check for relation-based filtering
+        relation_entity_id = request.query_params.get('relation_entity')
+        relation_type = request.query_params.get('relation_type')
+        
+        # Get related entity IDs from Neo4j if relation filter is specified
+        relation_entity_ids = None
+        if relation_entity_id and relation_type:
+            from .sync import neo4j_sync
+            relation_entity_ids = neo4j_sync.find_related_entities(relation_entity_id, relation_type)
+            
+            if not relation_entity_ids:
+                return Response({'deleted': 0})
+        
+        # Build filter string for Meilisearch
+        filters = []
+        
+        # Handle type filter
+        type_val = request.query_params.get('type')
+        if type_val:
+            types = [t.strip() for t in type_val.split(',')]
+            if len(types) > 1:
+                type_filter = ' OR '.join([f'type = "{t}"' for t in types])
+                filters.append(f'({type_filter})')
+            else:
+                filters.append(f'type = "{types[0]}"')
+        
+        # Handle tags filter
+        tags_val = request.query_params.get('tags')
+        if tags_val:
+            tags = [t.strip() for t in tags_val.split(',')]
+            expanded_tags = []
+            for tag in tags:
+                expanded_tags.extend(self._expand_hierarchical_tags(tag))
+            expanded_tags = list(set(expanded_tags))
+            
+            if len(expanded_tags) > 1:
+                tag_filter = ' OR '.join([f'tags = "{t}"' for t in expanded_tags])
+                filters.append(f'({tag_filter})')
+            elif len(expanded_tags) == 1:
+                filters.append(f'tags = "{expanded_tags[0]}"')
+        
+        # Handle display filter
+        display_val = request.query_params.get('display')
+        search_attributes = None
+        if display_val and not query:
+            query = display_val
+            search_attributes = ['display']
+        elif display_val and query:
+            query = f"{query} {display_val}"
+            search_attributes = ['display', 'description', 'tags']
+        
+        # Add user filter
+        user_filter = f'user_id = "{str(self.request.user.id)}"'
+        if filters:
+            filter_str = f'({" AND ".join(filters)}) AND {user_filter}'
+        else:
+            filter_str = user_filter
+
+        # Build Django ORM query to delete (more reliable than MeiliSearch for large result sets)
+        queryset = Entity.objects.filter(user=self.request.user)
+        
+        # Apply type filter
+        if type_val:
+            types = [t.strip() for t in type_val.split(',')]
+            queryset = queryset.filter(type__in=types)
+        
+        # Apply tags filter
+        if tags_val:
+            tags = [t.strip() for t in tags_val.split(',')]
+            expanded_tags = []
+            for tag in tags:
+                expanded_tags.extend(self._expand_hierarchical_tags(tag))
+            expanded_tags = list(set(expanded_tags))
+            
+            # Filter entities that have any of the expanded tags
+            from django.db.models import Q
+            tag_query = Q()
+            for tag in expanded_tags:
+                tag_query |= Q(tags__contains=[tag])
+            queryset = queryset.filter(tag_query)
+        
+        # Apply text search filters (display, description)
+        if query or display_val:
+            search_text = query if query else display_val
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(display__icontains=search_text) |
+                Q(description__icontains=search_text)
+            )
+        
+        # Apply relation filter
+        if relation_entity_ids is not None:
+            queryset = queryset.filter(id__in=relation_entity_ids)
+        
+        # Delete entities
+        try:
+            deleted_count = queryset.count()
+            queryset.delete()  # Django signals will handle cleanup
+            
+            return Response({'deleted': deleted_count})
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+    @action(detail=False, methods=['get'])
+    def count(self, request):
+        """Return count of entities matching the search/filter criteria"""
+        query = request.query_params.get('q', '')
+        
+        # Check for relation-based filtering
+        relation_entity_id = request.query_params.get('relation_entity')
+        relation_type = request.query_params.get('relation_type')
+        
+        # Get related entity IDs from Neo4j if relation filter is specified
+        relation_entity_ids = None
+        if relation_entity_id and relation_type:
+            from .sync import neo4j_sync
+            relation_entity_ids = neo4j_sync.find_related_entities(relation_entity_id, relation_type)
+            
+            if not relation_entity_ids:
+                return Response({'count': 0})
+        
+        # Build filter string for Meilisearch
+        filters = []
+        
+        # Handle type filter
+        type_val = request.query_params.get('type')
+        if type_val:
+            types = [t.strip() for t in type_val.split(',')]
+            if len(types) > 1:
+                type_filter = ' OR '.join([f'type = "{t}"' for t in types])
+                filters.append(f'({type_filter})')
+            else:
+                filters.append(f'type = "{types[0]}"')
+        
+        # Handle tags filter (OR for multiple tags, with hierarchical expansion)
+        tags_val = request.query_params.get('tags')
+        if tags_val:
+            tags = [t.strip() for t in tags_val.split(',')]
+            expanded_tags = []
+            for tag in tags:
+                expanded_tags.extend(self._expand_hierarchical_tags(tag))
+            expanded_tags = list(set(expanded_tags))
+            
+            if len(expanded_tags) > 1:
+                tag_filter = ' OR '.join([f'tags = "{t}"' for t in expanded_tags])
+                filters.append(f'({tag_filter})')
+            elif len(expanded_tags) == 1:
+                filters.append(f'tags = "{expanded_tags[0]}"')
+        
+        # Handle display filter
+        display_val = request.query_params.get('display')
+        search_attributes = None
+        if display_val and not query:
+            query = display_val
+            search_attributes = ['display']
+        elif display_val and query:
+            query = f"{query} {display_val}"
+            search_attributes = ['display', 'description', 'tags']
+        
+        # Add user filter
+        user_filter = f'user_id = "{str(self.request.user.id)}"'
+        if filters:
+            filter_str = f'({" AND ".join(filters)}) AND {user_filter}'
+        else:
+            filter_str = user_filter
+
+        # If we have relation filtering but no other search criteria
+        if relation_entity_ids is not None and not query and len(filters) == 0:
+            count = Entity.objects.filter(id__in=relation_entity_ids, user=self.request.user).count()
+            return Response({'count': count})
+        
+        # Get count from database (more accurate than MeiliSearch estimatedTotalHits)
+        # Build Django ORM query based on filters
+        queryset = Entity.objects.filter(user=self.request.user)
+        
+        # Apply type filter
+        if type_val:
+            types = [t.strip() for t in type_val.split(',')]
+            queryset = queryset.filter(type__in=types)
+        
+        # Apply tags filter
+        if tags_val:
+            tags = [t.strip() for t in tags_val.split(',')]
+            expanded_tags = []
+            for tag in tags:
+                expanded_tags.extend(self._expand_hierarchical_tags(tag))
+            expanded_tags = list(set(expanded_tags))
+            
+            # Filter entities that have any of the expanded tags
+            from django.db.models import Q
+            tag_query = Q()
+            for tag in expanded_tags:
+                tag_query |= Q(tags__contains=[tag])
+            queryset = queryset.filter(tag_query)
+        
+        # Apply text search filters (display, description)
+        if query or display_val:
+            search_text = query if query else display_val
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(display__icontains=search_text) |
+                Q(description__icontains=search_text)
+            )
+        
+        # Apply relation filter
+        if relation_entity_ids is not None:
+            queryset = queryset.filter(id__in=relation_entity_ids)
+        
+        count = queryset.count()
+        return Response({'count': count})
+    
     def _expand_hierarchical_tags(self, tag):
         """
         Expand a parent tag to include all its children.
@@ -904,8 +1104,15 @@ class SearchViewSet(viewsets.ViewSet):
         for entity in user_entities:
             if entity.tags:
                 all_tags.update(entity.tags)
+        
+        if tag.startswith('Location'):
+            location_tags = [t for t in all_tags if t.startswith('Location')]
+            print(f"DEBUG: All Location tags for user: {location_tags}")
+        
         matching_tags = [db_tag for db_tag in all_tags 
                         if db_tag == tag or db_tag.startswith(f'{tag}/')]
+        
+        print(f"DEBUG: Expanding '{tag}' -> found {len(matching_tags)} matches: {matching_tags}")
         
         # If no matches found, just return the original tag
         return matching_tags if matching_tags else [tag]
@@ -994,8 +1201,12 @@ class SearchViewSet(viewsets.ViewSet):
         # Import global instance
         from .sync import meili_sync
         
+        # If no query but we have filters, use empty query (MeiliSearch will return all matching filters)
+        # MeiliSearch requires at least empty string for query
+        search_query = query if query else ''
+        
         # Perform Meilisearch query with user filter and optional attribute restriction
-        results = meili_sync.search(query, filter_str=filter_str, attributes_to_search_on=search_attributes)
+        results = meili_sync.search(search_query, filter_str=filter_str, attributes_to_search_on=search_attributes)
         
         # If we have relation filtering, intersect the results with relation entity IDs
         if relation_entity_ids is not None:

@@ -41,7 +41,8 @@ export default function GoogleCallback() {
 
         if (!response.ok) {
           const errorData = await response.json();
-          throw new Error(errorData.error || errorData.detail || 'Failed to authenticate with Google');
+          console.error('Google OAuth backend error:', errorData);
+          throw new Error(errorData.error || errorData.detail || JSON.stringify(errorData) || 'Failed to authenticate with Google');
         }
 
         const data = await response.json();

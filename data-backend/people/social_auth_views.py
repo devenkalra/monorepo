@@ -24,6 +24,16 @@ class GoogleLogin(SocialLoginView):
     adapter_class = GoogleOAuth2Adapter
     callback_url = settings.GOOGLE_OAUTH_CALLBACK_URL  # Frontend callback URL from settings
     client_class = OAuth2Client
+    
+    def post(self, request, *args, **kwargs):
+        """Override to add detailed error logging"""
+        try:
+            return super().post(request, *args, **kwargs)
+        except Exception as e:
+            print(f"GoogleLogin error: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
 
 
 @api_view(['GET'])

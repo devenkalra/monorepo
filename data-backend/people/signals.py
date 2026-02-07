@@ -1,26 +1,34 @@
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
-from .models import Entity, Person, Note, EntityRelation, Tag
+from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag
 from .sync import neo4j_sync, meili_sync
 
-def _adjust_tag_counts(tag_name: str, delta: int):
+print("=" * 80)
+print("SIGNALS MODULE LOADED - Entity sync signals are registered")
+print("=" * 80)
+
+def _adjust_tag_counts(tag_name: str, delta: int, user):
     """Increment or decrement count for a tag and all its ancestors.
     `delta` should be +1 for addition, -1 for removal.
     """
     parts = tag_name.split('/')
     for i in range(1, len(parts) + 1):
         ancestor = '/'.join(parts[:i])
-        tag_obj, _ = Tag.objects.get_or_create(name=ancestor)
+        tag_obj, _ = Tag.objects.get_or_create(name=ancestor, user=user)
         tag_obj.count = max(tag_obj.count + delta, 0)
-        if tag_obj.count == 0:
-            tag_obj.delete()
-        else:
-            tag_obj.save()
+        # Keep the tag even if count is 0 - user might want to reuse it
+        tag_obj.save()
 
 # Cache old tags before saving to compute differences
 @receiver(pre_save, sender=Entity)
 @receiver(pre_save, sender=Person)
 @receiver(pre_save, sender=Note)
+@receiver(pre_save, sender=Location)
+@receiver(pre_save, sender=Movie)
+@receiver(pre_save, sender=Book)
+@receiver(pre_save, sender=Container)
+@receiver(pre_save, sender=Asset)
+@receiver(pre_save, sender=Org)
 def cache_entity_tags(sender, instance, **kwargs):
     if instance.pk:
         try:
@@ -35,8 +43,15 @@ def cache_entity_tags(sender, instance, **kwargs):
 @receiver(post_save, sender=Entity)
 @receiver(post_save, sender=Person)
 @receiver(post_save, sender=Note)
+@receiver(post_save, sender=Location)
+@receiver(post_save, sender=Movie)
+@receiver(post_save, sender=Book)
+@receiver(post_save, sender=Container)
+@receiver(post_save, sender=Asset)
+@receiver(post_save, sender=Org)
 def sync_entity_save(sender, instance, created=False, **kwargs):
     # Sync with external services
+    # print(f"Signal: Syncing entity {instance.id} to external services")  # Too verbose during import
     neo4j_sync.sync_entity(instance)
     meili_sync.sync_entity(instance)
 
@@ -46,19 +61,26 @@ def sync_entity_save(sender, instance, created=False, **kwargs):
     added = new_tags - old_tags
     removed = old_tags - new_tags
     for tag_name in added:
-        _adjust_tag_counts(tag_name, +1)
+        _adjust_tag_counts(tag_name, +1, instance.user)
     for tag_name in removed:
-        _adjust_tag_counts(tag_name, -1)
+        _adjust_tag_counts(tag_name, -1, instance.user)
 
 # Sync entity deletion and decrement tag counts (including hierarchy)
 @receiver(post_delete, sender=Entity)
 @receiver(post_delete, sender=Person)
 @receiver(post_delete, sender=Note)
+@receiver(post_delete, sender=Location)
+@receiver(post_delete, sender=Movie)
+@receiver(post_delete, sender=Book)
+@receiver(post_delete, sender=Container)
+@receiver(post_delete, sender=Asset)
+@receiver(post_delete, sender=Org)
 def sync_entity_delete(sender, instance, **kwargs):
+    print(f"Signal: Deleting entity {instance.id} from external services")
     neo4j_sync.delete_entity(instance.id)
     meili_sync.delete_entity(instance.id)
     for tag_name in (instance.tags or []):
-        _adjust_tag_counts(tag_name, -1)
+        _adjust_tag_counts(tag_name, -1, instance.user)
 
 # Relation sync signals (unchanged)
 @receiver(post_save, sender=EntityRelation)

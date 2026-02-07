@@ -196,18 +196,23 @@ class MeiliSync:
     def sync_entity(self, entity):
         if not self.helper: return
         
+        # Debug: check what tags we're getting
+        print(f"MeiliSync: Entity {entity.display} - tags from entity.tags: {entity.tags}, type: {type(entity.tags)}")
+        
         doc = {
             'id': str(entity.id),
             'type': entity.type,
             'display': entity.display,
             'description': entity.description,
-            'tags': entity.tags,
+            'tags': entity.tags or [],  # Ensure tags is always a list, not None
             'urls': entity.urls,
             'photos': entity.photos,
             'attachments': entity.attachments,
             'locations': entity.locations,
             'user_id': str(entity.user.id) if entity.user else None
         }
+        
+        print(f"MeiliSync: Doc to index: id={doc['id']}, tags={doc['tags']}")
         
         if entity.type == 'Person' and hasattr(entity, 'first_name'):
             doc.update({
@@ -269,15 +274,27 @@ class MeiliSync:
             })
             
         try:
-            self.helper.client.index(self.index_name).add_documents([doc])
+            # Use update_documents to ensure existing documents are updated
+            result = self.helper.client.index(self.index_name).update_documents([doc])
+            print(f"MeiliSearch: Queued indexing for {entity.display} (ID: {entity.id}), task_uid: {result.task_uid}, status: {result.status}")
+            
+            # Check if there's an error in the result
+            if hasattr(result, 'status') and result.status == 'failed':
+                print(f"ERROR: MeiliSearch indexing FAILED for {entity.display}: {result}")
+                raise Exception(f"MeiliSearch indexing failed: {result}")
         except Exception as e:
+            print(f"ERROR syncing to MeiliSearch for {entity.display} (ID: {entity.id}): {e}")
             logger.error(f"Error syncing to MeiliSearch: {e}")
+            # Re-raise to make the error visible
+            raise
 
     def delete_entity(self, entity_id):
         if not self.helper: return
         try:
-            self.helper.client.index(self.index_name).delete_document(str(entity_id))
+            result = self.helper.client.index(self.index_name).delete_document(str(entity_id))
+            print(f"MeiliSearch: Deleted entity {entity_id}, result: {result}")
         except Exception as e:
+            print(f"ERROR deleting from MeiliSearch entity {entity_id}: {e}")
             logger.error(f"Error deleting from MeiliSearch: {e}")
 
     def search(self, query, filter_str=None, attributes_to_search_on=None):
@@ -289,7 +306,11 @@ class MeiliSync:
                 params['filter'] = filter_str
             if attributes_to_search_on:
                 params['attributesToSearchOn'] = attributes_to_search_on
-            result = self.helper.client.index(self.index_name).search(query, params)
+            
+            # If query is empty and we have filters, use empty string to get all matching filter results
+            search_query = query if query else ''
+            
+            result = self.helper.client.index(self.index_name).search(search_query, params)
             return result.get('hits', [])
         except Exception as e:
             logger.error(f"Error searching MeiliSearch: {e}")

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ImageLightbox from './ImageLightbox';
 import RichTextEditor from './RichTextEditor';
+import TagInput from './TagInput';
 import api from '../services/api';
 import { getMediaUrl } from '../utils/apiUrl';
 
@@ -645,7 +646,41 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         return new Date(dateString).toLocaleString();
     };
 
-    const renderField = (label, value, isArray = false, isObject = false) => {
+    const renderHierarchicalTag = (tag) => {
+        // Split tag by '/' to get parts
+        const parts = tag.split('/');
+        
+        return (
+            <div className="inline-flex items-center px-2 py-1 bg-blue-100 dark:bg-blue-900 rounded mr-2 mb-1">
+                {parts.map((part, idx) => {
+                    const tagPath = parts.slice(0, idx + 1).join('/');
+                    const isLast = idx === parts.length - 1;
+                    
+                    return (
+                        <React.Fragment key={idx}>
+                            <button
+                                onClick={() => {
+                                    // Navigate to home with tag filter
+                                    onUpdate({
+                                        ...entity,
+                                        _navigate: true,
+                                        _viewMode: 'list',
+                                        _tagFilter: tagPath
+                                    });
+                                }}
+                                className="text-blue-800 dark:text-blue-200 hover:underline font-medium"
+                            >
+                                {part}
+                            </button>
+                            {!isLast && <span className="mx-1 text-blue-600 dark:text-blue-400">/</span>}
+                        </React.Fragment>
+                    );
+                })}
+            </div>
+        );
+    };
+
+    const renderField = (label, value, isArray = false, isObject = false, isTags = false) => {
         if (!value || (isArray && (!Array.isArray(value) || value.length === 0))) {
             return null;
         }
@@ -667,6 +702,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                             </div>
                                         ))}
                                     </div>
+                                ) : isTags ? (
+                                    renderHierarchicalTag(item)
                                 ) : (
                                     <span className="inline-block px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded mr-2 mb-1">
                                         {item}
@@ -840,8 +877,17 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                         </h3>
                         {!isEditing ? (
                             <>
-                                {renderField('ID', displayEntity?.id)}
                                 {renderField('Display Name', displayEntity?.display)}
+                                
+                                {/* Tags - Show early for visibility */}
+                                {displayEntity.tags && displayEntity.tags.length > 0 && (
+                                    <div className="mb-4">
+                                        <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                            Tags
+                                        </h3>
+                                        {renderField('', displayEntity.tags, true, false, true)}
+                                    </div>
+                                )}
 
                                 {/* Description - Render as HTML */}
                                 {displayEntity?.description && (
@@ -855,15 +901,11 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         />
                                     </div>
                                 )}
-
-                                {renderField('Type', displayEntity?.type)}
                             </>
                         ) : (
                             <>
-                                {!entity?.isNew && renderField('ID', displayEntity?.id)}
-
-                                {/* Type selector for new entities, read-only for existing */}
-                                {entity?.isNew ? (
+                                {/* Type selector for new entities only */}
+                                {entity?.isNew && (
                                     <div className="mb-4">
                                         <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
                                             Type
@@ -883,11 +925,21 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                             <option value="Org">Org</option>
                                         </select>
                                     </div>
-                                ) : (
-                                    renderField('Type', displayEntity?.type)
                                 )}
 
                                 {renderEditableField('Display Name', 'display', editedEntity?.display)}
+
+                                {/* Tags Input */}
+                                <div className="mb-4">
+                                    <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
+                                        Tags
+                                    </label>
+                                    <TagInput
+                                        value={editedEntity?.tags || []}
+                                        onChange={(tags) => handleFieldChange('tags', tags)}
+                                        disabled={false}
+                                    />
+                                </div>
 
                                 {/* Description - Rich Text Editor */}
                                 <div className="mb-4">
@@ -903,16 +955,6 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             </>
                         )}
                     </section>
-
-                    {/* Tags */}
-                    {displayEntity.tags && displayEntity.tags.length > 0 && (
-                        <section>
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
-                                Tags
-                            </h3>
-                            {renderField('', displayEntity.tags, true)}
-                        </section>
-                    )}
 
                     {/* Person-specific fields */}
                     {displayEntity.type === 'Person' && (

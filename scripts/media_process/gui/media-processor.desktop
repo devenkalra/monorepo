@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Media Processor
+Comment=Process and manage media files with EXIF, database, and duplicate management
+Exec=/home/ubuntu/monorepo/scripts/media_process/gui/run_media_processor.sh
+Icon=multimedia-photo-manager
+Terminal=false
+Categories=Graphics;Photography;AudioVideo;Utility;
+Keywords=media;photo;video;exif;duplicate;database;
+StartupNotify=true

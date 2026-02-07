@@ -1,0 +1,48 @@
+{
+  "name": "py_cli",
+  "root": "libs/py_cli",
+  "projectType": "library",
+  "sourceRoot": "libs/py_cli/py_cli",
+  "targets": {
+    "build": {
+      "executor": "@nxlv/python:poetry-build",
+      "outputs": [
+        "{workspaceRoot}/dist/libs/py_cli"
+      ],
+      "options": {}
+    },
+    "lint": {
+      "executor": "@nxlv/python:flake8",
+      "outputs": [
+        "{workspaceRoot}/dist/pylint/libs/py_cli"
+      ],
+      "options": {
+        "outputFile": "dist/pylint/libs/py_cli/report.txt"
+      }
+    },
+    "test": {
+      "executor": "@nxlv/python:pytest",
+      "outputs": [
+        "{workspaceRoot}/coverage/libs/py_cli"
+      ],
+      "options": {
+        "codeCoverage": true,
+        "junitOutput": true,
+        "outputFile": "coverage/libs/py_cli/report.xml"
+      }
+    },
+    "install": {
+      "executor": "@nx/exec:exec",
+      "options": {
+        "command": "poetry install"
+      }
+    },
+    "add": {
+      "executor": "@nxlv/python:poetry-add"
+    },
+    "update-lock": {
+      "executor": "@nxlv/python:poetry-update"
+    }
+  },
+  "tags": ["python", "lib", "py_cli"]
+}

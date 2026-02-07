@@ -1,0 +1,54 @@
+{
+  "key": "req-2339b3772336468990bcc913200d4e0d",
+  "response": {
+    "modelVersion": "gemini-2.5-flash",
+    "usageMetadata": {
+      "promptTokensDetails": [
+        {
+          "tokenCount": 177,
+          "modality": "TEXT"
+        },
+        {
+          "modality": "IMAGE",
+          "tokenCount": 258
+        }
+      ],
+      "thoughtsTokenCount": 764,
+      "promptTokenCount": 435,
+      "totalTokenCount": 1390,
+      "candidatesTokenCount": 191
+    },
+    "responseId": "r9I3ac4R0riq2w-ojprABA",
+    "candidates": [
+      {
+        "index": 0,
+        "content": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "```json\n{\n  \"image_width\": 1024,\n  \"image_height\": 768,\n  \"description\": \"A young girl with a red headband and a pink checkered dress is seated in the cockpit of an airplane, smiling directly at the camera. She holds the flight controls (yoke) with both hands, and a bright green wristband is visible on her left arm. The cockpit's instrument panel with various dials and controls is visible to her right.\",\n  \"faces\": [\n    {\n      \"face_index\": 0,\n      \"confidence\": 0.99,\n      \"box\": {\n        \"left\": 41,\n        \"top\": 78,\n        \"right\": 332,\n        \"bottom\": 386\n      }\n    }\n  ]\n}\n```"
+            }
+          ]
+        },
+        "finishReason": "STOP"
+      }
+    ],
+    "output": {
+      "image_width": 1024,
+      "image_height": 768,
+      "description": "A young girl with a red headband and a pink checkered dress is seated in the cockpit of an airplane, smiling directly at the camera. She holds the flight controls (yoke) with both hands, and a bright green wristband is visible on her left arm. The cockpit's instrument panel with various dials and controls is visible to her right.",
+      "faces": [
+        {
+          "face_index": 0,
+          "confidence": 0.99,
+          "box": {
+            "left": 41,
+            "top": 78,
+            "right": 332,
+            "bottom": 386
+          }
+        }
+      ]
+    }
+  }
+}

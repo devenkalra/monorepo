@@ -278,7 +278,7 @@ books_by_id = {}
 containers_by_id = {}
 assets_by_id = {}
 orgs_by_id = {}
-tags_by_name = {}
+tags_by_path = {}
 relations = []
 
 # Track Neo4j ID to Django UUID mapping
@@ -313,9 +313,9 @@ with open(input_file, 'r') as f:
                 
                 # Handle Tag nodes
                 if is_tag_node(labels):
-                    tag_name = props.get('name', props.get('path', ''))
-                    if tag_name and tag_name not in tags_by_name:
-                        tags_by_name[tag_name] = {
+                    tag_name = props.get('path', props.get('name', ''))
+                    if tag_name and tag_name not in tags_by_path:
+                        tags_by_path[tag_name] = {
                             'name': tag_name,
                             'neo4j_id': node_id
                         }
@@ -487,7 +487,7 @@ with open(input_file, 'r') as f:
                     # Add tag to entity
                     if start_id in id_mapping:
                         entity_uuid = id_mapping[start_id]
-                        tag_name = end_node.get('properties', {}).get('name', '')
+                        tag_name = end_node.get('properties', {}).get('path', '')
                         
                         if tag_name:
                             # Add tag to the appropriate entity dict
@@ -560,7 +560,7 @@ print(f"ℹ️  Skipped {skipped_relations} relationships (non-entity nodes)\n")
 output_data = {
     'export_version': '1.0',
     'export_date': datetime.now().isoformat(),
-    'tags': list(tags_by_name.values()),
+    'tags': list(tags_by_path.values()),
     'entities': [],  # Generic entities (not used in our conversion)
     'people': list(people_by_id.values()),
     'notes': list(notes_by_id.values()),
@@ -579,7 +579,7 @@ with open(output_file, 'w') as f:
 
 print(f"✅ Created import file: {output_file}")
 print(f"\nSummary:")
-print(f"  Tags: {len(tags_by_name)}")
+print(f"  Tags: {len(tags_by_path)}")
 print(f"  People: {len(people_by_id)}")
 print(f"  Notes: {len(notes_by_id)}")
 print(f"  Locations: {len(locations_by_id)}")

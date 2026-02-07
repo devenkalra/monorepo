@@ -320,8 +320,13 @@ class EntityRelation(models.Model):
 
 class Tag(models.Model):
     # Tags are simple strings, e.g. "work", "work/project-a"
-    name = models.CharField(max_length=255, primary_key=True)
+    id = models.AutoField(primary_key=True)
+    name = models.CharField(max_length=255)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     count = models.IntegerField(default=0) # Optional: track usage count
+
+    class Meta:
+        unique_together = ('name', 'user')
 
     def __str__(self):
         return self.name

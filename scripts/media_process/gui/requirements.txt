@@ -1,0 +1,29 @@
+# Requirements for Media Processor GUI
+
+# Core GUI and image handling
+Pillow>=9.0.0
+PyYAML>=6.0  # For configuration file support
+
+# Optional: HEIC/HEIF support
+pillow-heif>=0.13.0  # For HEIC/HEIF image formats
+
+# Optional: RAW file support
+rawpy>=0.18.0  # For RAW camera formats (CR2, NEF, ARW, etc.)
+numpy>=1.20.0  # Required by rawpy
+
+# Optional dependencies for enhanced functionality
+# PyYAML>=6.0  # Already required by parent scripts
+# geopy>=2.3.0  # For geocoding in apply_exif
+# requests>=2.28.0  # For API calls in apply_exif
+
+# Note: exiftool must be installed separately as a system package
+# Ubuntu/Debian: sudo apt-get install libimage-exiftool-perl
+# macOS: brew install exiftool
+
+# Alternative RAW support (if rawpy doesn't work):
+# Install ImageMagick with RAW delegates:
+#   Ubuntu/Debian: sudo apt-get install imagemagick libraw-dev
+#   macOS: brew install imagemagick
+# Or install dcraw:
+#   Ubuntu/Debian: sudo apt-get install dcraw
+#   macOS: brew install dcraw

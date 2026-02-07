@@ -79,25 +79,41 @@ export default function ConversationImport({ onClose, onImportComplete }) {
 
         {/* Content */}
         <div className="p-6 space-y-6">
-          {/* Source Selection */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Conversation Source
-            </label>
-            <select
-              value={source}
-              onChange={(e) => setSource(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
-              disabled={importing}
-            >
-              <option value="chatgpt">ChatGPT</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="claude">Claude</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
+          {importing ? (
+            /* Progress Dialog */
+            <div className="flex flex-col items-center justify-center py-12">
+              <svg className="animate-spin h-16 w-16 text-indigo-600 mb-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+              </svg>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                Importing conversations...
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400">
+                Please wait while we process your file
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Source Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Conversation Source
+                </label>
+                <select
+                  value={source}
+                  onChange={(e) => setSource(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-indigo-500"
+                  disabled={importing}
+                >
+                  <option value="chatgpt">ChatGPT</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="claude">Claude</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
 
-          {/* File Upload */}
+              {/* File Upload */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               JSON Export File
@@ -142,45 +158,47 @@ export default function ConversationImport({ onClose, onImportComplete }) {
             </div>
           </div>
 
-          {/* Instructions */}
-          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-blue-900 dark:text-blue-300 mb-2">
-              How to export conversations:
-            </h3>
-            <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1 list-disc list-inside">
-              <li><strong>ChatGPT:</strong> Settings → Data controls → Export data</li>
-              <li><strong>Gemini:</strong> Activity → Download your data</li>
-              <li><strong>Claude:</strong> Settings → Export conversations</li>
-            </ul>
-          </div>
+              {/* Instructions */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-blue-900 dark:text-blue-300 mb-2">
+                  How to export conversations:
+                </h3>
+                <ul className="text-sm text-blue-800 dark:text-blue-400 space-y-1 list-disc list-inside">
+                  <li><strong>ChatGPT:</strong> Settings → Data controls → Export data</li>
+                  <li><strong>Gemini:</strong> Activity → Download your data</li>
+                  <li><strong>Claude:</strong> Settings → Export conversations</li>
+                </ul>
+              </div>
 
-          {/* Error Message */}
-          {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-
-          {/* Success Message */}
-          {result && (
-            <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
-              <h3 className="text-sm font-medium text-green-900 dark:text-green-300 mb-2">
-                ✓ Import Successful
-              </h3>
-              <p className="text-sm text-green-800 dark:text-green-400">
-                {result.message}
-              </p>
-              {result.output && (
-                <details className="mt-2">
-                  <summary className="text-sm text-green-700 dark:text-green-500 cursor-pointer hover:underline">
-                    View details
-                  </summary>
-                  <pre className="mt-2 text-xs text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30 p-2 rounded overflow-x-auto">
-                    {result.output}
-                  </pre>
-                </details>
+              {/* Error Message */}
+              {error && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg">
+                  {error}
+                </div>
               )}
-            </div>
+
+              {/* Success Message */}
+              {result && (
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-green-900 dark:text-green-300 mb-2">
+                    ✓ Import Successful
+                  </h3>
+                  <p className="text-sm text-green-800 dark:text-green-400">
+                    {result.message}
+                  </p>
+                  {result.output && (
+                    <details className="mt-2">
+                      <summary className="text-sm text-green-700 dark:text-green-500 cursor-pointer hover:underline">
+                        View details
+                      </summary>
+                      <pre className="mt-2 text-xs text-green-800 dark:text-green-400 bg-green-100 dark:bg-green-900/30 p-2 rounded overflow-x-auto">
+                        {result.output}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
 

@@ -28,6 +28,13 @@ function App() {
   const [sortBy, setSortBy] = useState('updated_at'); // default sort by last modified
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedEntityIds, setSelectedEntityIds] = useState(new Set());
+  const [showBulkActions, setShowBulkActions] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isAllSelected, setIsAllSelected] = useState(false);
+  const [totalEntityCount, setTotalEntityCount] = useState(0);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Handle URL changes (back/forward navigation)
   useEffect(() => {
@@ -128,10 +135,29 @@ function App() {
       return;
     }
 
-    // Check if this is a navigation request (clicking on related entity)
+    // Check if this is a navigation request (clicking on related entity or tag)
     if (updatedEntity._navigate) {
       // Remove the navigation flags
-      const { _navigate, _viewMode, ...entityData } = updatedEntity;
+      const { _navigate, _viewMode, _tagFilter, ...entityData } = updatedEntity;
+      
+      // Check if this is a tag filter navigation
+      if (_tagFilter) {
+        // Set the primary tag filter and also add to tags array for multi-select panel
+        setFilters(prev => ({
+          ...prev,
+          primaryTag: _tagFilter,
+          tags: [_tagFilter], // Also add to tags array so it shows in multi-select panel
+          types: [],
+          display: '',
+          relation: null,
+        }));
+        setQuery('');
+        setShowDetail(false);
+        setSelectedEntity(null);
+        navigate('/');
+        return;
+      }
+      
       // Set the initial view mode if specified
       const viewMode = _viewMode || 'details';
       
@@ -209,6 +235,64 @@ function App() {
     setSelectedEntity(createdEntity);
     // Navigate to the created entity's URL
     navigate(`/entity/${createdEntity.id}`);
+  };
+
+  const handleBulkDelete = async () => {
+    setIsDeleting(true);
+    
+    try {
+      let deletedCount = 0;
+      
+      if (isAllSelected) {
+        // Use delete_all endpoint with filter criteria
+        const tagSet = new Set(filters.tags);
+        if (filters.primaryTag) tagSet.add(filters.primaryTag);
+        const tagList = [...tagSet];
+        
+        const params = new URLSearchParams();
+        if (query) params.append('q', query);
+        if (filters.display) params.append('display', filters.display);
+        if (filters.types.length) params.append('type', filters.types.join(','));
+        if (tagList.length) params.append('tags', tagList.join(','));
+        if (filters.relation) {
+          params.append('relation_entity', filters.relation.entityId);
+          params.append('relation_type', filters.relation.relationType);
+        }
+        
+        const resp = await api.fetch(`/api/search/delete_all/?${params.toString()}`, {
+          method: 'POST'
+        });
+        const data = await resp.json();
+        deletedCount = data.deleted || 0;
+      } else {
+        // Delete individual entities
+        const idsToDelete = Array.from(selectedEntityIds);
+        const deletePromises = idsToDelete.map(id =>
+          api.fetch(`/api/entities/${id}/`, { method: 'DELETE' })
+        );
+        
+        await Promise.all(deletePromises);
+        deletedCount = idsToDelete.length;
+      }
+      
+      // Reset selection state
+      setSelectionMode(false);
+      setSelectedEntityIds(new Set());
+      setIsAllSelected(false);
+      setTotalEntityCount(0);
+      setShowDeleteConfirm(false);
+      
+      // Refetch entities to backfill the page
+      await fetchEntities();
+      
+      // Show success message
+      console.log(`Successfully deleted ${deletedCount} entities`);
+    } catch (error) {
+      console.error('Error deleting entities:', error);
+      alert('Failed to delete entities. Please try again.');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const fetchEntities = async () => {
@@ -335,16 +419,151 @@ function App() {
           setShowSortMenu={setShowSortMenu}
         />
         
-        {/* Entity Count */}
-        <div className="mb-4">
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {sortedEntities.length} {sortedEntities.length === 1 ? 'entity' : 'entities'}
-          </p>
+        {/* Entity Count and Selection Controls */}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              {sortedEntities.length} {sortedEntities.length === 1 ? 'entity' : 'entities'}
+            </p>
+            
+            {!selectionMode ? (
+              <button
+                onClick={() => {
+                  setSelectionMode(true);
+                  setSelectedEntityIds(new Set());
+                }}
+                className="px-3 py-1 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+              >
+                Select
+              </button>
+            ) : (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    // Get count of ALL entities matching current filters
+                    try {
+                      const tagSet = new Set(filters.tags);
+                      if (filters.primaryTag) tagSet.add(filters.primaryTag);
+                      const tagList = [...tagSet];
+                      
+                      const params = new URLSearchParams();
+                      if (query) params.append('q', query);
+                      if (filters.display) params.append('display', filters.display);
+                      if (filters.types.length) params.append('type', filters.types.join(','));
+                      if (tagList.length) params.append('tags', tagList.join(','));
+                      if (filters.relation) {
+                        params.append('relation_entity', filters.relation.entityId);
+                        params.append('relation_type', filters.relation.relationType);
+                      }
+                      
+                      // Get count from backend
+                      const countResp = await api.fetch(`/api/search/count/?${params.toString()}`);
+                      const countData = await countResp.json();
+                      const count = countData.count || 0;
+                      
+                      if (count === 0) {
+                        alert('No entities to select.');
+                        return;
+                      }
+                      
+                      // Mark as "all selected" - deletion will use delete_all endpoint
+                      setIsAllSelected(true);
+                      setTotalEntityCount(count);
+                      setSelectedEntityIds(new Set(['__ALL__'])); // Marker to indicate all selected
+                    } catch (error) {
+                      console.error('Failed to select all entities:', error);
+                      alert('Failed to select all entities. Please try again.');
+                    }
+                  }}
+                  className="px-3 py-1 text-sm rounded-l-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Select All
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectionMode(false);
+                    setSelectedEntityIds(new Set());
+                    setShowBulkActions(false);
+                    setIsAllSelected(false);
+                    setTotalEntityCount(0);
+                  }}
+                  className="px-3 py-1 text-sm rounded-r-lg border-t border-r border-b border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                {isAllSelected && (
+                  <span className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+                    All {totalEntityCount} Selected
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          
+          {/* Bulk Actions Dropdown */}
+          {selectionMode && selectedEntityIds.size > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setShowBulkActions(!showBulkActions)}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
+              >
+                Actions ({isAllSelected ? totalEntityCount : selectedEntityIds.size})
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {showBulkActions && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowBulkActions(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-20 py-1">
+                    <button
+                      onClick={() => {
+                        setShowBulkActions(false);
+                        setShowDeleteConfirm(true);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={() => {
+                        // TODO: Implement apply tag
+                        console.log('Apply tag to:', Array.from(selectedEntityIds));
+                        setShowBulkActions(false);
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    >
+                      Apply Tag
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
         
         <EntityList 
           entities={sortedEntities} 
           onEntityClick={handleEntityClick}
+          selectionMode={selectionMode}
+          selectedEntityIds={selectedEntityIds}
+          onToggleSelection={(entityId) => {
+            const newSelected = new Set(selectedEntityIds);
+            if (newSelected.has(entityId)) {
+              newSelected.delete(entityId);
+            } else {
+              newSelected.add(entityId);
+            }
+            setSelectedEntityIds(newSelected);
+            // Clear "all selected" flag if manually toggling
+            if (isAllSelected) {
+              setIsAllSelected(false);
+            }
+          }}
         />
       </div>
       
@@ -399,6 +618,69 @@ function App() {
             fetchEntities(); // Refresh the list
           }}
         />
+      )}
+      
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            {isDeleting ? (
+              /* Progress Dialog */
+              <div className="flex flex-col items-center justify-center py-8">
+                <svg className="animate-spin h-16 w-16 text-red-600 mb-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                  Deleting entities...
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400">
+                  Please wait, this may take a moment
+                </p>
+              </div>
+            ) : (
+              <>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                  {isAllSelected ? '⚠️ Delete All Entities?' : 'Confirm Deletion'}
+                </h2>
+                
+                {isAllSelected ? (
+                  <div className="mb-6">
+                    <p className="text-red-600 dark:text-red-400 font-bold mb-2">
+                      WARNING: ALL DATA WILL BE DELETED
+                    </p>
+                    <p className="text-gray-700 dark:text-gray-300">
+                      You are about to delete ALL {totalEntityCount} entities matching your current search/filters. This action cannot be undone.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-gray-700 dark:text-gray-300 mb-6">
+                    Are you sure you want to delete {selectedEntityIds.size} {selectedEntityIds.size === 1 ? 'entity' : 'entities'}? This action cannot be undone.
+                  </p>
+                )}
+                
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setIsAllSelected(false);
+                      setTotalEntityCount(0);
+                    }}
+                    className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white font-medium"
+                  >
+                    {isAllSelected ? 'Delete All' : 'Proceed'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

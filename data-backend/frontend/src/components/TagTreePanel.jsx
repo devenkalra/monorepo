@@ -32,10 +32,21 @@ function buildTagTree(tags) {
 }
 
 // Recursive tree node component
-function TreeNode({ node, selectedTags, onToggle, depth = 0 }) {
-    const [expanded, setExpanded] = useState(depth < 2); // Auto-expand first 2 levels
+function TreeNode({ node, selectedTags, onToggle, depth = 0, expandedPaths = [] }) {
+    // Auto-expand if: depth < 2, OR this path is in expandedPaths, OR a child is selected
+    const shouldAutoExpand = depth < 2 || 
+                            expandedPaths.includes(node.fullPath) ||
+                            selectedTags.some(tag => tag && tag.startsWith(node.fullPath + '/'));
+    const [expanded, setExpanded] = useState(shouldAutoExpand);
     const hasChildren = Object.keys(node.children).length > 0;
     const isSelected = selectedTags.includes(node.fullPath);
+    
+    // Update expanded state when shouldAutoExpand changes
+    React.useEffect(() => {
+        if (shouldAutoExpand) {
+            setExpanded(true);
+        }
+    }, [shouldAutoExpand]);
     
     return (
         <div className="select-none">
@@ -84,6 +95,7 @@ function TreeNode({ node, selectedTags, onToggle, depth = 0 }) {
                                 selectedTags={selectedTags}
                                 onToggle={onToggle}
                                 depth={depth + 1}
+                                expandedPaths={expandedPaths}
                             />
                         ))}
                 </div>
@@ -96,6 +108,7 @@ function TagTreePanel({ visible, onClose, selectedTags, onTagsChange, isPrimary 
     const [tags, setTags] = useState([]);
     const [loading, setLoading] = useState(true);
     const [tree, setTree] = useState({});
+    const [expandedPaths, setExpandedPaths] = useState([]);
     
     useEffect(() => {
         if (visible) {
@@ -103,13 +116,34 @@ function TagTreePanel({ visible, onClose, selectedTags, onTagsChange, isPrimary 
         }
     }, [visible]);
     
+    // Calculate paths to expand whenever selectedTags changes and tree is ready
+    useEffect(() => {
+        if (visible && selectedTags && Object.keys(tree).length > 0) {
+            const tagsArray = Array.isArray(selectedTags) ? selectedTags : [selectedTags];
+            const pathsToExpand = [];
+            tagsArray.forEach(tag => {
+                if (tag) {
+                    const parts = tag.split('/');
+                    // Add all parent paths
+                    for (let i = 1; i < parts.length; i++) {
+                        pathsToExpand.push(parts.slice(0, i).join('/'));
+                    }
+                }
+            });
+            setExpandedPaths(pathsToExpand);
+        }
+    }, [visible, selectedTags, tree]);
+    
     const fetchTags = async () => {
         setLoading(true);
         try {
-            const resp = await api.fetch('/api/tags/');
+            // Fetch all tags (disable pagination with large limit)
+            const resp = await api.fetch('/api/tags/?limit=1000');
             const data = await resp.json();
-            setTags(data);
-            setTree(buildTagTree(data));
+            // Handle paginated response
+            const tagList = data.results || data;
+            setTags(tagList);
+            setTree(buildTagTree(tagList));
         } catch (error) {
             console.error('Failed to fetch tags', error);
             setTags([]);
@@ -121,8 +155,13 @@ function TagTreePanel({ visible, onClose, selectedTags, onTagsChange, isPrimary 
     
     const handleToggle = (tagPath) => {
         if (isPrimary) {
-            // For primary tag selection, close immediately
-            onTagsChange(tagPath);
+            // For primary tag selection
+            // If clicking the same tag, clear it (deselect)
+            if (selectedTags === tagPath) {
+                onTagsChange('');
+            } else {
+                onTagsChange(tagPath);
+            }
             onClose();
         } else {
             // For multi-select
@@ -165,6 +204,7 @@ function TagTreePanel({ visible, onClose, selectedTags, onTagsChange, isPrimary 
                                     selectedTags={isPrimary ? (selectedTags ? [selectedTags] : []) : selectedTags}
                                     onToggle={handleToggle}
                                     depth={0}
+                                    expandedPaths={expandedPaths}
                                 />
                             ))}
                     </div>

@@ -57,10 +57,103 @@ export default function UserMenu() {
       const result = await response.json();
       
       if (result.success) {
-        alert(`Import successful!\n\nEntities: ${result.stats.entities_created}\nPeople: ${result.stats.people_created}\nNotes: ${result.stats.notes_created}\nRelations: ${result.stats.relations_created}\nTags: ${result.stats.tags_created}${result.stats.errors.length > 0 ? '\n\nErrors: ' + result.stats.errors.length : ''}`);
+        // Build detailed report with safety checks
+        const stats = result.stats || {};
+        const summary = stats.summary || {};
+        
+        // Check if we have the new detailed stats format
+        const hasDetailedStats = summary.total_created !== undefined;
+        
+        if (hasDetailedStats) {
+          // New detailed format
+          let report = 'Import Complete!\n\n';
+          report += '================================\n';
+          report += 'Summary:\n';
+          report += `  ${summary.total_created || 0} entities created\n`;
+          report += `  ${summary.total_updated || 0} entities updated\n`;
+          report += `  ${summary.total_skipped || 0} entities skipped (no changes)\n`;
+          
+          if (summary.total_errors > 0) {
+            report += `  ${summary.total_errors} errors\n`;
+          }
+          if (summary.total_warnings > 0) {
+            report += `  ${summary.total_warnings} warnings\n`;
+          }
+          
+          report += '\nDetails:\n';
+          
+          // Show breakdown for each entity type that had activity
+          const types = [
+            { name: 'People', key: 'people' },
+            { name: 'Notes', key: 'notes' },
+            { name: 'Locations', key: 'locations' },
+            { name: 'Movies', key: 'movies' },
+            { name: 'Books', key: 'books' },
+            { name: 'Containers', key: 'containers' },
+            { name: 'Assets', key: 'assets' },
+            { name: 'Orgs', key: 'orgs' },
+          ];
+          
+          types.forEach(type => {
+            const created = stats[`${type.key}_created`] || 0;
+            const updated = stats[`${type.key}_updated`] || 0;
+            const skipped = stats[`${type.key}_skipped`] || 0;
+            
+            if (created > 0 || updated > 0 || skipped > 0) {
+              const parts = [];
+              if (created > 0) parts.push(`${created} created`);
+              if (updated > 0) parts.push(`${updated} updated`);
+              if (skipped > 0) parts.push(`${skipped} skipped`);
+              report += `  ${type.name}: ${parts.join(', ')}\n`;
+            }
+          });
+          
+          // Relations and tags
+          if ((stats.relations_created || 0) > 0 || (stats.relations_skipped || 0) > 0) {
+            const parts = [];
+            if (stats.relations_created > 0) parts.push(`${stats.relations_created} created`);
+            if (stats.relations_skipped > 0) parts.push(`${stats.relations_skipped} skipped`);
+            report += `  Relations: ${parts.join(', ')}\n`;
+          }
+          
+          if ((stats.tags_created || 0) > 0 || (stats.tags_skipped || 0) > 0) {
+            const parts = [];
+            if (stats.tags_created > 0) parts.push(`${stats.tags_created} created`);
+            if (stats.tags_skipped > 0) parts.push(`${stats.tags_skipped} skipped`);
+            report += `  Tags: ${parts.join(', ')}\n`;
+          }
+          
+          // Show errors if any
+          if (stats.errors && stats.errors.length > 0) {
+            report += '\nErrors:\n';
+            stats.errors.slice(0, 5).forEach(err => {
+              report += `  ${err}\n`;
+            });
+            if (stats.errors.length > 5) {
+              report += `  ... and ${stats.errors.length - 5} more\n`;
+            }
+          }
+          
+          // Show warnings if any
+          if (stats.warnings && stats.warnings.length > 0) {
+            report += '\nWarnings:\n';
+            stats.warnings.slice(0, 3).forEach(warn => {
+              report += `  ${warn}\n`;
+            });
+            if (stats.warnings.length > 3) {
+              report += `  ... and ${stats.warnings.length - 3} more\n`;
+            }
+          }
+          
+          alert(report);
+        } else {
+          // Fallback to old format for backward compatibility
+          alert(`Import successful!\n\nEntities: ${stats.entities_created || 0}\nPeople: ${stats.people_created || 0}\nNotes: ${stats.notes_created || 0}\nRelations: ${stats.relations_created || 0}\nTags: ${stats.tags_created || 0}${stats.errors && stats.errors.length > 0 ? '\n\nErrors: ' + stats.errors.length : ''}`);
+        }
+        
         window.location.reload(); // Refresh to show new data
       } else {
-        alert('Import failed: ' + result.error);
+        alert('Import failed: ' + (result.error || 'Unknown error'));
       }
     } catch (error) {
       console.error('Import failed:', error);

@@ -76,7 +76,7 @@ INSTALLED_APPS = [
     'dj_rest_auth.registration',
     
     # Apps
-    'people',
+    'people.apps.PeopleConfig',
 ]
 
 SITE_ID = 1
@@ -277,6 +277,22 @@ ACCOUNT_UNIQUE_EMAIL = True
 # We still use the username field internally (Django User model requires it)
 # but we'll auto-populate it with email in our CustomRegisterSerializer
 ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
+
+# Social account settings
+SOCIALACCOUNT_AUTO_SIGNUP = True  # Automatically create account from social login
+SOCIALACCOUNT_EMAIL_REQUIRED = True
+SOCIALACCOUNT_QUERY_EMAIL = True
+# Use custom adapter to auto-connect social accounts to existing users with matching email
+SOCIALACCOUNT_ADAPTER = 'people.adapters.CustomSocialAccountAdapter'
+
+# dj-rest-auth specific settings
+ACCOUNT_ALLOW_REGISTRATION = True
+REST_AUTH = {
+    'USE_JWT': True,
+    'JWT_AUTH_COOKIE': None,
+    'JWT_AUTH_HTTPONLY': False,
+    'REGISTER_SERIALIZER': 'people.serializers.CustomRegisterSerializer',
+}
 
 # Email backend for local testing (console)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
