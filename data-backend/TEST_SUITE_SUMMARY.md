@@ -1,307 +1,235 @@
-# Test Suite Summary
+# Integration Test Suite Summary
 
 ## Overview
-
-A comprehensive test suite has been created to prevent regressions and ensure code quality. The suite covers both backend API and frontend UI functionality.
-
-## What Was Created
-
-### Backend Tests (Django)
-
-Located in `/home/ubuntu/monorepo/data-backend/people/tests/`
-
-#### 1. **test_api_entities.py** (18 tests)
-Tests all entity CRUD operations:
-- ✅ Create entities (Person, Location, Movie, Book, Container, Asset, Org, Note)
-- ✅ List entities
-- ✅ Retrieve specific entity
-- ✅ Update entity
-- ✅ Delete entity
-- ✅ Entity with URLs
-- ✅ User isolation (security)
-- ✅ Field validation
-- ✅ Timestamps (created_at, updated_at)
-
-#### 2. **test_api_relations.py** (15 tests)
-Tests entity relationship management:
-- ✅ Person-to-Person relations
-- ✅ Person-to-Location relations
-- ✅ Movie-to-Person relations
-- ✅ Person-to-Org relations
-- ✅ Invalid relation type rejection
-- ✅ Invalid entity type combination rejection
-- ✅ Retrieve entity relations
-- ✅ Delete relations (with reverse cleanup)
-- ✅ Duplicate relation prevention
-- ✅ Non-existent entity handling
-- ✅ User isolation for relations
-- ✅ Symmetric relations (IS_FRIEND_OF)
-- ✅ Asymmetric relations (IS_MANAGER_OF)
-- ✅ Relation entity data inclusion
-
-#### 3. **test_api_search.py** (17 tests)
-Tests search and filtering functionality:
-- ✅ Search by name
-- ✅ Partial match
-- ✅ Case-insensitive search
-- ✅ Search by profession
-- ✅ Multiple results
-- ✅ No results handling
-- ✅ Empty query (returns all)
-- ✅ Filter by type
-- ✅ Filter by multiple types
-- ✅ Filter by tag
-- ✅ Filter by multiple tags
-- ✅ Combined search and filters
-- ✅ Required fields in results
-- ✅ URLs in search results
-- ✅ Special characters
-- ✅ Unicode support
-- ✅ User isolation
-
-#### 4. **test_api_import_export.py** (11 tests)
-Tests data import/export:
-- ✅ Export entities
-- ✅ Export with relations
-- ✅ Export with URLs
-- ✅ Import entities
-- ✅ Import with relations
-- ✅ Import with URLs
-- ✅ Invalid entity type rejection
-- ✅ Duplicate ID handling
-- ✅ Empty data import
-- ✅ Malformed JSON rejection
-- ✅ Export-import round-trip
-
-**Total Backend Tests: 61 tests**
-
-### Frontend Tests (Vitest + React Testing Library)
-
-Located in `/home/ubuntu/monorepo/data-backend/frontend/src/tests/`
-
-#### 1. **EntityDetail.test.jsx** (11 component tests)
-Tests the EntityDetail component:
-- ✅ Renders entity details correctly
-- ✅ Switches to edit mode
-- ✅ Displays URLs correctly
-- ✅ Switches between Details and Relations tabs
-- ✅ Calls onClose when close button clicked
-- ✅ Updates entity when Save clicked
-- ✅ Cancels edit mode without saving
-- ✅ Filters relations by search query
-- ✅ Expands and collapses all relations
-- ✅ Handles new entity creation
-- ✅ Deletes entity when Delete clicked
-
-#### 2. **e2e/critical-flows.test.js** (8 E2E tests)
-Tests complete user workflows:
-- ✅ Entity creation flow (all types)
-- ✅ Entity update flow
-- ✅ Relation management flow (create, verify, delete)
-- ✅ Search flow (by name, by type)
-- ✅ Import/export flow
-- ✅ URL management flow
-- ✅ Error handling (invalid entity type)
-- ✅ Error handling (invalid relation type)
-
-**Total Frontend Tests: 19 tests**
-
-### Test Infrastructure
-
-#### Backend
-- ✅ `run_tests.sh` - Test runner script with options
-- ✅ Test configuration in Django settings
-- ✅ Fixtures and test data setup
-
-#### Frontend
-- ✅ `vitest.config.js` - Vitest configuration
-- ✅ `src/tests/setup.js` - Test environment setup
-- ✅ `run_tests.sh` - Frontend test runner
-- ✅ `INSTALL_TEST_DEPS.sh` - Dependency installer
-- ✅ Updated `package.json` with test scripts
-
-### Documentation
-
-- ✅ **TESTING.md** - Comprehensive testing guide (2000+ lines)
-  - Overview of test structure
-  - Detailed description of each test file
-  - Running tests (all options)
-  - Writing new tests (with templates)
-  - CI/CD integration examples
-  - Troubleshooting guide
-  - Best practices
-
-- ✅ **TESTING_QUICK_REFERENCE.md** - Quick command reference
-  - Common commands
-  - Pre-commit checklist
-  - Common issues and solutions
-
-- ✅ **TEST_SUITE_SUMMARY.md** - This file
-
-## Test Coverage
-
-### Current Coverage Areas
-
-✅ **Entity Management**
-- All entity types (Person, Location, Movie, Book, Container, Asset, Org, Note)
-- CRUD operations
-- Field validation
-- User isolation
-
-✅ **Relations**
-- All relation types
-- Symmetric and asymmetric relations
-- Validation rules
-- Reverse relation management
-
-✅ **Search & Filtering**
-- Text search
-- Type filters
-- Tag filters
-- Combined filters
-- Edge cases (special chars, Unicode)
-
-✅ **Import/Export**
-- Data export format
-- Data import validation
-- Round-trip integrity
-- Error handling
-
-✅ **Frontend Components**
-- EntityDetail component
-- Edit mode
-- Relations display
-- Filtering and collapsing
-
-✅ **User Flows**
-- Complete entity lifecycle
-- Relation management
-- Search and discovery
-- Data migration
-
-### Coverage Goals
-
-- **Backend**: Target >80% code coverage
-- **Frontend**: Target >70% code coverage
-- **Critical Paths**: 100% coverage
-
-## Running the Tests
-
-### Quick Start
-
-```bash
-# Backend tests
-cd /home/ubuntu/monorepo/data-backend
-./run_tests.sh --coverage
-
-# Frontend tests (after installing dependencies)
-cd frontend
-./INSTALL_TEST_DEPS.sh
-./run_tests.sh --coverage
-```
-
-### Continuous Testing
-
-```bash
-# Backend: Watch for changes
-python manage.py test --keepdb
-
-# Frontend: Watch mode
-cd frontend
-npm run test:watch
-```
-
-## Benefits
-
-1. **Regression Prevention**: Catch breaking changes before they reach production
-2. **Documentation**: Tests serve as executable documentation
-3. **Refactoring Confidence**: Safely refactor code with test safety net
-4. **Bug Prevention**: TDD approach prevents bugs from being introduced
-5. **Code Quality**: Forces better code design and modularity
-6. **Team Collaboration**: Clear expectations for functionality
-
-## Next Steps
-
-### Immediate Actions
-
-1. **Install frontend test dependencies**:
-   ```bash
-   cd /home/ubuntu/monorepo/data-backend/frontend
-   ./INSTALL_TEST_DEPS.sh
-   ```
-
-2. **Run initial test suite**:
-   ```bash
-   # Backend
-   cd /home/ubuntu/monorepo/data-backend
-   ./run_tests.sh --coverage
-   
-   # Frontend
-   cd frontend
-   npm test
-   ```
-
-3. **Review coverage reports**:
-   - Backend: `htmlcov/index.html`
-   - Frontend: `coverage/index.html`
-
-### Ongoing Practices
-
-1. **Run tests before committing**
-2. **Write tests for new features**
-3. **Write tests when fixing bugs** (TDD)
-4. **Update tests when changing features**
-5. **Review test coverage regularly**
-6. **Add tests for edge cases**
-
-### Future Enhancements
-
-- [ ] Add performance tests
-- [ ] Add accessibility tests (a11y)
-- [ ] Add visual regression tests
-- [ ] Set up CI/CD pipeline
-- [ ] Add load testing
-- [ ] Add security testing
-- [ ] Increase coverage to 90%+
+Comprehensive integration test suite covering the entire multi-service architecture including Django, PostgreSQL, Neo4j, MeiliSearch, and Redis.
 
 ## Test Statistics
-
-- **Total Tests**: 80+ tests
-- **Backend Tests**: 61 tests
-- **Frontend Tests**: 19 tests
-- **Test Files**: 6 files
-- **Lines of Test Code**: ~3000+ lines
-- **Coverage**: Backend ~60%, Frontend ~50% (initial)
-
-## Maintenance
-
-### Adding New Tests
-
-1. Follow templates in `TESTING.md`
-2. Use descriptive test names
-3. Test one thing per test
-4. Keep tests independent
-5. Mock external dependencies
-
-### Updating Tests
-
-When changing functionality:
-1. Update affected tests first
-2. Run tests to verify they fail
-3. Implement changes
-4. Run tests to verify they pass
-5. Check coverage hasn't decreased
-
-## Resources
-
-- See `TESTING.md` for detailed documentation
-- See `TESTING_QUICK_REFERENCE.md` for quick commands
-- Django Testing: https://docs.djangoproject.com/en/stable/topics/testing/
-- Vitest: https://vitest.dev/
-- React Testing Library: https://testing-library.com/react
+- **Total Tests**: 37
+- **Status**: ✅ All Passing
+- **Execution Time**: ~98 seconds
+- **Coverage**: Backend API, all entity types, file uploads, cross-user operations
 
 ---
 
-**Created**: 2026-02-01
-**Last Updated**: 2026-02-01
-**Status**: ✅ Complete and Ready to Use
+## Test Classes
+
+### 1. FullStackIntegrationTest (21 tests)
+Core functionality tests covering the main features:
+
+1. ✅ `test_01_person_full_lifecycle` - Complete CRUD + search + tags
+2. ✅ `test_02_all_entity_types_indexing` - All 8 entity types indexed in MeiliSearch
+3. ✅ `test_03_hierarchical_tags` - Tag hierarchy creation and counting
+4. ✅ `test_04_relations_and_neo4j` - Relations + Neo4j sync
+5. ✅ `test_05_bulk_operations` - Bulk delete with tag filtering
+6. ✅ `test_06_tag_counting` - Hierarchical tag count accuracy
+7. ✅ `test_07_import_export_roundtrip` - Data export/import
+8. ✅ `test_08_multi_user_isolation` - User data isolation
+9. ✅ `test_09_search_with_multiple_filters` - Complex search queries
+10. ✅ `test_10_meilisearch_sync_on_update` - Real-time search updates
+11. ✅ `test_11_special_characters_in_tags` - Tag name edge cases
+12. ✅ `test_12_concurrent_tag_updates` - Race condition handling
+13. ✅ `test_13_tags_persist_with_zero_count` - Tag persistence
+14. ✅ `test_14_relation_type_validation` - Relation schema validation
+15. ✅ `test_15_empty_and_null_tags` - Edge case handling
+16. ✅ `test_16_hierarchical_tag_expansion` - Tag tree expansion
+17. ✅ `test_17_entity_type_specific_fields` - Type-specific field search
+18. ✅ `test_18_tag_tree_api` - Tag tree endpoint
+19. ✅ `test_19_bulk_delete_with_relations` - Cascade delete verification
+20. ✅ `test_20_display_field_search_restriction` - Display-only search
+21. ✅ `test_21_large_batch_import` - Stress test (100 entities)
+
+### 2. CrossUserImportExportTest (1 test)
+Cross-user data migration:
+
+22. ✅ `test_cross_user_import_export` - Export from user1, import to user2 with UUID regeneration
+
+### 3. AllEntityTypesCRUDTest (9 tests)
+**NEW** - Comprehensive CRUD for ALL entity types to catch type-specific bugs:
+
+23. ✅ `test_person_crud` - Person full CRUD
+24. ✅ `test_note_crud` - Note full CRUD
+25. ✅ `test_location_crud` - Location full CRUD
+26. ✅ `test_movie_crud` - Movie full CRUD
+27. ✅ `test_book_crud` - Book full CRUD
+28. ✅ `test_container_crud` - Container full CRUD
+29. ✅ `test_asset_crud` - Asset full CRUD
+30. ✅ `test_org_crud` - Org full CRUD (specifically tests case-sensitive 'kind' field)
+31. ✅ `test_all_entity_types_searchable` - Verifies all 8 types are indexed
+
+### 4. FileUploadTest (6 tests)
+**NEW** - File upload functionality:
+
+32. ✅ `test_upload_image` - Image file upload (PNG)
+33. ✅ `test_upload_text_file` - Text file upload
+34. ✅ `test_upload_pdf` - PDF file upload
+35. ✅ `test_upload_without_file` - Error handling
+36. ✅ `test_entity_with_uploaded_photo` - Person with photo attachment
+37. ✅ `test_entity_with_uploaded_attachment` - Note with file attachment
+
+---
+
+## Bugs Found and Fixed
+
+### During Test Development:
+
+1. **Org Entity Bug** ⚠️
+   - **Issue**: `kind` field validation was case-sensitive ('Company' not 'company')
+   - **Impact**: Frontend likely sending lowercase values causing 400 errors
+   - **Fix**: Tests now use correct capitalized values
+   - **Action Needed**: Update frontend to use: 'School', 'University', 'Company', 'NonProfit', 'Club', 'Unspecified'
+
+2. **Movie/Book Model Mismatch** ⚠️
+   - **Issue**: Models don't have `title`, `author`, `director`, `isbn` fields
+   - **Reality**: They use `display` and `description` from Entity base class
+   - **Impact**: Frontend may be trying to use non-existent fields
+   - **Fix**: Tests updated to use correct fields
+
+3. **Import UUID Collision Handling** ✅
+   - **Issue**: Importing from one user to another failed with duplicate key errors
+   - **Fix**: Import now generates new UUIDs when collisions occur
+   - **Result**: Cross-user import/export works perfectly
+
+4. **Relation Import Mapping** ✅
+   - **Issue**: Relations weren't being created during import
+   - **Fix**: Improved entity ID mapping logic
+   - **Result**: Relations correctly mapped to new entity IDs
+
+---
+
+## Test Coverage by Feature
+
+### ✅ **FULLY COVERED**:
+- All 8 entity types (Person, Note, Location, Movie, Book, Container, Asset, Org)
+- CRUD operations for all types
+- Search (tags, type, display, full-text)
+- Hierarchical tags
+- Relations (create, delete, validation, Neo4j sync)
+- Multi-user isolation
+- Import/Export (including cross-user)
+- Bulk operations
+- File uploads (images, PDFs, text files)
+- MeiliSearch indexing
+- Tag persistence
+
+### ❌ **NOT COVERED** (See API_COVERAGE_ANALYSIS.md):
+- Authentication endpoints (login, registration, logout, token refresh)
+- Google OAuth flow
+- Notes import (ChatGPT/Claude conversations)
+- Relation updates (PATCH)
+
+---
+
+## Running the Tests
+
+### Local Docker Environment:
+```bash
+cd /home/ubuntu/monorepo/data-backend
+./run_integration_tests.sh
+```
+
+### Individual Test Classes:
+```bash
+# All entity types CRUD
+docker compose -f docker-compose.local.yml exec backend \
+  python manage.py test people.tests.test_integration_full_stack.AllEntityTypesCRUDTest
+
+# File uploads
+docker compose -f docker-compose.local.yml exec backend \
+  python manage.py test people.tests.test_integration_full_stack.FileUploadTest
+
+# Cross-user import/export
+docker compose -f docker-compose.local.yml exec backend \
+  python manage.py test people.tests.test_integration_full_stack.CrossUserImportExportTest
+```
+
+### CI/CD:
+- CircleCI: Configured in `.circleci/continue-config.yml`
+- GitHub Actions: Configured in `.github/workflows/integration-tests.yml`
+
+---
+
+## Key Insights
+
+### Entity Type Differences:
+1. **Person**: Has `first_name`, `last_name`, `emails`, `phones`, `profession`, `gender`
+2. **Note**: Only has `date` field + base Entity fields
+3. **Location**: Has full address fields (`address1`, `address2`, `city`, `state`, `zip`, `country`)
+4. **Movie**: Has `year`, `language`, `country` (NO `title` or `director` fields!)
+5. **Book**: Has `year`, `language`, `country`, `summary` (NO `title`, `author`, or `isbn` fields!)
+6. **Container**: Only has base Entity fields
+7. **Asset**: Has `value` field
+8. **Org**: Has `name`, `kind` (with strict choices: School, University, Company, NonProfit, Club, Unspecified)
+
+### Common Fields (from Entity base class):
+- `id` (UUID)
+- `type` (auto-set)
+- `display`
+- `description`
+- `tags` (JSON array)
+- `urls` (JSON array)
+- `photos` (JSON array)
+- `attachments` (JSON array)
+- `locations` (JSON array)
+- `user` (ForeignKey)
+- `created_at`
+- `updated_at`
+
+---
+
+## Maintenance
+
+### Adding New Tests:
+1. Add test method to appropriate test class
+2. Follow naming convention: `test_##_descriptive_name`
+3. Include print statements for progress tracking
+4. Use `time.sleep()` for MeiliSearch async operations (2-3 seconds)
+5. Clean up created entities in test (use DELETE or rely on TransactionTestCase rollback)
+
+### When Adding New Entity Types:
+1. Add CRUD test in `AllEntityTypesCRUDTest`
+2. Add to `test_all_entity_types_searchable`
+3. Update `test_02_all_entity_types_indexing` in `FullStackIntegrationTest`
+4. Add to import/export tests if needed
+
+### When Adding New API Endpoints:
+1. Check if endpoint is used in frontend (grep for the URL)
+2. Add integration test if it's a core feature
+3. Update `API_COVERAGE_ANALYSIS.md`
+
+---
+
+## Performance Notes
+
+- **Average test execution**: ~2.5 seconds per test
+- **MeiliSearch indexing delay**: 2-3 seconds (asynchronous)
+- **Database setup**: ~5 seconds (migrations)
+- **Total suite**: ~98 seconds for 37 tests
+
+### Optimization Opportunities:
+- Use `setUpClass` for shared test data (currently using `setUp`)
+- Reduce MeiliSearch wait times with polling instead of fixed sleep
+- Parallel test execution (currently sequential)
+
+---
+
+## Next Steps
+
+1. **Fix Frontend Issues**:
+   - Update Org creation to use capitalized `kind` values
+   - Verify Movie/Book forms use `display` and `description` fields
+   - Test import functionality with new detailed reporting
+
+2. **Add Missing Tests**:
+   - Authentication flows
+   - Notes import (ChatGPT/Claude)
+   - Relation updates
+
+3. **CI/CD Integration**:
+   - Enable CircleCI or GitHub Actions
+   - Set up test result reporting
+   - Add code coverage tracking
+
+4. **Documentation**:
+   - Update API documentation with correct field names
+   - Document entity type differences
+   - Create frontend integration guide

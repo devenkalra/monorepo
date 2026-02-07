@@ -1154,6 +1154,631 @@ class CrossUserImportExportTest(TransactionTestCase):
         print("✓ Cross-user import/export test passed")
 
 
+class AllEntityTypesCRUDTest(TransactionTestCase):
+    """Test CRUD operations for ALL entity types to catch type-specific bugs"""
+    
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='entitytest',
+            email='entitytest@example.com',
+            password='testpass123'
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+    
+    def test_person_crud(self):
+        """Test Person entity CRUD"""
+        print("\n=== Testing Person CRUD ===")
+        
+        # CREATE
+        person_data = {
+            'first_name': 'John',
+            'last_name': 'Doe',
+            'emails': ['john@example.com'],
+            'phones': ['+1234567890'],
+            'profession': 'Engineer',
+            'gender': 'Male',
+            'tags': ['Work', 'Engineering']
+        }
+        response = self.client.post('/api/people/', person_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        person_id = response.data['id']
+        self.assertEqual(response.data['first_name'], 'John')
+        self.assertEqual(response.data['last_name'], 'Doe')
+        print(f"✓ Created Person: {person_id}")
+        
+        # READ
+        response = self.client.get(f'/api/people/{person_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['first_name'], 'John')
+        print(f"✓ Read Person: {person_id}")
+        
+        # UPDATE
+        update_data = {'profession': 'Senior Engineer'}
+        response = self.client.patch(f'/api/people/{person_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['profession'], 'Senior Engineer')
+        print(f"✓ Updated Person: {person_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/people/{person_id}/')
+        self.assertEqual(response.status_code, 204)
+        response = self.client.get(f'/api/people/{person_id}/')
+        self.assertEqual(response.status_code, 404)
+        print(f"✓ Deleted Person: {person_id}")
+    
+    def test_note_crud(self):
+        """Test Note entity CRUD"""
+        print("\n=== Testing Note CRUD ===")
+        
+        # CREATE
+        note_data = {
+            'display': 'Meeting Notes',
+            'description': 'Important discussion about project timeline',
+            'tags': ['Work', 'Meetings']
+        }
+        response = self.client.post('/api/notes/', note_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        note_id = response.data['id']
+        self.assertEqual(response.data['display'], 'Meeting Notes')
+        print(f"✓ Created Note: {note_id}")
+        
+        # READ
+        response = self.client.get(f'/api/notes/{note_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['display'], 'Meeting Notes')
+        print(f"✓ Read Note: {note_id}")
+        
+        # UPDATE
+        update_data = {'description': 'Updated discussion notes'}
+        response = self.client.patch(f'/api/notes/{note_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['description'], 'Updated discussion notes')
+        print(f"✓ Updated Note: {note_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/notes/{note_id}/')
+        self.assertEqual(response.status_code, 204)
+        print(f"✓ Deleted Note: {note_id}")
+    
+    def test_location_crud(self):
+        """Test Location entity CRUD"""
+        print("\n=== Testing Location CRUD ===")
+        
+        # CREATE
+        location_data = {
+            'display': 'Office',
+            'address1': '123 Main St',
+            'address2': 'Suite 100',
+            'city': 'San Francisco',
+            'state': 'CA',
+            'zip': '94105',
+            'country': 'USA',
+            'tags': ['Work', 'Office']
+        }
+        response = self.client.post('/api/locations/', location_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        location_id = response.data['id']
+        self.assertEqual(response.data['city'], 'San Francisco')
+        print(f"✓ Created Location: {location_id}")
+        
+        # READ
+        response = self.client.get(f'/api/locations/{location_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['city'], 'San Francisco')
+        print(f"✓ Read Location: {location_id}")
+        
+        # UPDATE
+        update_data = {'address2': 'Suite 200'}
+        response = self.client.patch(f'/api/locations/{location_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['address2'], 'Suite 200')
+        print(f"✓ Updated Location: {location_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/locations/{location_id}/')
+        self.assertEqual(response.status_code, 204)
+        print(f"✓ Deleted Location: {location_id}")
+    
+    def test_movie_crud(self):
+        """Test Movie entity CRUD"""
+        print("\n=== Testing Movie CRUD ===")
+        
+        # CREATE
+        # Note: Movie doesn't have 'title' or 'director' fields - use 'display' and 'description'
+        movie_data = {
+            'display': 'The Matrix (1999)',
+            'description': 'Directed by Wachowski Brothers',
+            'year': 1999,
+            'language': 'English',
+            'country': 'USA',
+            'tags': ['Sci-Fi', 'Action']
+        }
+        response = self.client.post('/api/movies/', movie_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        movie_id = response.data['id']
+        self.assertEqual(response.data['display'], 'The Matrix (1999)')
+        print(f"✓ Created Movie: {movie_id}")
+        
+        # READ
+        response = self.client.get(f'/api/movies/{movie_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['year'], 1999)
+        self.assertEqual(response.data['language'], 'English')
+        print(f"✓ Read Movie: {movie_id}")
+        
+        # UPDATE
+        update_data = {'year': 1998, 'country': 'Australia'}
+        response = self.client.patch(f'/api/movies/{movie_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['year'], 1998)
+        self.assertEqual(response.data['country'], 'Australia')
+        print(f"✓ Updated Movie: {movie_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/movies/{movie_id}/')
+        self.assertEqual(response.status_code, 204)
+        print(f"✓ Deleted Movie: {movie_id}")
+    
+    def test_book_crud(self):
+        """Test Book entity CRUD"""
+        print("\n=== Testing Book CRUD ===")
+        
+        # CREATE
+        # Note: Book doesn't have 'title', 'author', or 'isbn' fields - use 'display' and 'description'
+        book_data = {
+            'display': 'Clean Code',
+            'description': 'By Robert C. Martin - ISBN: 9780132350884',
+            'year': 2008,
+            'language': 'English',
+            'country': 'USA',
+            'summary': 'A handbook of agile software craftsmanship',
+            'tags': ['Programming', 'Software Engineering']
+        }
+        response = self.client.post('/api/books/', book_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        book_id = response.data['id']
+        self.assertEqual(response.data['display'], 'Clean Code')
+        print(f"✓ Created Book: {book_id}")
+        
+        # READ
+        response = self.client.get(f'/api/books/{book_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['year'], 2008)
+        self.assertEqual(response.data['summary'], 'A handbook of agile software craftsmanship')
+        print(f"✓ Read Book: {book_id}")
+        
+        # UPDATE
+        update_data = {'summary': 'Essential reading for software developers', 'year': 2009}
+        response = self.client.patch(f'/api/books/{book_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['summary'], 'Essential reading for software developers')
+        self.assertEqual(response.data['year'], 2009)
+        print(f"✓ Updated Book: {book_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/books/{book_id}/')
+        self.assertEqual(response.status_code, 204)
+        print(f"✓ Deleted Book: {book_id}")
+    
+    def test_container_crud(self):
+        """Test Container entity CRUD"""
+        print("\n=== Testing Container CRUD ===")
+        
+        # CREATE
+        container_data = {
+            'display': 'Storage Box A',
+            'description': 'Contains office supplies',
+            'tags': ['Storage', 'Office']
+        }
+        response = self.client.post('/api/containers/', container_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        container_id = response.data['id']
+        self.assertEqual(response.data['display'], 'Storage Box A')
+        print(f"✓ Created Container: {container_id}")
+        
+        # READ
+        response = self.client.get(f'/api/containers/{container_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['display'], 'Storage Box A')
+        print(f"✓ Read Container: {container_id}")
+        
+        # UPDATE
+        update_data = {'description': 'Contains archived documents'}
+        response = self.client.patch(f'/api/containers/{container_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['description'], 'Contains archived documents')
+        print(f"✓ Updated Container: {container_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/containers/{container_id}/')
+        self.assertEqual(response.status_code, 204)
+        print(f"✓ Deleted Container: {container_id}")
+    
+    def test_asset_crud(self):
+        """Test Asset entity CRUD"""
+        print("\n=== Testing Asset CRUD ===")
+        
+        # CREATE
+        asset_data = {
+            'display': 'Laptop',
+            'description': 'MacBook Pro 16"',
+            'value': 2500.00,
+            'tags': ['Electronics', 'Work']
+        }
+        response = self.client.post('/api/assets/', asset_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        asset_id = response.data['id']
+        self.assertEqual(response.data['display'], 'Laptop')
+        print(f"✓ Created Asset: {asset_id}")
+        
+        # READ
+        response = self.client.get(f'/api/assets/{asset_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(float(response.data['value']), 2500.00)
+        print(f"✓ Read Asset: {asset_id}")
+        
+        # UPDATE
+        update_data = {'value': 2000.00}
+        response = self.client.patch(f'/api/assets/{asset_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(float(response.data['value']), 2000.00)
+        print(f"✓ Updated Asset: {asset_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/assets/{asset_id}/')
+        self.assertEqual(response.status_code, 204)
+        print(f"✓ Deleted Asset: {asset_id}")
+    
+    def test_org_crud(self):
+        """Test Org entity CRUD - This was specifically mentioned as having bugs"""
+        print("\n=== Testing Org CRUD ===")
+        
+        # CREATE
+        # Note: kind must be one of: School, University, Company, NonProfit, Club, Unspecified (case-sensitive!)
+        org_data = {
+            'name': 'TechCorp',
+            'display': 'TechCorp Inc.',
+            'kind': 'Company',  # Must be 'Company' not 'company'
+            'description': 'A technology company',
+            'tags': ['Business', 'Technology']
+        }
+        response = self.client.post('/api/orgs/', org_data, format='json')
+        if response.status_code != 201:
+            print(f"ERROR: Org creation failed with status {response.status_code}")
+            print(f"Response data: {response.data}")
+        self.assertEqual(response.status_code, 201)
+        org_id = response.data['id']
+        self.assertEqual(response.data['name'], 'TechCorp')
+        self.assertEqual(response.data['kind'], 'Company')
+        print(f"✓ Created Org: {org_id}")
+        
+        # READ
+        response = self.client.get(f'/api/orgs/{org_id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['name'], 'TechCorp')
+        self.assertEqual(response.data['kind'], 'Company')
+        print(f"✓ Read Org: {org_id}")
+        
+        # UPDATE
+        update_data = {'kind': 'NonProfit', 'description': 'A non-profit organization'}
+        response = self.client.patch(f'/api/orgs/{org_id}/', update_data, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['kind'], 'NonProfit')
+        self.assertEqual(response.data['description'], 'A non-profit organization')
+        print(f"✓ Updated Org: {org_id}")
+        
+        # DELETE
+        response = self.client.delete(f'/api/orgs/{org_id}/')
+        self.assertEqual(response.status_code, 204)
+        response = self.client.get(f'/api/orgs/{org_id}/')
+        self.assertEqual(response.status_code, 404)
+        print(f"✓ Deleted Org: {org_id}")
+    
+    def test_all_entity_types_searchable(self):
+        """Test that all entity types are searchable and indexed"""
+        print("\n=== Testing All Entity Types Are Searchable ===")
+        
+        # Create one of each type with a unique tag
+        test_tag = 'SearchTest/AllTypes'
+        
+        entities = []
+        
+        # Person
+        person = Person.objects.create(
+            user=self.user,
+            first_name='Search',
+            last_name='Person',
+            tags=[test_tag]
+        )
+        entities.append(('Person', person.id))
+        
+        # Note
+        note = Note.objects.create(
+            user=self.user,
+            display='Search Note',
+            tags=[test_tag]
+        )
+        entities.append(('Note', note.id))
+        
+        # Location
+        location = Location.objects.create(
+            user=self.user,
+            display='Search Location',
+            city='TestCity',
+            tags=[test_tag]
+        )
+        entities.append(('Location', location.id))
+        
+        # Movie
+        movie = Movie.objects.create(
+            user=self.user,
+            display='Search Movie',
+            tags=[test_tag]
+        )
+        entities.append(('Movie', movie.id))
+        
+        # Book
+        book = Book.objects.create(
+            user=self.user,
+            display='Search Book',
+            tags=[test_tag]
+        )
+        entities.append(('Book', book.id))
+        
+        # Container
+        container = Container.objects.create(
+            user=self.user,
+            display='Search Container',
+            tags=[test_tag]
+        )
+        entities.append(('Container', container.id))
+        
+        # Asset
+        asset = Asset.objects.create(
+            user=self.user,
+            display='Search Asset',
+            tags=[test_tag]
+        )
+        entities.append(('Asset', asset.id))
+        
+        # Org
+        org = Org.objects.create(
+            user=self.user,
+            name='SearchOrg',
+            display='Search Org',
+            kind='Company',  # Must be capitalized
+            tags=[test_tag]
+        )
+        entities.append(('Org', org.id))
+        
+        print(f"✓ Created {len(entities)} entities of different types")
+        
+        # Wait for MeiliSearch indexing
+        time.sleep(3)
+        
+        # Search by tag - should find all 8 entities
+        response = self.client.get(f'/api/search/?tags={test_tag}')
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 8)
+        
+        # Verify all types are present
+        found_types = {item['type'] for item in response.data}
+        expected_types = {'Person', 'Note', 'Location', 'Movie', 'Book', 'Container', 'Asset', 'Org'}
+        self.assertEqual(found_types, expected_types)
+        
+        print(f"✓ All {len(entities)} entity types are searchable and indexed")
+        print(f"  Found types: {sorted(found_types)}")
+
+
+class FileUploadTest(TransactionTestCase):
+    """Test file upload functionality"""
+    
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='uploadtest',
+            email='upload@example.com',
+            password='testpass123'
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+    
+    def test_upload_image(self):
+        """Test uploading an image file"""
+        print("\n=== Testing Image Upload ===")
+        
+        # Create a simple test image (1x1 pixel PNG)
+        import io
+        from PIL import Image
+        
+        # Create a 1x1 red pixel image
+        img = Image.new('RGB', (1, 1), color='red')
+        img_file = io.BytesIO()
+        img.save(img_file, format='PNG')
+        img_file.seek(0)
+        img_file.name = 'test_image.png'
+        
+        # Upload the image
+        response = self.client.post(
+            '/api/upload/',
+            {'file': img_file},
+            format='multipart'
+        )
+        
+        self.assertEqual(response.status_code, 201)
+        self.assertIn('url', response.data)
+        self.assertTrue(response.data['url'].endswith('.png'))
+        
+        print(f"✓ Image uploaded successfully: {response.data['url']}")
+    
+    def test_upload_text_file(self):
+        """Test uploading a text file"""
+        print("\n=== Testing Text File Upload ===")
+        
+        import io
+        
+        # Create a test text file
+        text_content = b"This is a test document"
+        text_file = io.BytesIO(text_content)
+        text_file.name = 'test_document.txt'
+        
+        # Upload the file
+        response = self.client.post(
+            '/api/upload/',
+            {'file': text_file},
+            format='multipart'
+        )
+        
+        self.assertEqual(response.status_code, 201)
+        self.assertIn('url', response.data)
+        self.assertTrue(response.data['url'].endswith('.txt'))
+        
+        print(f"✓ Text file uploaded successfully: {response.data['url']}")
+    
+    def test_upload_pdf(self):
+        """Test uploading a PDF file"""
+        print("\n=== Testing PDF Upload ===")
+        
+        import io
+        
+        # Create a minimal valid PDF
+        pdf_content = b"""%PDF-1.4
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+>>
+endobj
+xref
+0 4
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+trailer
+<<
+/Size 4
+/Root 1 0 R
+>>
+startxref
+190
+%%EOF"""
+        
+        pdf_file = io.BytesIO(pdf_content)
+        pdf_file.name = 'test_document.pdf'
+        
+        # Upload the PDF
+        response = self.client.post(
+            '/api/upload/',
+            {'file': pdf_file},
+            format='multipart'
+        )
+        
+        self.assertEqual(response.status_code, 201)
+        self.assertIn('url', response.data)
+        self.assertTrue(response.data['url'].endswith('.pdf'))
+        
+        print(f"✓ PDF uploaded successfully: {response.data['url']}")
+    
+    def test_upload_without_file(self):
+        """Test upload endpoint without providing a file"""
+        print("\n=== Testing Upload Without File ===")
+        
+        response = self.client.post('/api/upload/', {}, format='multipart')
+        
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('error', response.data)
+        
+        print(f"✓ Upload correctly rejected without file")
+    
+    def test_entity_with_uploaded_photo(self):
+        """Test creating an entity with an uploaded photo"""
+        print("\n=== Testing Entity With Uploaded Photo ===")
+        
+        # First upload a photo
+        import io
+        from PIL import Image
+        
+        img = Image.new('RGB', (100, 100), color='blue')
+        img_file = io.BytesIO()
+        img.save(img_file, format='JPEG')
+        img_file.seek(0)
+        img_file.name = 'profile.jpg'
+        
+        upload_response = self.client.post(
+            '/api/upload/',
+            {'file': img_file},
+            format='multipart'
+        )
+        self.assertEqual(upload_response.status_code, 201)
+        photo_url = upload_response.data['url']
+        
+        print(f"✓ Photo uploaded: {photo_url}")
+        
+        # Create a person with the uploaded photo
+        person_data = {
+            'first_name': 'Photo',
+            'last_name': 'Test',
+            'photos': [photo_url],
+            'tags': ['Test']
+        }
+        
+        response = self.client.post('/api/people/', person_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['photos'], [photo_url])
+        
+        print(f"✓ Person created with photo: {response.data['id']}")
+    
+    def test_entity_with_uploaded_attachment(self):
+        """Test creating an entity with an uploaded attachment"""
+        print("\n=== Testing Entity With Uploaded Attachment ===")
+        
+        # Upload a document
+        import io
+        
+        doc_content = b"Important document content"
+        doc_file = io.BytesIO(doc_content)
+        doc_file.name = 'resume.pdf'
+        
+        upload_response = self.client.post(
+            '/api/upload/',
+            {'file': doc_file},
+            format='multipart'
+        )
+        self.assertEqual(upload_response.status_code, 201)
+        attachment_url = upload_response.data['url']
+        
+        print(f"✓ Attachment uploaded: {attachment_url}")
+        
+        # Create a note with the attachment
+        note_data = {
+            'display': 'Resume',
+            'description': 'Job application resume',
+            'attachments': [attachment_url],
+            'tags': ['Career']
+        }
+        
+        response = self.client.post('/api/notes/', note_data, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['attachments'], [attachment_url])
+        
+        print(f"✓ Note created with attachment: {response.data['id']}")
+
+
 class MeiliSearchStressTest(TransactionTestCase):
     """Stress tests for MeiliSearch indexing"""
     
