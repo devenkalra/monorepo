@@ -63,13 +63,13 @@ class Command(BaseCommand):
                 
                 self.stdout.write(
                     self.style.SUCCESS(
-                        f'  ✓ Updated: {conversation.label}'
+                        f'  ✓ Updated: {conversation.display}'
                     )
                 )
             except Exception as e:
                 self.stdout.write(
                     self.style.ERROR(
-                        f'  ✗ Failed to update {conversation.label}: {e}'
+                        f'  ✗ Failed to update {conversation.display}: {e}'
                     )
                 )
         

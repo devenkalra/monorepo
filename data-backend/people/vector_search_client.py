@@ -34,12 +34,12 @@ class VectorSearchClient:
         try:
             # Strip HTML tags from description for better search
             import re
-            content = re.sub('<[^<]+?>', '', note.description) if note.description else note.label
+            content = re.sub('<[^<]+?>', '', note.description) if note.description else note.display
             
             data = {
                 'id': str(note.id),
                 'user_id': str(note.user.id),
-                'label': note.label,
+                'label': note.display,  # Note uses 'display' not 'label'
                 'content': content,
                 'tags': note.tags if note.tags else [],
                 'type': note.type

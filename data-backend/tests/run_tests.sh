@@ -2,7 +2,8 @@
 #
 # Test Runner Script for Data Backend
 # 
-# This script runs all backend tests with various options.
+# This script runs integration tests in Docker environment.
+# For the original integration test runner, use ../run_integration_tests.sh
 #
 
 set -e
@@ -19,16 +20,11 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 # Parse command line arguments
-COVERAGE=false
 VERBOSE=false
 SPECIFIC_TEST=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --coverage|-c)
-            COVERAGE=true
-            shift
-            ;;
         --verbose|-v)
             VERBOSE=true
             shift
@@ -38,18 +34,28 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --help|-h)
-            echo "Usage: ./run_tests.sh [OPTIONS]"
+            echo "Usage: ./tests/run_tests.sh [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  -c, --coverage     Run tests with coverage report"
-            echo "  -v, --verbose      Run tests in verbose mode"
-            echo "  -t, --test FILE    Run specific test file"
+            echo "  -v, --verbose      Run tests in verbose mode (verbosity=2)"
+            echo "  -t, --test CLASS   Run specific test class"
             echo "  -h, --help         Show this help message"
             echo ""
             echo "Examples:"
-            echo "  ./run_tests.sh                          # Run all tests"
-            echo "  ./run_tests.sh --coverage               # Run with coverage"
-            echo "  ./run_tests.sh --test test_api_entities # Run specific test"
+            echo "  ./tests/run_tests.sh                                    # Run all integration tests"
+            echo "  ./tests/run_tests.sh --verbose                          # Run with verbose output"
+            echo "  ./tests/run_tests.sh --test AllEntityTypesCRUDTest      # Run specific test class"
+            echo "  ./tests/run_tests.sh --test FileUploadTest              # Run file upload tests"
+            echo ""
+            echo "Available test classes:"
+            echo "  - FullStackIntegrationTest (21 tests)"
+            echo "  - CrossUserImportExportTest (1 test)"
+            echo "  - AllEntityTypesCRUDTest (9 tests)"
+            echo "  - FileUploadTest (6 tests)"
+            echo "  - MeiliSearchStressTest (1 test)"
+            echo ""
+            echo "Note: This runs tests in Docker. Services must be running:"
+            echo "  docker compose -f docker-compose.local.yml up -d"
             exit 0
             ;;
         *)
@@ -59,45 +65,50 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Check if we're in the right directory
-if [ ! -f "manage.py" ]; then
-    echo -e "${RED}Error: manage.py not found. Please run this script from the data-backend directory.${NC}"
+# Get the project root directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+cd "$PROJECT_ROOT"
+
+# Check if services are running
+echo -e "${YELLOW}Checking if Docker services are running...${NC}"
+if ! docker compose -f docker-compose.local.yml ps | grep -q "Up"; then
+    echo -e "${RED}ERROR: Services are not running!${NC}"
+    echo "Start them with: docker compose -f docker-compose.local.yml up -d"
     exit 1
 fi
 
-# Activate virtual environment if it exists
-if [ -d "venv" ]; then
-    echo -e "${YELLOW}Activating virtual environment...${NC}"
-    source venv/bin/activate
-fi
+echo -e "${GREEN}✓ Services are running${NC}"
+echo ""
+
+# Clean up any existing test database
+echo -e "${YELLOW}Cleaning up test database...${NC}"
+docker compose -f docker-compose.local.yml exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS test_entitydb;" > /dev/null 2>&1 || true
+echo -e "${GREEN}✓ Test database cleaned${NC}"
+echo ""
 
 # Build test command
 TEST_CMD="python manage.py test"
 
 if [ -n "$SPECIFIC_TEST" ]; then
-    TEST_CMD="$TEST_CMD people.tests.$SPECIFIC_TEST"
+    TEST_CMD="$TEST_CMD people.tests.test_integration_full_stack.$SPECIFIC_TEST"
 else
-    TEST_CMD="$TEST_CMD people.tests"
+    TEST_CMD="$TEST_CMD people.tests.test_integration_full_stack"
 fi
 
 if [ "$VERBOSE" = true ]; then
     TEST_CMD="$TEST_CMD --verbosity=2"
+else
+    TEST_CMD="$TEST_CMD --verbosity=1"
 fi
 
-if [ "$COVERAGE" = true ]; then
-    echo -e "${YELLOW}Running tests with coverage...${NC}"
-    coverage run --source='people' manage.py test people.tests
-    echo ""
-    echo -e "${GREEN}Coverage Report:${NC}"
-    coverage report -m
-    echo ""
-    echo -e "${YELLOW}Generating HTML coverage report...${NC}"
-    coverage html
-    echo -e "${GREEN}HTML coverage report generated in htmlcov/index.html${NC}"
-else
-    echo -e "${YELLOW}Running tests...${NC}"
-    $TEST_CMD
-fi
+# Run the tests
+echo -e "${YELLOW}Running tests in Docker...${NC}"
+echo -e "${YELLOW}Command: $TEST_CMD${NC}"
+echo ""
+
+docker compose -f docker-compose.local.yml exec -T backend $TEST_CMD
 
 # Check exit code
 if [ $? -eq 0 ]; then

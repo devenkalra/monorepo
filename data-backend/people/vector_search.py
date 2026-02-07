@@ -61,7 +61,7 @@ class VectorSearchService:
             # Prepare metadata
             metadata = {
                 'conversation_id': str(turn.conversation.id),
-                'conversation_label': turn.conversation.label,
+                'conversation_label': turn.conversation.display,  # Note uses 'display' not 'label'
                 'turn_number': turn.turn_number,
                 'role': turn.role,
                 'source': turn.conversation.source,

@@ -89,7 +89,7 @@ class Command(BaseCommand):
                 # Create or update Note
                 note, created = Note.objects.update_or_create(
                     user=user,
-                    label=conv_data['title'],
+                    display=conv_data['title'],  # Note uses 'display' not 'label'
                     defaults={
                         'description': html_description,
                         'tags': ['Conversation', source_tag],
