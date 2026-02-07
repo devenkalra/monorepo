@@ -1,76 +1,187 @@
-# Git
-.git
-.gitignore
-.gitattributes
+# .dockerignore
+# Excludes development and testing files from Docker images
 
-# Python
+# ============================================
+# DEVELOPMENT DIRECTORIES (NEW STRUCTURE)
+# ============================================
+docs/
+tests/
+dev-tools/
+.dev/
+
+# ============================================
+# DOCUMENTATION
+# ============================================
+*.md
+!README.md
+LICENSE
+CHANGELOG.md
+
+# ============================================
+# TEST FILES
+# ============================================
+test_*.py
+*_test.py
+run_tests.sh
+list_tests.sh
+pytest.ini
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+
+# ============================================
+# CI/CD CONFIGS
+# ============================================
+.circleci/
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+.travis.yml
+Jenkinsfile
+
+# ============================================
+# DEVELOPMENT CONFIGS
+# ============================================
+docker-compose.local.yml
+docker-compose.dev.yml
+docker-compose.test.yml
+.env.local
+.env.development
+.env.test
+
+# ============================================
+# IDE AND EDITOR FILES
+# ============================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================
+# PYTHON DEVELOPMENT
+# ============================================
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-*.egg-info/
-.installed.cfg
 *.egg
-.pytest_cache/
-.coverage
-htmlcov/
+*.egg-info/
+dist/
+build/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv/
+# ============================================
+# FRONTEND DEVELOPMENT
+# ============================================
+frontend/node_modules/
+frontend/coverage/
+frontend/build/
+frontend/.cache/
+frontend/playwright-report/
+frontend/test-results/
+frontend/tests/
+frontend/*.config.js
+!frontend/vite.config.js
+frontend/.env.local
+frontend/.env.development
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.DS_Store
+# ============================================
+# GIT
+# ============================================
+.git/
+.gitignore
+.gitattributes
+.gitmodules
 
-# Environment files
-.env
-.env.local
-.env.*.local
-
-# Database
-*.db
-*.db-journal
-*.sqlite3
-
-# Logs
+# ============================================
+# LOGS AND DATABASES (DEVELOPMENT)
+# ============================================
 *.log
+*.sqlite3
+*.db
+db.sqlite3
 logs/
+*.log.*
 
-# Static and media files (will be collected in container)
-staticfiles/
-mediafiles/
+# ============================================
+# MEDIA (DEVELOPMENT UPLOADS)
+# ============================================
+# Exclude development media but keep the directory structure
+media/*
+!media/.gitkeep
+uploads/*
+!uploads/.gitkeep
 
-# Docker
-docker-compose*.yml
-Dockerfile*
-.dockerignore
+# ============================================
+# VECTOR AND SEARCH DATABASES (DEVELOPMENT)
+# ============================================
+chroma_db/
+vector_db/
+data.ms/
 
-# Documentation
-*.md
-docs/
-
-# Tests
-tests/
-htmlcov/
-
-# Backups
+# ============================================
+# BACKUPS
+# ============================================
 backups/
-*.dump
+dumps/
+*.bak
+*.backup
 *.sql
+*.dump
 
-# Node modules (if any)
-node_modules/
-
-# SSL certificates
+# ============================================
+# SSL CERTIFICATES (SHOULD BE MOUNTED)
+# ============================================
 ssl/
 *.pem
 *.key
 *.crt
+*.cert
+
+# ============================================
+# TEMPORARY FILES
+# ============================================
+tmp/
+temp/
+*.tmp
+*.temp
+.cache/
+
+# ============================================
+# STATIC FILES (COLLECTED AT BUILD TIME)
+# ============================================
+staticfiles/
+static/admin/
+static/rest_framework/
+
+# ============================================
+# PYTHON VIRTUAL ENVIRONMENTS
+# ============================================
+venv/
+env/
+ENV/
+.venv/
+
+# ============================================
+# DOCKER
+# ============================================
+.dockerignore
+Dockerfile.dev
+Dockerfile.test
+
+# ============================================
+# MISC
+# ============================================
+.env.example
+.editorconfig
+.pre-commit-config.yaml
