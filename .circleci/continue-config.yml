@@ -43,6 +43,17 @@ jobs:
             cd data-backend
             pip install --upgrade pip
             pip install -r requirements.txt
+      - run:
+          name: Wait for services
+          command: |
+            # Wait for PostgreSQL
+            for i in {1..30}; do
+              pg_isready -h localhost -p 5432 && break
+              echo "Waiting for PostgreSQL..."
+              sleep 2
+            done
+            # Wait for other services
+            sleep 10
   build-data-backend2:
     docker:
       - image: cimg/python:3.11
