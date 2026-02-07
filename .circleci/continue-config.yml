@@ -19,8 +19,30 @@ jobs:
       - run: cd backend && pip install -r requirements.txt && pytest
 
   build-data-backend:
-      - run: echo "Backending"
-
+    docker:
+      - image: cimg/python:3.11
+      - image: cimg/postgres:15.3
+        environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: entitydb
+      - image: getmeili/meilisearch:v1.5
+        environment:
+          MEILI_MASTER_KEY: test_master_key
+          MEILI_ENV: development
+      - image: neo4j:5-community
+        environment:
+          NEO4J_AUTH: neo4j/testpassword
+          NEO4J_PLUGINS: '["apoc"]'
+      - image: cimg/redis:7.0
+    steps:
+      - checkout
+      - run:
+          name: Install dependencies
+          command: |
+            cd data-backend
+            pip install --upgrade pip
+            pip install -r requirements.txt
   build-data-backend2:
     docker:
       - image: cimg/python:3.11
