@@ -19,7 +19,7 @@ jobs:
       - run: cd backend && pip install -r requirements.txt && pytest
 
   build-data-backend:
-    - run: echo "Backending"
+      - run: echo "Backending"
 
   build-data-backend2:
     docker:
