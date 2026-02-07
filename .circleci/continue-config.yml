@@ -36,15 +36,25 @@ jobs:
           NEO4J_PLUGINS: '["apoc"]'
       - image: cimg/redis:7.0
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+      # PostgreSQL connection
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+      # Neo4j connection
       NEO4J_URI: bolt://localhost:7687
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: testpassword
+      # MeiliSearch connection
       MEILI_HOST: http://localhost:7700
       MEILI_MASTER_KEY: test_master_key
+      # Redis connection
       REDIS_URL: redis://localhost:6379
+      # Django settings
       DJANGO_SETTINGS_MODULE: config.settings
       SECRET_KEY: test-secret-key-for-ci
+      DEBUG: True
     steps:
       - checkout
       - run:
@@ -69,7 +79,10 @@ jobs:
           name: Debug infrastructure
           command: |
             echo "=== Environment Variables ==="
-            echo "DATABASE_URL: $DATABASE_URL"
+            echo "POSTGRES_DB: $POSTGRES_DB"
+            echo "POSTGRES_USER: $POSTGRES_USER"
+            echo "POSTGRES_HOST: $POSTGRES_HOST"
+            echo "POSTGRES_PORT: $POSTGRES_PORT"
             echo "NEO4J_URI: $NEO4J_URI"
             echo "MEILI_HOST: $MEILI_HOST"
             echo "REDIS_URL: $REDIS_URL"
