@@ -66,10 +66,41 @@ jobs:
             # Wait for other services
             sleep 10
       - run:
+          name: Debug infrastructure
+          command: |
+            echo "=== Environment Variables ==="
+            echo "DATABASE_URL: $DATABASE_URL"
+            echo "NEO4J_URI: $NEO4J_URI"
+            echo "MEILI_HOST: $MEILI_HOST"
+            echo "REDIS_URL: $REDIS_URL"
+            echo ""
+            echo "=== PostgreSQL Info ==="
+            PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "SELECT version();"
+            PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "\l"
+            echo ""
+            echo "=== Neo4j Connection ==="
+            curl -I http://localhost:7474 || echo "Neo4j HTTP not responding"
+            echo ""
+            echo "=== MeiliSearch Connection ==="
+            curl -s http://localhost:7700/health || echo "MeiliSearch not responding"
+            echo ""
+            echo "=== Redis Connection ==="
+            redis-cli -h localhost ping || echo "Redis not responding"
+            echo ""
+            echo "=== Python Version ==="
+            python --version
+            echo ""
+            echo "=== Installed Packages ==="
+            pip list | grep -E "(Django|psycopg|neo4j|meilisearch|redis)"
+            echo ""
+            echo "=== Django Check ==="
+            cd data-backend
+            python manage.py check --database default
+      - run:
           name: Run tests
           command: |
             cd data-backend
-            python manage.py test people.tests.test_integration_full_stack
+            python manage.py test people.tests.test_integration_full_stack --verbosity=2
 
 
 workflows:
