@@ -230,10 +230,11 @@ class EntityViewSet(viewsets.ModelViewSet):
                 except Exception as e:
                     stats['errors'].append(f"Tag '{tag_data.get('name', 'unknown')}': {str(e)}")
 
-            # Import entities (generic)
-            entity_id_map = {}  # Map old IDs to current IDs (for relations)
-            logger.info(f"Importing {len(data.get('entities', []))} generic entities")
-            self._import_entity_type(Entity, data.get('entities', []), entity_id_map, stats, 'entities', request.user, logger)
+            # Map old IDs to current IDs (for relations)
+            entity_id_map = {}
+            
+            # Skip generic 'entities' list if present (legacy exports)
+            # We import type-specific entities instead
 
             # Import people
             logger.info(f"Importing {len(data.get('people', []))} people")
@@ -287,44 +288,32 @@ class EntityViewSet(viewsets.ModelViewSet):
                         stats['relations_skipped'] += 1
                         continue
 
-                    # Map old IDs to current IDs
+                    # Map old IDs to current IDs (these may be different if IDs were regenerated)
                     from_entity_id = entity_id_map[old_from_id]
                     to_entity_id = entity_id_map[old_to_id]
 
-                    # Check if relation exists (by ID or by unique constraint)
-                    existing_relation = None
-                    if relation_id:
-                        existing_relation = EntityRelation.objects.filter(id=relation_id).first()
-
-                    if not existing_relation:
-                        # Check by unique constraint (from_entity, to_entity, relation_type)
-                        existing_relation = EntityRelation.objects.filter(
-                            from_entity_id=from_entity_id,
-                            to_entity_id=to_entity_id,
-                            relation_type=relation_type
-                        ).first()
+                    # Check if relation exists by unique constraint (from_entity, to_entity, relation_type)
+                    # Note: We check using the MAPPED IDs, not the original relation ID
+                    existing_relation = EntityRelation.objects.filter(
+                        from_entity_id=from_entity_id,
+                        to_entity_id=to_entity_id,
+                        relation_type=relation_type
+                    ).first()
 
                     if existing_relation:
                         # Relation already exists, count as skipped
                         stats['relations_skipped'] += 1
-                        logger.info(f"Skipped relation {relation_type} ({relation_id}) - already exists")
+                        logger.info(f"Skipped relation {relation_type} - already exists between mapped entities")
                     else:
-                        # Create new relation
-                        if relation_id:
-                            EntityRelation.objects.create(
-                                id=relation_id,
-                                from_entity_id=from_entity_id,
-                                to_entity_id=to_entity_id,
-                                relation_type=relation_type
-                            )
-                        else:
-                            EntityRelation.objects.create(
-                                from_entity_id=from_entity_id,
-                                to_entity_id=to_entity_id,
-                                relation_type=relation_type
-                            )
+                        # Create new relation with mapped entity IDs
+                        # Don't preserve the original relation ID - let Django generate a new one
+                        EntityRelation.objects.create(
+                            from_entity_id=from_entity_id,
+                            to_entity_id=to_entity_id,
+                            relation_type=relation_type
+                        )
                         stats['relations_created'] += 1
-                        logger.info(f"Created relation {relation_type} ({relation_id})")
+                        logger.info(f"Created relation {relation_type} between mapped entities")
                 except Exception as e:
                     error_msg = f"Relation {relation_type} ({relation_id}): {str(e)}"
                     logger.error(error_msg)
@@ -436,7 +425,7 @@ class EntityViewSet(viewsets.ModelViewSet):
                     'username': request.user.username,
                     'email': request.user.email
                 },
-                'entities': EntitySerializer(entities, many=True).data,
+                # Don't export generic 'entities' - use type-specific lists instead
                 'people': PersonSerializer(people, many=True).data,
                 'notes': NoteSerializer(notes, many=True).data,
                 'locations': LocationSerializer(locations, many=True).data,
