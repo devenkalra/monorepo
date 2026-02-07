@@ -13,7 +13,7 @@ jobs:
       - run: cd frontend && npm install && npm test
 
   build-backend:
-    docker: [{ image: "cimg/python:3.10" }]
+    docker: [{ image: "cimg/python:3.12" }]
     steps:
       - checkout
       - run: cd backend && pip install -r requirements.txt && pytest
