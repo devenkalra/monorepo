@@ -11,5 +11,4 @@ workflows:
           base-revision: main
           config-path: .circleci/continue-config.yml
           mapping: |
-            data-backend/.* run-data-backend true
-            backend/.* run-backend true
+            .* run-data-backend true
