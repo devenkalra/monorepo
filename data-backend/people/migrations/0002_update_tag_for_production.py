@@ -41,19 +41,25 @@ def check_and_migrate_tags(apps, schema_editor):
         Entity = apps.get_model('people', 'Entity')
         Tag = apps.get_model('people', 'Tag')
         
-        # Get all entities with their tags
-        entities = Entity.objects.all()
-        tag_users = {}  # tag_name -> set of user_ids
+        # Get all entities with their tags using raw SQL (avoid ORM before schema update)
+        cursor.execute('SELECT id, tags, user_id FROM people_entity WHERE tags IS NOT NULL')
+        entity_rows = cursor.fetchall()
         
-        for entity in entities:
-            if entity.tags and entity.user_id:
-                for tag_name in entity.tags:
+        tag_users = {}  # tag_name -> set of user_ids
+        for entity_id, tags, user_id in entity_rows:
+            if tags and user_id:
+                # tags is a JSON field, parse it if needed
+                import json
+                if isinstance(tags, str):
+                    tags = json.loads(tags)
+                for tag_name in tags:
                     if tag_name not in tag_users:
                         tag_users[tag_name] = set()
-                    tag_users[tag_name].add(entity.user_id)
+                    tag_users[tag_name].add(user_id)
         
-        # Store existing tags
-        existing_tags = list(Tag.objects.all())
+        # Store existing tags using raw SQL
+        cursor.execute('SELECT name, count FROM people_tag')
+        existing_tags = [{'name': row[0], 'count': row[1]} for row in cursor.fetchall()]
         
         # Drop old primary key
         cursor.execute('ALTER TABLE people_tag DROP CONSTRAINT IF EXISTS people_tag_pkey CASCADE;')
@@ -76,24 +82,25 @@ def check_and_migrate_tags(apps, schema_editor):
         # Change name to regular field (remove primary key constraint if it exists)
         cursor.execute('ALTER TABLE people_tag ALTER COLUMN name DROP DEFAULT;')
         
-        # Clear all tags and recreate with user associations
-        Tag.objects.all().delete()
+        # Clear all tags and recreate with user associations using raw SQL
+        cursor.execute('DELETE FROM people_tag')
         
         for tag in existing_tags:
-            users = tag_users.get(tag.name, set())
+            tag_name = tag['name']
+            tag_count = tag['count']
+            users = tag_users.get(tag_name, set())
+            
             if users:
                 for user_id in users:
-                    Tag.objects.create(
-                        name=tag.name,
-                        user_id=user_id,
-                        count=tag.count
+                    cursor.execute(
+                        'INSERT INTO people_tag (name, user_id, count) VALUES (%s, %s, %s)',
+                        [tag_name, user_id, tag_count]
                     )
             else:
                 # Tag not used by any entity, keep it without user
-                Tag.objects.create(
-                    name=tag.name,
-                    user_id=None,
-                    count=0
+                cursor.execute(
+                    'INSERT INTO people_tag (name, user_id, count) VALUES (%s, %s, %s)',
+                    [tag_name, None, 0]
                 )
         
         # Add unique constraint
@@ -102,7 +109,10 @@ def check_and_migrate_tags(apps, schema_editor):
             ON people_tag (name, user_id);
         ''')
         
-        print(f"Migration complete: Created {Tag.objects.count()} tag records")
+        # Count tags using raw SQL
+        cursor.execute('SELECT COUNT(*) FROM people_tag')
+        tag_count = cursor.fetchone()[0]
+        print(f"Migration complete: Created {tag_count} tag records")
 
 
 class Migration(migrations.Migration):
