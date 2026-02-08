@@ -17,7 +17,25 @@ import json
 User = get_user_model()
 
 
-class FullStackIntegrationTest(TransactionTestCase):
+class BaseIntegrationTest(TransactionTestCase):
+    """Base class with common setup/teardown for integration tests"""
+    
+    def clean_all_data(self):
+        """Clean up all test data including MeiliSearch"""
+        # Delete all entities (cascades to relations, triggers cleanup signals)
+        Entity.objects.all().delete()
+        Tag.objects.all().delete()
+        User.objects.all().delete()
+        
+        # Clear MeiliSearch index
+        try:
+            meili_sync.helper.client.index('entities').delete_all_documents()
+            time.sleep(0.5)  # Wait for MeiliSearch to process
+        except Exception as e:
+            print(f"Warning: Could not clear MeiliSearch: {e}")
+
+
+class FullStackIntegrationTest(BaseIntegrationTest):
     """
     Integration tests that verify the entire stack works together.
     Uses TransactionTestCase to ensure signals fire properly.
@@ -25,6 +43,10 @@ class FullStackIntegrationTest(TransactionTestCase):
     
     def setUp(self):
         """Set up test user and client"""
+        # Clean up any leftover data from previous tests
+        self.clean_all_data()
+        
+        # Create test user
         self.user = User.objects.create_user(
             username='testuser',
             email='test@example.com',
@@ -32,19 +54,10 @@ class FullStackIntegrationTest(TransactionTestCase):
         )
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
-        
-        # Give MeiliSearch time to process any pending tasks
-        time.sleep(0.5)
     
     def tearDown(self):
         """Clean up test data"""
-        # Delete all entities (cascades to relations, triggers cleanup signals)
-        Entity.objects.all().delete()
-        Tag.objects.all().delete()
-        User.objects.all().delete()
-        
-        # Give MeiliSearch time to process deletions
-        time.sleep(0.5)
+        self.clean_all_data()
     
     def wait_for_meilisearch(self, seconds=1):
         """Wait for MeiliSearch to process async tasks"""
@@ -940,10 +953,13 @@ class FullStackIntegrationTest(TransactionTestCase):
         print("✓ Display field search restriction test passed")
 
 
-class CrossUserImportExportTest(TransactionTestCase):
+class CrossUserImportExportTest(BaseIntegrationTest):
     """Test importing data from one user to another"""
     
     def setUp(self):
+        # Clean up first
+        self.clean_all_data()
+        
         # Create two users
         self.user1 = User.objects.create_user(
             username='user1',
@@ -1154,10 +1170,11 @@ class CrossUserImportExportTest(TransactionTestCase):
         print("✓ Cross-user import/export test passed")
 
 
-class AllEntityTypesCRUDTest(TransactionTestCase):
+class AllEntityTypesCRUDTest(BaseIntegrationTest):
     """Test CRUD operations for ALL entity types to catch type-specific bugs"""
     
     def setUp(self):
+        self.clean_all_data()
         self.user = User.objects.create_user(
             username='entitytest',
             email='entitytest@example.com',
@@ -1571,10 +1588,11 @@ class AllEntityTypesCRUDTest(TransactionTestCase):
         print(f"  Found types: {sorted(found_types)}")
 
 
-class FileUploadTest(TransactionTestCase):
+class FileUploadTest(BaseIntegrationTest):
     """Test file upload functionality"""
     
     def setUp(self):
+        self.clean_all_data()
         self.user = User.objects.create_user(
             username='uploadtest',
             email='upload@example.com',
@@ -1779,10 +1797,203 @@ startxref
         print(f"✓ Note created with attachment: {response.data['id']}")
 
 
-class MeiliSearchStressTest(TransactionTestCase):
+class RecentEntitiesTest(BaseIntegrationTest):
+    """Test the recent entities endpoint returns type-specific fields"""
+    
+    def setUp(self):
+        self.clean_all_data()
+        self.user = User.objects.create_user(
+            username='recenttest',
+            email='recent@example.com',
+            password='testpass123'
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+    
+    def test_recent_entities_include_type_specific_fields(self):
+        """Test that /api/entities/recent/ returns type-specific fields for each entity"""
+        print("\n=== Testing Recent Entities Include Type-Specific Fields ===")
+        
+        # Create entities of different types with type-specific fields
+        
+        # Person with profession, phones, dob
+        person = Person.objects.create(
+            user=self.user,
+            first_name='John',
+            last_name='Doe',
+            profession='Software Engineer',
+            phones=['+1234567890', '+9876543210'],
+            emails=['john@example.com'],
+            dob='1990-05-15',
+            gender='Male',
+            tags=['Test']
+        )
+        
+        # Note with date
+        import datetime
+        note = Note.objects.create(
+            user=self.user,
+            display='Test Note',
+            description='Test description',
+            date=datetime.datetime(2026, 1, 15, 10, 30, 0),
+            tags=['Test']
+        )
+        
+        # Location with address fields
+        location = Location.objects.create(
+            user=self.user,
+            display='Test Location',
+            address1='123 Main St',
+            address2='Suite 100',
+            city='San Francisco',
+            state='CA',
+            postal_code='94105',  # Note: field is 'postal_code' not 'zip'
+            country='USA',
+            tags=['Test']
+        )
+        
+        # Movie with year, language, country
+        movie = Movie.objects.create(
+            user=self.user,
+            display='Test Movie',
+            year=2020,
+            language='English',
+            country='USA',
+            tags=['Test']
+        )
+        
+        # Book with year, summary
+        book = Book.objects.create(
+            user=self.user,
+            display='Test Book',
+            year=2021,
+            language='English',
+            country='USA',
+            summary='A great book about testing',
+            tags=['Test']
+        )
+        
+        # Asset with value
+        asset = Asset.objects.create(
+            user=self.user,
+            display='Test Asset',
+            value=1500.50,
+            tags=['Test']
+        )
+        
+        # Org with name, kind
+        org = Org.objects.create(
+            user=self.user,
+            name='TestCorp',
+            display='TestCorp Inc.',
+            kind='Company',
+            tags=['Test']
+        )
+        
+        # Container (only base fields)
+        container = Container.objects.create(
+            user=self.user,
+            display='Test Container',
+            description='A test container',
+            tags=['Test']
+        )
+        
+        print(f"✓ Created 8 entities of different types")
+        
+        # Fetch recent entities
+        response = self.client.get('/api/entities/recent/?limit=20')
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(len(response.data), 8)
+        
+        print(f"✓ Fetched {len(response.data)} recent entities")
+        
+        # Verify each entity type has its specific fields
+        entities_by_type = {item['type']: item for item in response.data if item.get('type') in ['Person', 'Note', 'Location', 'Movie', 'Book', 'Asset', 'Org', 'Container']}
+        
+        # Check Person has type-specific fields
+        if 'Person' in entities_by_type:
+            person_data = entities_by_type['Person']
+            self.assertIn('first_name', person_data, "Person should have 'first_name' field")
+            self.assertIn('last_name', person_data, "Person should have 'last_name' field")
+            self.assertIn('profession', person_data, "Person should have 'profession' field")
+            self.assertIn('phones', person_data, "Person should have 'phones' field")
+            self.assertIn('emails', person_data, "Person should have 'emails' field")
+            self.assertIn('dob', person_data, "Person should have 'dob' field")
+            self.assertIn('gender', person_data, "Person should have 'gender' field")
+            
+            # Verify actual values
+            self.assertEqual(person_data['first_name'], 'John')
+            self.assertEqual(person_data['profession'], 'Software Engineer')
+            self.assertEqual(person_data['phones'], ['+1234567890', '+9876543210'])
+            self.assertEqual(person_data['dob'], '1990-05-15')
+            print(f"  ✓ Person has all type-specific fields: profession={person_data['profession']}, phones={len(person_data['phones'])} items")
+        
+        # Check Note has type-specific fields
+        if 'Note' in entities_by_type:
+            note_data = entities_by_type['Note']
+            self.assertIn('date', note_data, "Note should have 'date' field")
+            print(f"  ✓ Note has type-specific fields: date={note_data.get('date')}")
+        
+        # Check Location has type-specific fields
+        if 'Location' in entities_by_type:
+            location_data = entities_by_type['Location']
+            self.assertIn('address1', location_data, "Location should have 'address1' field")
+            self.assertIn('city', location_data, "Location should have 'city' field")
+            self.assertIn('state', location_data, "Location should have 'state' field")
+            self.assertIn('postal_code', location_data, "Location should have 'postal_code' field")
+            self.assertIn('country', location_data, "Location should have 'country' field")
+            
+            self.assertEqual(location_data['city'], 'San Francisco')
+            self.assertEqual(location_data['state'], 'CA')
+            self.assertEqual(location_data['postal_code'], '94105')
+            print(f"  ✓ Location has all address fields: {location_data['city']}, {location_data['state']}")
+        
+        # Check Movie has type-specific fields
+        if 'Movie' in entities_by_type:
+            movie_data = entities_by_type['Movie']
+            self.assertIn('year', movie_data, "Movie should have 'year' field")
+            self.assertIn('language', movie_data, "Movie should have 'language' field")
+            self.assertIn('country', movie_data, "Movie should have 'country' field")
+            
+            self.assertEqual(movie_data['year'], 2020)
+            print(f"  ✓ Movie has type-specific fields: year={movie_data['year']}")
+        
+        # Check Book has type-specific fields
+        if 'Book' in entities_by_type:
+            book_data = entities_by_type['Book']
+            self.assertIn('year', book_data, "Book should have 'year' field")
+            self.assertIn('summary', book_data, "Book should have 'summary' field")
+            
+            self.assertEqual(book_data['year'], 2021)
+            self.assertEqual(book_data['summary'], 'A great book about testing')
+            print(f"  ✓ Book has type-specific fields: summary='{book_data['summary'][:30]}...'")
+        
+        # Check Asset has type-specific fields
+        if 'Asset' in entities_by_type:
+            asset_data = entities_by_type['Asset']
+            self.assertIn('value', asset_data, "Asset should have 'value' field")
+            
+            self.assertEqual(float(asset_data['value']), 1500.50)
+            print(f"  ✓ Asset has type-specific fields: value={asset_data['value']}")
+        
+        # Check Org has type-specific fields
+        if 'Org' in entities_by_type:
+            org_data = entities_by_type['Org']
+            self.assertIn('name', org_data, "Org should have 'name' field")
+            self.assertIn('kind', org_data, "Org should have 'kind' field")
+            
+            self.assertEqual(org_data['name'], 'TestCorp')
+            self.assertEqual(org_data['kind'], 'Company')
+            print(f"  ✓ Org has type-specific fields: name={org_data['name']}, kind={org_data['kind']}")
+        
+        print(f"✓ All entity types return their type-specific fields in recent entities endpoint")
+
+
+class MeiliSearchStressTest(BaseIntegrationTest):
     """Stress tests for MeiliSearch indexing"""
     
     def setUp(self):
+        self.clean_all_data()
         self.user = User.objects.create_user(
             username='stresstest',
             email='stress@example.com',

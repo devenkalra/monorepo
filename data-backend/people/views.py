@@ -16,6 +16,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from io import StringIO
 import tempfile
 import os
+import json
 
 class EntityViewSet(viewsets.ModelViewSet):
     serializer_class = EntitySerializer
@@ -100,7 +101,8 @@ class EntityViewSet(viewsets.ModelViewSet):
                         if getattr(existing_entity, key, None) != value:
                             needs_update = True
                             break
-                    
+                    logger.info(f"Needs Update")
+                    logger.info(f"CUrrent: {existing_entity}")
                     if needs_update:
                         # Update existing entity
                         for key, value in entity_data_clean.items():
@@ -122,7 +124,9 @@ class EntityViewSet(viewsets.ModelViewSet):
                         # ID is taken by another user, generate new UUID
                         new_id = uuid.uuid4()
                         logger.info(f"ID {original_id} already exists for another user, using new ID {new_id}")
-                    
+
+                    logger.info(f"Needs Update")
+                    logger.info(f"Entity Data: {json.dumps(entity_data_clean)}")
                     entity = model_class.objects.create(id=new_id, user=request_user, **entity_data_clean)
                     entity_id_map[original_id] = entity.id  # Map original ID to actual ID (may be different)
                     stats[created_key] += 1
@@ -460,7 +464,7 @@ class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
     """
     serializer_class = EntitySerializer
     permission_classes = [IsAuthenticated]
-    # No pagination – we control the number via `limit`
+    
     def get_queryset(self):
         limit = self.request.query_params.get('limit')
         try:
@@ -468,6 +472,64 @@ class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
         except ValueError:
             limit = 20
         return Entity.objects.filter(user=self.request.user).order_by('-updated_at')[:limit]
+    
+    def get_serializer_class(self):
+        """Return the appropriate serializer based on entity type"""
+        # Map entity types to their serializers
+        serializer_map = {
+            'Person': PersonSerializer,
+            'Note': NoteSerializer,
+            'Location': LocationSerializer,
+            'Movie': MovieSerializer,
+            'Book': BookSerializer,
+            'Container': ContainerSerializer,
+            'Asset': AssetSerializer,
+            'Org': OrgSerializer,
+        }
+        # For list view, we need to handle mixed types
+        return EntitySerializer
+    
+    def list(self, request, *args, **kwargs):
+        """Override list to return type-specific serialized data"""
+        queryset = self.get_queryset()
+        
+        # Serialize each entity with its type-specific serializer
+        serialized_data = []
+        for entity in queryset:
+            # Get the appropriate serializer for this entity type
+            serializer_class = {
+                'Person': PersonSerializer,
+                'Note': NoteSerializer,
+                'Location': LocationSerializer,
+                'Movie': MovieSerializer,
+                'Book': BookSerializer,
+                'Container': ContainerSerializer,
+                'Asset': AssetSerializer,
+                'Org': OrgSerializer,
+            }.get(entity.type, EntitySerializer)
+            
+            # Cast to the specific type if needed
+            if entity.type == 'Person':
+                entity = Person.objects.get(id=entity.id)
+            elif entity.type == 'Note':
+                entity = Note.objects.get(id=entity.id)
+            elif entity.type == 'Location':
+                entity = Location.objects.get(id=entity.id)
+            elif entity.type == 'Movie':
+                entity = Movie.objects.get(id=entity.id)
+            elif entity.type == 'Book':
+                entity = Book.objects.get(id=entity.id)
+            elif entity.type == 'Container':
+                entity = Container.objects.get(id=entity.id)
+            elif entity.type == 'Asset':
+                entity = Asset.objects.get(id=entity.id)
+            elif entity.type == 'Org':
+                entity = Org.objects.get(id=entity.id)
+            
+            serializer = serializer_class(entity)
+            serialized_data.append(serializer.data)
+        
+        return Response(serialized_data)
 
 class PersonViewSet(viewsets.ModelViewSet):
     serializer_class = PersonSerializer
