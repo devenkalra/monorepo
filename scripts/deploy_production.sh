@@ -1,14 +1,19 @@
 #!/bin/bash
 # Production deployment script for bldrdojo.com
-# 1. Clones repo into temp directory (fresh from git)
-# 2. Copies changed/new files into prod folder (no local changes overwrite prod)
+# 1. Clones repo into temp directory (fresh from git, no local changes)
+# 2. Copies changed/new files into prod folder
 # 3. Rebuilds and restarts services
 #
 # Usage:
 #   ./scripts/deploy_production.sh              # Deploy
 #   ./scripts/deploy_production.sh --dry-run    # Show what would be copied
 #
-# Run on server as deploy user. Prod dir should have: .env, ssl/, data-backend/, frontend/, etc.
+# Expected PROD_DIR structure (default /home/deploy):
+#   data-backend/   (with .env, ssl/)
+#   frontend/
+#   people-frontend/
+#   cad-frontend/
+#   docker-compose.production.yml
 
 set -e
 
@@ -64,6 +69,7 @@ SYNC_PATHS=(
     "people-frontend"
     "cad-frontend"
     "docker-compose.production.yml"
+    "scripts"
 )
 
 # Patterns to exclude from copy (relative to each sync path)
