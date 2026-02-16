@@ -291,6 +291,7 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # New django-allauth configuration (v0.57+)
+LOGIN_REDIRECT_URL = '/people-app/'  # Avoid 404 on /accounts/profile/ (allauth default)
 ACCOUNT_LOGIN_METHODS = {'email'}  # Only allow email login
 ACCOUNT_SIGNUP_FIELDS = ['email', 'password1', 'password2']  # Don't require username in signup form
 ACCOUNT_EMAIL_VERIFICATION = 'none'  # Disable email verification for local testing
