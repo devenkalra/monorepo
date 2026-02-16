@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import EntityList from './components/EntityList';
 import SearchBar from './components/SearchBar';
 import ThemeToggle from './components/ThemeToggle';
@@ -389,11 +389,28 @@ function App() {
   const mobileHeader = useMemo(
     () => (
       <header className="flex items-center justify-between gap-3 mb-4">
-        <div>
-          <h1 className="text-xl font-semibold">Entity Browser</h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            Recently updated entities
-          </p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-xl font-semibold">Entity Browser</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Recently updated entities
+            </p>
+          </div>
+          <nav className="flex items-center gap-2 text-sm">
+            <Link
+              to="/"
+              className={`font-medium ${location.pathname === '/' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
+            >
+              People
+            </Link>
+            <span className="text-gray-400">|</span>
+            <Link
+              to="/cad"
+              className={`font-medium ${location.pathname.startsWith('/cad') ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
+            >
+              CAD
+            </Link>
+          </nav>
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -401,7 +418,7 @@ function App() {
         </div>
       </header>
     ),
-    []
+    [location.pathname]
   );
 
   return (

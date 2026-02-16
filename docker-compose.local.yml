@@ -1,0 +1,70 @@
+# Run from monorepo root (where people-frontend, cad-frontend, data-backend, frontend are siblings):
+#   cd /path/to/monorepo
+#   docker compose -f docker-compose.local.yml up --build
+#
+# This ensures frontend build context includes people-frontend and cad-frontend.
+
+services:
+  db:
+    extends:
+      file: data-backend/docker-compose.local.yml
+      service: db
+  redis:
+    extends:
+      file: data-backend/docker-compose.local.yml
+      service: redis
+  meilisearch:
+    extends:
+      file: data-backend/docker-compose.local.yml
+      service: meilisearch
+  neo4j:
+    extends:
+      file: data-backend/docker-compose.local.yml
+      service: neo4j
+  backend:
+    extends:
+      file: data-backend/docker-compose.local.yml
+      service: backend
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile
+  celery-worker:
+    extends:
+      file: data-backend/docker-compose.local.yml
+      service: celery-worker
+  frontend:
+    extends:
+      file: data-backend/docker-compose.local.yml
+      service: frontend
+    build:
+      context: .  # Monorepo root - has people-frontend, cad-frontend, frontend
+      dockerfile: frontend/Dockerfile
+      args:
+        BUILD_ENV: local
+
+volumes:
+  postgres_data_local:
+    name: bldrdojo-local-postgres-data
+  redis_data_local:
+    name: bldrdojo-local-redis-data
+  meilisearch_data_local:
+    name: bldrdojo-local-meilisearch-data
+  neo4j_data_local:
+    name: bldrdojo-local-neo4j-data
+  neo4j_logs_local:
+    name: bldrdojo-local-neo4j-logs
+  static_volume_local:
+    name: bldrdojo-local-static
+  media_volume_local:
+    name: bldrdojo-local-media
+  cad_render_cache_local:
+    name: bldrdojo-local-cad-render-cache
+  cad_textures_local:
+    name: bldrdojo-local-cad-textures
+  cad_env_local:
+    name: bldrdojo-local-cad-env
+
+networks:
+  backend-network:
+    name: bldrdojo-local-backend-network
+    driver: bridge

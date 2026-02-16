@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     
     # Apps
     'people.apps.PeopleConfig',
+    'cad.apps.CadConfig',
 ]
 
 SITE_ID = 1
@@ -200,14 +201,18 @@ cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if cors_origins_env:
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',')]
 else:
-    # Development defaults
+    # Development defaults (container may use 5175 or 5176 if 5175 is in use)
     CORS_ALLOWED_ORIGINS = [
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "http://127.0.0.1:5176",
     ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [
@@ -233,6 +238,7 @@ CSRF_FAILURE_VIEW = 'django.views.csrf.csrf_failure'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'people.jwt_cookie_auth.JWTCookieAuthentication',  # JWT from auth-token cookie
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -331,3 +337,28 @@ REST_AUTH = {
     'USER_DETAILS_SERIALIZER': 'people.serializers.UserSerializer',
     'REGISTER_SERIALIZER': 'people.serializers.CustomRegisterSerializer',
 }
+
+# Cache Configuration - Use Redis for shared cache between Django and Celery
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.environ.get('REDIS_URL', 'redis://redis:6379/0'),
+    }
+}
+
+# Celery Configuration
+CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
+
+# CAD app - render cache, textures, scene configs
+CAD_RENDER_CACHE = BASE_DIR / 'cad' / 'render_cache'
+CAD_TEXTURES_DIR = BASE_DIR / 'cad' / 'textures'
+CAD_SCENE_CONFIGS_DIR = BASE_DIR / 'cad' / 'scene_configs'
+CAD_ENV_DIR = BASE_DIR / 'cad' / 'env'

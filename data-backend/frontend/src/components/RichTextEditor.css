@@ -127,13 +127,19 @@
     text-decoration: line-through;
 }
 
-/* Image Styles */
-.prose img {
+/* Image Styles - inline so multiple images and text can flow on same line */
+.prose img,
+.prose-invert img,
+.ProseMirror img,
+.prose img.tiptap-image,
+.prose-invert img.tiptap-image,
+.ProseMirror img.tiptap-image {
     max-width: 100%;
     height: auto;
     border-radius: 0.5em;
-    margin-top: 1em;
-    margin-bottom: 1em;
+    display: inline-block !important;
+    vertical-align: middle;
+    margin: 0.25em 0.5em 0.25em 0;
 }
 
 .ProseMirror img {
@@ -151,45 +157,29 @@
     box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3), 0 4px 6px -2px rgba(59, 130, 246, 0.2);
 }
 
-/* Image alignment - using parent's text-align */
+/* Image alignment - when inside aligned block */
 .ProseMirror p[style*="text-align: left"] img,
 .ProseMirror div[style*="text-align: left"] img,
 .prose p[style*="text-align: left"] img,
 .prose div[style*="text-align: left"] img {
-    display: block;
     margin-left: 0;
-    margin-right: auto;
+    margin-right: 0.5em;
 }
 
 .ProseMirror p[style*="text-align: center"] img,
 .ProseMirror div[style*="text-align: center"] img,
 .prose p[style*="text-align: center"] img,
 .prose div[style*="text-align: center"] img {
-    display: block;
-    margin-left: auto;
-    margin-right: auto;
+    margin-left: 0.25em;
+    margin-right: 0.25em;
 }
 
 .ProseMirror p[style*="text-align: right"] img,
 .ProseMirror div[style*="text-align: right"] img,
 .prose p[style*="text-align: right"] img,
 .prose div[style*="text-align: right"] img {
-    display: block;
-    margin-left: auto;
+    margin-left: 0.5em;
     margin-right: 0;
-}
-
-/* Default center alignment for images */
-.ProseMirror img {
-    display: block;
-    margin-left: auto;
-    margin-right: auto;
-}
-
-.prose img {
-    display: block;
-    margin-left: auto;
-    margin-right: auto;
 }
 
 /* Table Styles */

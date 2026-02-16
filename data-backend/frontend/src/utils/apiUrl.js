@@ -6,7 +6,7 @@ export const getApiBaseUrl = () => {
     const hostname = window.location.hostname;
     const port = window.location.port;
 
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || port === '5173') {
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || port === '5173' || port === '5174') {
       return 'http://localhost:8000';
     }
   }
@@ -24,7 +24,7 @@ export const getMediaUrl = (url) => {
     const hostname = window.location.hostname;
     const port = window.location.port;
 
-    if (hostname === 'localhost' || hostname === '127.0.0.1' || port === '5173') {
+    if (hostname === 'localhost' || hostname === '127.0.0.1' || port === '5173' || port === '5174') {
       return `http://localhost:8000${url}`;
     }
   }

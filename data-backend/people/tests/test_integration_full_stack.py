@@ -1989,6 +1989,84 @@ class RecentEntitiesTest(BaseIntegrationTest):
         print(f"✓ All entity types return their type-specific fields in recent entities endpoint")
 
 
+class ReindexTest(BaseIntegrationTest):
+    """Test the reindex functionality"""
+    
+    def setUp(self):
+        self.clean_all_data()
+        self.user = User.objects.create_user(
+            username='reindextest',
+            email='reindex@example.com',
+            password='testpass123'
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+    
+    def test_reindex_all_entities(self):
+        """Test that reindex endpoint reindexes all user entities"""
+        print("\n=== Testing Reindex Endpoint ===")
+        
+        # Create multiple entities
+        person = Person.objects.create(
+            user=self.user,
+            first_name='Reindex',
+            last_name='Test',
+            profession='Tester',
+            tags=['Reindex']
+        )
+        
+        note = Note.objects.create(
+            user=self.user,
+            display='Reindex Note',
+            tags=['Reindex']
+        )
+        
+        location = Location.objects.create(
+            user=self.user,
+            display='Reindex Location',
+            city='TestCity',
+            tags=['Reindex']
+        )
+        
+        print(f"✓ Created 3 entities")
+        
+        # Call reindex endpoint
+        response = self.client.post('/api/entities/reindex/')
+        self.assertEqual(response.status_code, 200)
+        
+        result = response.json()
+        self.assertTrue(result['success'])
+        self.assertEqual(result['indexed'], 3)
+        self.assertEqual(result['total'], 3)
+        self.assertEqual(result['errors'], 0)
+        
+        print(f"✓ Reindex completed: {result['message']}")
+        print(f"  Indexed: {result['indexed']}/{result['total']}")
+        
+        # Wait for MeiliSearch to process
+        time.sleep(2)
+        
+        # Verify entities are searchable
+        search_response = self.client.get('/api/search/?tags=Reindex')
+        self.assertEqual(search_response.status_code, 200)
+        self.assertGreaterEqual(len(search_response.data), 3)
+        
+        print(f"✓ All reindexed entities are searchable")
+    
+    def test_reindex_with_no_entities(self):
+        """Test reindex when user has no entities"""
+        print("\n=== Testing Reindex With No Entities ===")
+        
+        response = self.client.post('/api/entities/reindex/')
+        self.assertEqual(response.status_code, 200)
+        
+        result = response.json()
+        self.assertTrue(result['success'])
+        self.assertEqual(result['count'], 0)
+        
+        print(f"✓ Reindex handled empty user correctly")
+
+
 class MeiliSearchStressTest(BaseIntegrationTest):
     """Stress tests for MeiliSearch indexing"""
     

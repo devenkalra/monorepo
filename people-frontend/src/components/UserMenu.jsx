@@ -1,0 +1,501 @@
+import React, { useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import api from '../services/api';
+import ProgressModal from './ProgressModal';
+
+export default function UserMenu() {
+  const { user, logout } = useAuth();
+  const [showMenu, setShowMenu] = useState(false);
+  const [showIngestModal, setShowIngestModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [progressTask, setProgressTask] = useState(null); // { taskId, taskType }
+  const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+  const importFileInputRef = useRef(null);
+
+  const handleLogout = async () => {
+    await logout();
+    window.location.href = window.location.origin + '/login/';
+  };
+
+  const handleExport = async () => {
+    try {
+      setShowMenu(false);
+      
+      // Start async export
+      const response = await api.fetch('/api/entities/export-async/', {
+        method: 'POST'
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        // Show progress modal
+        setProgressTask({ taskId: result.task_id, taskType: 'export' });
+      } else {
+        alert('Export failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + error.message);
+    }
+  };
+
+  const handleExportComplete = async (progressData) => {
+    if (progressData.status === 'completed') {
+      try {
+        // Download the export file
+        const response = await api.fetch(`/api/entities/tasks/${progressData.task_id}/download/`);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `entity_export_${user.username}_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (error) {
+        console.error('Download failed:', error);
+        alert('Download failed: ' + error.message);
+      }
+    } else if (progressData.status === 'failed') {
+      alert('Export failed: ' + progressData.message);
+    }
+  };
+
+  const handleImportClick = () => {
+    setShowMenu(false);
+    setShowImportModal(true);
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Start async import
+      const response = await api.fetch('/api/entities/import-async/', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Close import modal and show progress modal
+        setShowImportModal(false);
+        setProgressTask({ taskId: result.task_id, taskType: 'import' });
+      } else {
+        alert('Import failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      alert('Import failed: ' + error.message);
+    }
+  };
+
+  const handleImportComplete = (progressData) => {
+    if (progressData.status === 'completed') {
+      // Just reload - progress modal already showed success
+      window.location.reload();
+    } else if (progressData.status === 'failed') {
+      alert('Import failed: ' + progressData.message);
+    } else if (progressData.status === 'cancelled') {
+      alert('Import was cancelled');
+    }
+  };
+
+  // Keep old sync import for fallback
+  const handleImportFileSync = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const response = await api.fetch('/api/entities/import_data/', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Build detailed report with safety checks
+        const stats = result.stats || {};
+        const summary = stats.summary || {};
+        
+        // Check if we have the new detailed stats format
+        const hasDetailedStats = summary.total_created !== undefined;
+        
+        if (hasDetailedStats) {
+          // New detailed format
+          let report = 'Import Complete!\n\n';
+          report += '================================\n';
+          report += 'Summary:\n';
+          report += `  ${summary.total_created || 0} entities created\n`;
+          report += `  ${summary.total_updated || 0} entities updated\n`;
+          report += `  ${summary.total_skipped || 0} entities skipped (no changes)\n`;
+          
+          if (summary.total_errors > 0) {
+            report += `  ${summary.total_errors} errors\n`;
+          }
+          if (summary.total_warnings > 0) {
+            report += `  ${summary.total_warnings} warnings\n`;
+          }
+          
+          report += '\nDetails:\n';
+          
+          // Show breakdown for each entity type that had activity
+          const types = [
+            { name: 'People', key: 'people' },
+            { name: 'Notes', key: 'notes' },
+            { name: 'Locations', key: 'locations' },
+            { name: 'Movies', key: 'movies' },
+            { name: 'Books', key: 'books' },
+            { name: 'Containers', key: 'containers' },
+            { name: 'Assets', key: 'assets' },
+            { name: 'Orgs', key: 'orgs' },
+          ];
+          
+          types.forEach(type => {
+            const created = stats[`${type.key}_created`] || 0;
+            const updated = stats[`${type.key}_updated`] || 0;
+            const skipped = stats[`${type.key}_skipped`] || 0;
+            
+            if (created > 0 || updated > 0 || skipped > 0) {
+              const parts = [];
+              if (created > 0) parts.push(`${created} created`);
+              if (updated > 0) parts.push(`${updated} updated`);
+              if (skipped > 0) parts.push(`${skipped} skipped`);
+              report += `  ${type.name}: ${parts.join(', ')}\n`;
+            }
+          });
+          
+          // Relations and tags
+          if ((stats.relations_created || 0) > 0 || (stats.relations_skipped || 0) > 0) {
+            const parts = [];
+            if (stats.relations_created > 0) parts.push(`${stats.relations_created} created`);
+            if (stats.relations_skipped > 0) parts.push(`${stats.relations_skipped} skipped`);
+            report += `  Relations: ${parts.join(', ')}\n`;
+          }
+          
+          if ((stats.tags_created || 0) > 0 || (stats.tags_skipped || 0) > 0) {
+            const parts = [];
+            if (stats.tags_created > 0) parts.push(`${stats.tags_created} created`);
+            if (stats.tags_skipped > 0) parts.push(`${stats.tags_skipped} skipped`);
+            report += `  Tags: ${parts.join(', ')}\n`;
+          }
+          
+          // Show errors if any
+          if (stats.errors && stats.errors.length > 0) {
+            report += '\nErrors:\n';
+            stats.errors.slice(0, 5).forEach(err => {
+              report += `  ${err}\n`;
+            });
+            if (stats.errors.length > 5) {
+              report += `  ... and ${stats.errors.length - 5} more\n`;
+            }
+          }
+          
+          // Show warnings if any
+          if (stats.warnings && stats.warnings.length > 0) {
+            report += '\nWarnings:\n';
+            stats.warnings.slice(0, 3).forEach(warn => {
+              report += `  ${warn}\n`;
+            });
+            if (stats.warnings.length > 3) {
+              report += `  ... and ${stats.warnings.length - 3} more\n`;
+            }
+          }
+          
+          alert(report);
+        } else {
+          // Fallback to old format for backward compatibility
+          alert(`Import successful!\n\nEntities: ${stats.entities_created || 0}\nPeople: ${stats.people_created || 0}\nNotes: ${stats.notes_created || 0}\nRelations: ${stats.relations_created || 0}\nTags: ${stats.tags_created || 0}${stats.errors && stats.errors.length > 0 ? '\n\nErrors: ' + stats.errors.length : ''}`);
+        }
+        
+        window.location.reload(); // Refresh to show new data
+      } else {
+        alert('Import failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      alert('Import failed: ' + error.message);
+    } finally {
+      setShowImportModal(false);
+      if (importFileInputRef.current) {
+        importFileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleIngestClick = () => {
+    setShowMenu(false);
+    setShowIngestModal(true);
+  };
+
+  const handleReindex = async () => {
+    setShowMenu(false);
+    
+    if (!confirm('Reindex all your entities in the search engine? This may take a few moments.')) {
+      return;
+    }
+    
+    try {
+      const response = await api.fetch('/api/entities/reindex/', {
+        method: 'POST'
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Show progress modal
+        setProgressTask({ taskId: result.task_id, taskType: 'reindex' });
+      } else {
+        alert('Reindex failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Reindex failed:', error);
+      alert('Reindex failed: ' + error.message);
+    }
+  };
+
+  const handleReindexComplete = (progressData) => {
+    if (progressData.status === 'completed') {
+      alert('Reindex completed successfully!');
+    } else if (progressData.status === 'failed') {
+      alert('Reindex failed: ' + progressData.message);
+    } else if (progressData.status === 'cancelled') {
+      alert('Reindex was cancelled');
+    }
+  };
+
+  const handleIngestFile = async (event, source) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('source', source);
+
+      const response = await api.fetch('/api/notes/import_file/', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(`Conversation import successful!\n\n${result.message}`);
+        window.location.reload(); // Refresh to show new conversations
+      } else {
+        alert('Import failed: ' + result.error);
+      }
+    } catch (error) {
+      console.error('Ingest failed:', error);
+      alert('Ingest failed: ' + error.message);
+    } finally {
+      setShowIngestModal(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  if (!user) return null;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowMenu(!showMenu)}
+        className="flex items-center space-x-2 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+      >
+        <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold text-sm">
+          {user?.email?.[0]?.toUpperCase() || 'U'}
+        </div>
+        <span className="text-sm font-medium hidden sm:inline">{user?.email}</span>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {showMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-10"
+            onClick={() => setShowMenu(false)}
+          />
+          <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-20 border border-gray-200 dark:border-gray-700">
+            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{user?.username || 'User'}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
+            </div>
+            
+            <div className="py-1">
+              <button
+                onClick={handleExport}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                <span>Export Data</span>
+              </button>
+              
+              <button
+                onClick={handleImportClick}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                <span>Import Data</span>
+              </button>
+              
+              <button
+                onClick={handleIngestClick}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                <span>Ingest Conversation</span>
+              </button>
+              
+              <button
+                onClick={handleReindex}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Reindex Search</span>
+              </button>
+            </div>
+            
+            <div className="border-t border-gray-200 dark:border-gray-700">
+              <button
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-b-lg transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+      
+      {/* Import Data Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Import Data</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Select a JSON file exported from this application to import your entities, notes, and relations.
+            </p>
+            <input
+              ref={importFileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleImportFile}
+              className="block w-full text-sm text-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 focus:outline-none mb-4"
+            />
+            <div className="flex justify-end space-x-2">
+              <button
+                onClick={() => setShowImportModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Ingest Conversation Modal */}
+      {showIngestModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Ingest Conversation</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Select a conversation export file from ChatGPT, Gemini, or Claude.
+            </p>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  ChatGPT Conversation
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={(e) => handleIngestFile(e, 'chatgpt')}
+                  className="block w-full text-sm text-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 focus:outline-none"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Gemini Conversation
+                </label>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={(e) => handleIngestFile(e, 'gemini')}
+                  className="block w-full text-sm text-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 focus:outline-none"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Claude Conversation
+                </label>
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={(e) => handleIngestFile(e, 'claude')}
+                  className="block w-full text-sm text-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 focus:outline-none"
+                />
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => setShowIngestModal(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Progress Modal */}
+      {progressTask && (
+        <ProgressModal
+          taskId={progressTask.taskId}
+          taskType={progressTask.taskType}
+          onComplete={(progressData) => {
+            if (progressTask.taskType === 'export') {
+              handleExportComplete(progressData);
+            } else if (progressTask.taskType === 'import') {
+              handleImportComplete(progressData);
+            } else if (progressTask.taskType === 'reindex') {
+              handleReindexComplete(progressData);
+            }
+          }}
+          onCancel={() => setProgressTask(null)}
+        />
+      )}
+    </div>
+  );
+}

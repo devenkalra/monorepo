@@ -2,12 +2,14 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import ProgressModal from './ProgressModal';
 
 export default function UserMenu() {
   const { user, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
   const [showIngestModal, setShowIngestModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [progressTask, setProgressTask] = useState(null); // { taskId, taskType }
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
   const importFileInputRef = useRef(null);
@@ -20,19 +22,45 @@ export default function UserMenu() {
   const handleExport = async () => {
     try {
       setShowMenu(false);
-      const response = await api.fetch('/api/entities/export/');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `entity_export_${user.username}_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      
+      // Start async export
+      const response = await api.fetch('/api/entities/export-async/', {
+        method: 'POST'
+      });
+      const result = await response.json();
+      
+      if (result.success) {
+        // Show progress modal
+        setProgressTask({ taskId: result.task_id, taskType: 'export' });
+      } else {
+        alert('Export failed: ' + (result.error || 'Unknown error'));
+      }
     } catch (error) {
       console.error('Export failed:', error);
       alert('Export failed: ' + error.message);
+    }
+  };
+
+  const handleExportComplete = async (progressData) => {
+    if (progressData.status === 'completed') {
+      try {
+        // Download the export file
+        const response = await api.fetch(`/api/entities/tasks/${progressData.task_id}/download/`);
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `entity_export_${user.username}_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch (error) {
+        console.error('Download failed:', error);
+        alert('Download failed: ' + error.message);
+      }
+    } else if (progressData.status === 'failed') {
+      alert('Export failed: ' + progressData.message);
     }
   };
 
@@ -42,6 +70,47 @@ export default function UserMenu() {
   };
 
   const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      // Start async import
+      const response = await api.fetch('/api/entities/import-async/', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        // Close import modal and show progress modal
+        setShowImportModal(false);
+        setProgressTask({ taskId: result.task_id, taskType: 'import' });
+      } else {
+        alert('Import failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      alert('Import failed: ' + error.message);
+    }
+  };
+
+  const handleImportComplete = (progressData) => {
+    if (progressData.status === 'completed') {
+      // Just reload - progress modal already showed success
+      window.location.reload();
+    } else if (progressData.status === 'failed') {
+      alert('Import failed: ' + progressData.message);
+    } else if (progressData.status === 'cancelled') {
+      alert('Import was cancelled');
+    }
+  };
+
+  // Keep old sync import for fallback
+  const handleImportFileSync = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -171,6 +240,42 @@ export default function UserMenu() {
     setShowIngestModal(true);
   };
 
+  const handleReindex = async () => {
+    setShowMenu(false);
+    
+    if (!confirm('Reindex all your entities in the search engine? This may take a few moments.')) {
+      return;
+    }
+    
+    try {
+      const response = await api.fetch('/api/entities/reindex/', {
+        method: 'POST'
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        // Show progress modal
+        setProgressTask({ taskId: result.task_id, taskType: 'reindex' });
+      } else {
+        alert('Reindex failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Reindex failed:', error);
+      alert('Reindex failed: ' + error.message);
+    }
+  };
+
+  const handleReindexComplete = (progressData) => {
+    if (progressData.status === 'completed') {
+      alert('Reindex completed successfully!');
+    } else if (progressData.status === 'failed') {
+      alert('Reindex failed: ' + progressData.message);
+    } else if (progressData.status === 'cancelled') {
+      alert('Reindex was cancelled');
+    }
+  };
+
   const handleIngestFile = async (event, source) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -262,6 +367,16 @@ export default function UserMenu() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
                 </svg>
                 <span>Ingest Conversation</span>
+              </button>
+              
+              <button
+                onClick={handleReindex}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                <span>Reindex Search</span>
               </button>
             </div>
             
@@ -362,6 +477,24 @@ export default function UserMenu() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Progress Modal */}
+      {progressTask && (
+        <ProgressModal
+          taskId={progressTask.taskId}
+          taskType={progressTask.taskType}
+          onComplete={(progressData) => {
+            if (progressTask.taskType === 'export') {
+              handleExportComplete(progressData);
+            } else if (progressTask.taskType === 'import') {
+              handleImportComplete(progressData);
+            } else if (progressTask.taskType === 'reindex') {
+              handleReindexComplete(progressData);
+            }
+          }}
+          onCancel={() => setProgressTask(null)}
+        />
       )}
     </div>
   );

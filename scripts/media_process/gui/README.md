@@ -47,6 +47,7 @@ All formats supported by the system (MP4, MOV, AVI, MKV, etc.)
 
 ### File Browser
 - Browse directories and view media files
+- **Drag and drop support** for directories and database files
 - Filter by filename
 - Filter by file type (Images, Videos, Other)
 - Multi-select support
@@ -56,6 +57,7 @@ All formats supported by the system (MP4, MOV, AVI, MKV, etc.)
 - Image preview for selected files
 - File information display
 - EXIF data viewing (using exiftool)
+- **Show Location button** - View GPS coordinates on a map
 - Summary statistics for multiple selected files
 
 ### Bulk Operations

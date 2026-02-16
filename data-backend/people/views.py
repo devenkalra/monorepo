@@ -14,6 +14,7 @@ from .utils import save_file_deduplicated
 from .permissions import IsOwner, BothEntitiesOwned
 from django_filters.rest_framework import DjangoFilterBackend
 from io import StringIO
+from people.sync import meili_sync
 import tempfile
 import os
 import json
@@ -457,6 +458,181 @@ class EntityViewSet(viewsets.ModelViewSet):
                 {'error': f'Export failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated],
+            parser_classes=[MultiPartParser, FormParser], url_path='import-async')
+    def import_async(self, request):
+        """Start async import of entities from JSON file"""
+        from people.tasks import import_entities_async
+        import json
+        
+        try:
+            if 'file' not in request.FILES:
+                return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            uploaded_file = request.FILES['file']
+            
+            # Read and validate JSON
+            try:
+                content = uploaded_file.read().decode('utf-8')
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                return Response({'error': 'Invalid JSON file'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Validate format
+            if 'export_version' not in data:
+                return Response({'error': 'Invalid export file format'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Start async task
+            task = import_entities_async.delay(request.user.id, content)
+            
+            return Response({
+                'success': True,
+                'task_id': task.id,
+                'message': 'Import started. Use /api/entities/tasks/{task_id}/progress/ to check progress.'
+            })
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Import failed: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='export-async')
+    def export_async(self, request):
+        """Start async export of all user's data"""
+        from people.tasks import export_entities_async
+        
+        # Start async task
+        task = export_entities_async.delay(request.user.id)
+        
+        return Response({
+            'success': True,
+            'task_id': task.id,
+            'message': 'Export started. Use /api/entities/tasks/{task_id}/progress/ to check progress.'
+        })
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], 
+            url_path='tasks/(?P<task_id>[^/.]+)/download')
+    def download_export(self, request, task_id=None):
+        """Download completed export file"""
+        from django.http import HttpResponse
+        from django.core.cache import cache
+        from datetime import datetime
+        
+        # Get export data from cache
+        export_json = cache.get(f'export_data_{task_id}')
+        
+        if not export_json:
+            return Response({'error': 'Export data not found or expired'}, 
+                          status=status.HTTP_404_NOT_FOUND)
+        
+        # Create response with JSON file
+        response = HttpResponse(export_json, content_type='application/json')
+        filename = f"entity_export_{request.user.username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        return response
+    
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='tasks/(?P<task_id>[^/.]+)/progress')
+    def task_progress(self, request, task_id=None):
+        """Get progress of a running task"""
+        from django.core.cache import cache
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f"Checking progress for task_id: {task_id}")
+        
+        # First check cache for progress data
+        progress = cache.get(f'task_progress_{task_id}')
+        
+        if progress:
+            logger.info(f"Found progress in cache: {progress}")
+            return Response(progress)
+        
+        # If not in cache, check Celery task state
+        from celery.result import AsyncResult
+        result = AsyncResult(task_id)
+        
+        logger.info(f"Task state: {result.state}, Info: {result.info}")
+        
+        if result.state == 'PENDING':
+            return Response({
+                'error': 'Task not found or not started yet',
+                'task_id': task_id,
+                'details': 'The task may still be queuing or the task_id is invalid'
+            }, status=status.HTTP_404_NOT_FOUND)
+        elif result.state == 'SUCCESS':
+            # Task completed but progress expired from cache
+            return Response({
+                'task_id': task_id,
+                'status': 'completed',
+                'current': 100,
+                'total': 100,
+                'percentage': 100,
+                'message': 'Task completed (progress data expired)'
+            })
+        elif result.state == 'FAILURE':
+            return Response({
+                'task_id': task_id,
+                'status': 'failed',
+                'current': 0,
+                'total': 0,
+                'percentage': 0,
+                'message': f'Task failed: {str(result.info)}'
+            })
+        else:
+            # Task is in some other state (STARTED, RETRY, etc.)
+            return Response({
+                'task_id': task_id,
+                'status': result.state.lower(),
+                'current': 0,
+                'total': 0,
+                'percentage': 0,
+                'message': f'Task is {result.state}'
+            })
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='tasks/(?P<task_id>[^/.]+)/cancel')
+    def cancel_task(self, request, task_id=None):
+        """Cancel a running task"""
+        from django.core.cache import cache
+        from celery.result import AsyncResult
+        
+        # Mark task as cancelled in cache
+        cache.set(f'task_cancel_{task_id}', True, timeout=3600)
+        
+        # Try to revoke the Celery task
+        result = AsyncResult(task_id)
+        result.revoke(terminate=True)
+        
+        return Response({
+            'success': True,
+            'message': 'Task cancellation requested'
+        })
+    
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def reindex(self, request):
+        """Start async reindex of all user's entities in MeiliSearch"""
+        from people.tasks import reindex_user_entities
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # Start async task
+            task = reindex_user_entities.delay(request.user.id)
+            logger.info(f"Started reindex task {task.id} for user {request.user.id}")
+            
+            return Response({
+                'success': True,
+                'task_id': task.id,
+                'message': 'Reindex started. Use /api/entities/tasks/{task_id}/progress/ to check progress.'
+            })
+        except Exception as e:
+            logger.error(f"Failed to start reindex task: {str(e)}")
+            return Response({
+                'success': False,
+                'error': f'Failed to start reindex: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
     """Return the most recently modified entities.

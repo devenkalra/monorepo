@@ -24,13 +24,22 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any, Tuple
 import threading
 
+# Try to import tkinterdnd2 for drag and drop support
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    TKDND_AVAILABLE = True
+except ImportError:
+    TKDND_AVAILABLE = False
+    # Fallback: will use Tk() instead of TkinterDnD.Tk()
+    TkinterDnD = None
+
 # Add parent directory to path to import utilities
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     from media_utils import (
         get_mime_type, is_image_file, is_video_file, calculate_file_hash,
-        create_database_schema
+        create_database_schema, log_audit
     )
 except ImportError:
     print("Warning: media_utils not found, some features may be limited")
@@ -39,6 +48,7 @@ except ImportError:
     def is_video_file(mime): return mime.startswith('video/')
     def calculate_file_hash(path): return ""
     def create_database_schema(conn): pass
+    def log_audit(conn, operation, file_path, **kwargs): pass
 
 # Additional imports for HEIC/HEIF/RAW support
 try:
@@ -240,6 +250,28 @@ class MediaProcessorApp:
         self.current_preview_image = None
         self._updating_filter = False  # Flag to prevent recursive updates
         
+        # Preview state
+        self.original_preview_image = None  # Thumbnail PIL Image for default view
+        self.full_preview_image = None  # Full resolution PIL Image for zooming
+        self.current_preview_file = None  # Path to currently previewed file
+        self.preview_rotation = 0  # Current rotation in degrees
+        self.preview_zoom = 1.0  # Current zoom level
+        
+        # Remembered location data
+        self.remembered_location = {
+            'latitude': None,
+            'longitude': None,
+            'altitude': None,
+            'city': None,
+            'state': None,
+            'country': None,
+            'country_code': None,
+            'coverage': None
+        }
+        
+        # Remembered last destination for move operation
+        self.last_move_destination = None
+        
         # Setup UI
         self.setup_ui()
         
@@ -285,6 +317,9 @@ class MediaProcessorApp:
         dir_entry = ttk.Entry(top_frame, textvariable=self.dir_var, state='readonly')
         dir_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
         
+        # Enable drag and drop for directory
+        self.enable_drop(dir_entry, self.on_directory_drop)
+        
         ttk.Button(top_frame, text="Browse...", command=self.browse_directory).grid(row=0, column=2, padx=(0, 5))
         ttk.Button(top_frame, text="Refresh", command=self.refresh_file_list).grid(row=0, column=3)
         
@@ -320,6 +355,23 @@ class MediaProcessorApp:
         ttk.Checkbutton(type_frame, text="Other", variable=self.show_other_var,
                        command=self.apply_filter).grid(row=0, column=2, padx=5)
         
+        # Subdirectory options
+        subdir_frame = ttk.Frame(browser_frame)
+        subdir_frame.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        self.include_subdirs_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(subdir_frame, text="Include subdirectories", 
+                       variable=self.include_subdirs_var,
+                       command=self.refresh_file_list).grid(row=0, column=0, padx=5)
+        
+        ttk.Label(subdir_frame, text="Depth:").grid(row=0, column=1, padx=(10, 5))
+        self.subdir_depth_var = tk.StringVar(value="1")
+        depth_spinbox = ttk.Spinbox(subdir_frame, textvariable=self.subdir_depth_var, 
+                                    from_=1, to=10, width=5,
+                                    command=self.on_depth_change)
+        depth_spinbox.grid(row=0, column=2)
+        depth_spinbox.bind('<Return>', lambda e: self.on_depth_change())
+        
         # File list with scrollbar
         list_frame = ttk.Frame(browser_frame)
         list_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -336,9 +388,16 @@ class MediaProcessorApp:
         
         self.file_listbox.bind('<<ListboxSelect>>', self.on_file_select)
         
+        # Selection buttons
+        selection_btn_frame = ttk.Frame(browser_frame)
+        selection_btn_frame.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        
+        ttk.Button(selection_btn_frame, text="Select All", command=self.select_all_files).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(selection_btn_frame, text="Clear Selection", command=self.clear_selection).pack(side=tk.LEFT)
+        
         # Selection info
         self.selection_label = ttk.Label(browser_frame, text="Selected: 0 files")
-        self.selection_label.grid(row=2, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
+        self.selection_label.grid(row=3, column=0, sticky=(tk.W, tk.E), pady=(5, 0))
         
     def setup_right_panel(self, parent):
         """Setup the right panel with preview and info."""
@@ -351,11 +410,28 @@ class MediaProcessorApp:
         preview_frame = ttk.LabelFrame(right_frame, text="Preview", padding="5")
         preview_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 5))
         preview_frame.columnconfigure(0, weight=1)
-        preview_frame.rowconfigure(0, weight=1)
+        preview_frame.rowconfigure(1, weight=1)
         
+        # Preview controls (at top so they don't move)
+        preview_controls = ttk.Frame(preview_frame)
+        preview_controls.grid(row=0, column=0, sticky=(tk.W, tk.E), pady=(0, 5))
+        
+        # Zoom controls
+        ttk.Label(preview_controls, text="Zoom:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(preview_controls, text="-", command=self.zoom_out, width=3).pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Button(preview_controls, text="+", command=self.zoom_in, width=3).pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Button(preview_controls, text="Fit", command=self.zoom_fit, width=5).pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Rotate controls
+        ttk.Label(preview_controls, text="Rotate:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(preview_controls, text="↶ 90°", command=self.rotate_left, width=6).pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Button(preview_controls, text="↷ 90°", command=self.rotate_right, width=6).pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Button(preview_controls, text="↻ 180°", command=self.rotate_180, width=6).pack(side=tk.LEFT)
+        
+        # Preview label (below controls)
         self.preview_label = ttk.Label(preview_frame, text="No file selected", 
                                        background='gray85', anchor=tk.CENTER)
-        self.preview_label.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self.preview_label.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Info area
         info_frame = ttk.LabelFrame(right_frame, text="File Information", padding="5")
@@ -374,6 +450,16 @@ class MediaProcessorApp:
         exif_dropdown = ttk.Combobox(exif_control_frame, textvariable=self.exif_filter_var, 
                                      values=exif_filter_options, state='readonly', width=15)
         exif_dropdown.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Show Location button
+        self.show_location_btn = ttk.Button(exif_control_frame, text="Show Location", 
+                                           command=self.show_location, state='disabled')
+        self.show_location_btn.pack(side=tk.LEFT, padx=(0, 5))
+        
+        # Remember Location button
+        self.remember_location_btn = ttk.Button(exif_control_frame, text="Remember Location", 
+                                               command=self.remember_location, state='disabled')
+        self.remember_location_btn.pack(side=tk.LEFT, padx=(0, 5))
         
         # Use trace on StringVar for more reliable updates
         self.exif_filter_var.trace('w', lambda *args: self.on_exif_filter_change())
@@ -399,7 +485,12 @@ class MediaProcessorApp:
         
         ttk.Label(db_frame, text="Database:").grid(row=0, column=0, padx=(0, 5))
         self.db_path_var = tk.StringVar()
-        ttk.Entry(db_frame, textvariable=self.db_path_var).grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
+        db_entry = ttk.Entry(db_frame, textvariable=self.db_path_var)
+        db_entry.grid(row=0, column=1, sticky=(tk.W, tk.E), padx=(0, 5))
+        
+        # Enable drag and drop for database
+        self.enable_drop(db_entry, self.on_database_drop)
+        
         ttk.Button(db_frame, text="Browse...", command=self.browse_database).grid(row=0, column=2)
         
         # Volume filter
@@ -420,6 +511,7 @@ class MediaProcessorApp:
         ttk.Button(btn_frame, text="Manage Duplicates", command=self.manage_duplicates).grid(row=0, column=2, padx=5)
         ttk.Button(btn_frame, text="Locate in Database", command=self.locate_in_db).grid(row=0, column=3, padx=5)
         ttk.Button(btn_frame, text="Apply EXIF", command=self.apply_exif).grid(row=0, column=4, padx=5)
+        ttk.Button(btn_frame, text="Delete Files", command=self.delete_files).grid(row=0, column=5, padx=5)
         
     def setup_status_bar(self, parent):
         """Setup the status bar at the bottom."""
@@ -434,6 +526,57 @@ class MediaProcessorApp:
         # Add save config button
         ttk.Button(status_frame, text="Save Settings", command=self.save_config).grid(row=0, column=1)
         
+    def enable_drop(self, widget, callback):
+        """Enable drag and drop on a widget."""
+        if TKDND_AVAILABLE:
+            widget.drop_target_register(DND_FILES)
+            widget.dnd_bind('<<Drop>>', callback)
+        else:
+            # Fallback: just show a tooltip
+            widget.bind('<Button-3>', lambda e: messagebox.showinfo(
+                "Drag and Drop", 
+                "Install tkinterdnd2 for drag and drop support:\npip install tkinterdnd2"
+            ))
+    
+    def on_directory_drop(self, event):
+        """Handle directory drop event."""
+        if TKDND_AVAILABLE:
+            # Parse the dropped path
+            path = event.data
+            # Remove curly braces if present (Windows)
+            if path.startswith('{') and path.endswith('}'):
+                path = path[1:-1]
+            # Handle multiple files - take first one
+            if ' ' in path and not os.path.exists(path):
+                path = path.split()[0]
+            
+            # If it's a file, get its directory
+            if os.path.isfile(path):
+                path = os.path.dirname(path)
+            
+            if os.path.isdir(path):
+                self.current_directory = path
+                self.dir_var.set(path)
+                self.refresh_file_list()
+    
+    def on_database_drop(self, event):
+        """Handle database file drop event."""
+        if TKDND_AVAILABLE:
+            # Parse the dropped path
+            path = event.data
+            # Remove curly braces if present (Windows)
+            if path.startswith('{') and path.endswith('}'):
+                path = path[1:-1]
+            # Handle multiple files - take first one
+            if ' ' in path and not os.path.exists(path):
+                path = path.split()[0]
+            
+            # Only accept .db files
+            if os.path.isfile(path) and path.lower().endswith('.db'):
+                self.db_path_var.set(path)
+            elif os.path.isfile(path):
+                messagebox.showwarning("Invalid File", "Please drop a .db database file")
+    
     def browse_directory(self):
         """Open directory browser dialog."""
         directory = filedialog.askdirectory(initialdir=self.current_directory,
@@ -498,13 +641,29 @@ class MediaProcessorApp:
                         if exif_filter in ["All", "Common", "GPS/Location", "Camera", "Keywords", "Video"]:
                             self.exif_filter_var.set(exif_filter)
                     
+                    # Load last move destination
+                    if 'last_move_destination' in config:
+                        dest = config['last_move_destination']
+                        if dest and os.path.exists(dest):
+                            self.last_move_destination = dest
+                    
+                    # Load subdirectory settings
+                    if 'include_subdirs' in config:
+                        self.include_subdirs_var.set(config['include_subdirs'])
+                    if 'subdir_depth' in config:
+                        self.subdir_depth_var.set(config['subdir_depth'])
+                    
                     self.status_var.set("Settings loaded")
         except Exception as e:
             print(f"Error loading config: {e}")
             self.status_var.set("Error loading settings")
     
-    def save_config(self):
-        """Save configuration to YAML file."""
+    def save_config(self, silent=False):
+        """Save configuration to YAML file.
+        
+        Args:
+            silent: If True, don't show success messagebox (default: False)
+        """
         try:
             config = {
                 'current_directory': self.current_directory,
@@ -515,18 +674,23 @@ class MediaProcessorApp:
                 'show_videos': self.show_videos_var.get(),
                 'show_other': self.show_other_var.get(),
                 'window_geometry': self.root.geometry(),
+                'last_move_destination': self.last_move_destination,
+                'include_subdirs': self.include_subdirs_var.get(),
+                'subdir_depth': self.subdir_depth_var.get(),
             }
             
             with open(self.config_file, 'w') as f:
                 yaml.dump(config, f, default_flow_style=False)
             
             self.status_var.set("Settings saved")
-            messagebox.showinfo("Settings Saved", "Settings have been saved successfully!")
+            if not silent:
+                messagebox.showinfo("Settings Saved", "Settings have been saved successfully!")
         except Exception as e:
             error_msg = f"Error saving config: {e}"
             print(error_msg)
             self.status_var.set("Error saving settings")
-            messagebox.showerror("Save Error", error_msg)
+            if not silent:
+                messagebox.showerror("Save Error", error_msg)
             
     def refresh_file_list(self):
         """Refresh the file list from the current directory."""
@@ -535,14 +699,43 @@ class MediaProcessorApp:
         self.all_files = []
         
         try:
-            # Get all files in directory and subdirectories
+            include_subdirs = self.include_subdirs_var.get()
+            max_depth = int(self.subdir_depth_var.get()) if include_subdirs else 0
+            max_files = 1000
+            
+            # Get all files in directory and optionally subdirectories
+            base_depth = self.current_directory.rstrip(os.sep).count(os.sep)
+            
             for root, dirs, files in os.walk(self.current_directory):
+                # Calculate current depth relative to base directory
+                current_depth = root.count(os.sep) - base_depth
+                
+                # If not including subdirs, only process the root directory
+                if not include_subdirs and current_depth > 0:
+                    break
+                
+                # If including subdirs, respect the depth limit
+                if include_subdirs and current_depth >= max_depth:
+                    # Don't descend further
+                    dirs[:] = []
+                
                 for file in files:
+                    if len(self.all_files) >= max_files:
+                        self.status_var.set(f"Loaded {len(self.all_files)} files (limit reached)")
+                        messagebox.showwarning("File Limit", 
+                                             f"Reached maximum of {max_files} files. "
+                                             "Some files may not be shown.")
+                        break
+                    
                     file_path = os.path.join(root, file)
                     self.all_files.append(file_path)
+                
+                if len(self.all_files) >= max_files:
+                    break
             
             self.apply_filter()
-            self.status_var.set(f"Loaded {len(self.all_files)} files")
+            depth_info = f" (depth {max_depth})" if include_subdirs else ""
+            self.status_var.set(f"Loaded {len(self.all_files)} files{depth_info}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load files: {e}")
             self.status_var.set("Error loading files")
@@ -596,10 +789,30 @@ class MediaProcessorApp:
         else:
             self.preview_label.config(image='', text=f"{len(self.selected_files)} files selected")
             self.current_preview_image = None
+            # Disable Show Location and Remember Location buttons when no single file selected
+            self.show_location_btn.config(state='disabled')
+            self.remember_location_btn.config(state='disabled')
             if len(self.selected_files) > 1:
                 self.show_multiple_files_info()
             else:
                 self.info_text.delete(1.0, tk.END)
+    
+    def select_all_files(self):
+        """Select all files in the listbox."""
+        self.file_listbox.select_set(0, tk.END)
+        # Manually trigger the selection event
+        self.file_listbox.event_generate('<<ListboxSelect>>')
+    
+    def clear_selection(self):
+        """Clear all file selections."""
+        self.file_listbox.selection_clear(0, tk.END)
+        # Manually trigger the selection event
+        self.file_listbox.event_generate('<<ListboxSelect>>')
+    
+    def on_depth_change(self):
+        """Handle depth spinbox change."""
+        if self.include_subdirs_var.get():
+            self.refresh_file_list()
                 
     def check_file_in_database(self, file_path, volume_filter=None):
         """Check if file exists in database and return status info.
@@ -699,6 +912,11 @@ class MediaProcessorApp:
     
     def show_file_preview(self, file_path):
         """Show preview of the selected file."""
+        # Reset zoom and rotation for new file
+        self.preview_rotation = 0
+        self.preview_zoom = 1.0
+        self.current_preview_file = file_path
+        
         mime_type = get_mime_type(file_path)
         extension = os.path.splitext(file_path)[1].lower()
         
@@ -710,20 +928,20 @@ class MediaProcessorApp:
         if is_image:
             try:
                 # First, try to get thumbnail from database (fast!)
-                img = self.get_thumbnail_from_database(file_path)
+                thumbnail_img = self.get_thumbnail_from_database(file_path)
                 
-                if img is None:
-                    # Not in database, load from file
+                if thumbnail_img is None:
+                    # Not in database, load from file and create thumbnail
                     # Show loading message for RAW/HEIF files (they can be slow)
                     if is_raw_file(file_path) or is_heif_file(file_path):
                         format_name = "RAW" if is_raw_file(file_path) else "HEIF/HEIC"
                         self.preview_label.config(image='', text=f"Loading {format_name} preview...")
                         self.root.update()
                     
-                    # Load image with fallback support for HEIC/HEIF/RAW
-                    img = load_image_with_fallback(file_path)
+                    # Load full image with fallback support for HEIC/HEIF/RAW
+                    full_img = load_image_with_fallback(file_path)
                     
-                    if img is None:
+                    if full_img is None:
                         # Failed to load
                         format_name = "RAW" if is_raw_file(file_path) else "HEIF/HEIC" if is_heif_file(file_path) else "image"
                         self.preview_label.config(
@@ -732,26 +950,150 @@ class MediaProcessorApp:
                                  ("pillow_heif" if is_heif_file(file_path) else "rawpy or ImageMagick")
                         )
                         self.current_preview_image = None
+                        self.original_preview_image = None
+                        self.full_preview_image = None
                         return
+                    
+                    # Create thumbnail from full image
+                    thumbnail_img = full_img.copy()
+                    thumbnail_img.thumbnail((500, 400), Image.Resampling.LANCZOS)
+                    
+                    # Store full image for zooming (don't store if it's huge to save memory)
+                    if full_img.size[0] * full_img.size[1] < 50000000:  # < 50 megapixels
+                        self.full_preview_image = full_img
+                    else:
+                        self.full_preview_image = None
+                else:
+                    # Got thumbnail from database, full image not loaded yet
+                    self.full_preview_image = None
                 
-                # Calculate size to fit in preview area (max 500x400)
-                max_width, max_height = 500, 400
-                img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
+                # Store thumbnail for default view
+                self.original_preview_image = thumbnail_img
                 
-                # Convert to PhotoImage
-                photo = ImageTk.PhotoImage(img)
-                self.current_preview_image = photo  # Keep reference
+                # Apply current transformations and display
+                self._update_preview_display()
                 
-                self.preview_label.config(image=photo, text='')
             except Exception as e:
                 self.preview_label.config(image='', text=f"Preview error: {e}")
                 self.current_preview_image = None
+                self.original_preview_image = None
+                self.full_preview_image = None
         elif is_video_file(mime_type):
             self.preview_label.config(image='', text="Video file\n(Preview not available)")
             self.current_preview_image = None
+            self.original_preview_image = None
+            self.full_preview_image = None
         else:
             self.preview_label.config(image='', text="No preview available")
             self.current_preview_image = None
+            self.original_preview_image = None
+            self.full_preview_image = None
+    
+    def _update_preview_display(self):
+        """Update preview display with current zoom and rotation."""
+        if self.original_preview_image is None:
+            return
+        
+        try:
+            # Decide which image to use based on zoom level
+            if self.preview_zoom == 1.0:
+                # Default view: use thumbnail as-is
+                img = self.original_preview_image.copy()
+            else:
+                # Zoomed view: use full image if available, otherwise zoom the thumbnail
+                if self.full_preview_image is not None:
+                    img = self.full_preview_image.copy()
+                else:
+                    # Full image not available, try to load it now if zooming
+                    if self.current_preview_file and os.path.exists(self.current_preview_file):
+                        try:
+                            full_img = load_image_with_fallback(self.current_preview_file)
+                            if full_img and full_img.size[0] * full_img.size[1] < 50000000:
+                                self.full_preview_image = full_img
+                                img = full_img.copy()
+                            else:
+                                # Too large or failed to load, use thumbnail
+                                img = self.original_preview_image.copy()
+                        except:
+                            # Failed to load, use thumbnail
+                            img = self.original_preview_image.copy()
+                    else:
+                        # No file path, use thumbnail
+                        img = self.original_preview_image.copy()
+            
+            # Apply rotation
+            if self.preview_rotation != 0:
+                img = img.rotate(-self.preview_rotation, expand=True)
+            
+            # Calculate display size
+            max_width, max_height = 500, 400
+            
+            if self.preview_zoom == 1.0:
+                # Fit mode: image is already thumbnailed, just display it
+                display_img = img
+            else:
+                # Zoomed mode: calculate size based on zoom
+                img_width, img_height = img.size
+                width_ratio = max_width / img_width
+                height_ratio = max_height / img_height
+                fit_ratio = min(width_ratio, height_ratio)
+                
+                # Apply zoom to the fit ratio
+                final_ratio = fit_ratio * self.preview_zoom
+                
+                # Calculate final dimensions
+                new_width = int(img_width * final_ratio)
+                new_height = int(img_height * final_ratio)
+                
+                # Resize image (use LANCZOS for quality)
+                if new_width > 0 and new_height > 0:
+                    display_img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                else:
+                    display_img = img
+            
+            # Convert to PhotoImage
+            photo = ImageTk.PhotoImage(display_img)
+            self.current_preview_image = photo  # Keep reference
+            
+            self.preview_label.config(image=photo, text='')
+        except Exception as e:
+            self.preview_label.config(image='', text=f"Preview error: {e}")
+    
+    def zoom_in(self):
+        """Zoom in on preview."""
+        if self.original_preview_image:
+            self.preview_zoom = min(self.preview_zoom * 1.25, 5.0)  # Max 5x zoom
+            self._update_preview_display()
+    
+    def zoom_out(self):
+        """Zoom out on preview."""
+        if self.original_preview_image:
+            self.preview_zoom = max(self.preview_zoom / 1.25, 0.25)  # Min 0.25x zoom
+            self._update_preview_display()
+    
+    def zoom_fit(self):
+        """Reset zoom to fit."""
+        if self.original_preview_image:
+            self.preview_zoom = 1.0
+            self._update_preview_display()
+    
+    def rotate_left(self):
+        """Rotate preview 90 degrees counter-clockwise."""
+        if self.original_preview_image:
+            self.preview_rotation = (self.preview_rotation - 90) % 360
+            self._update_preview_display()
+    
+    def rotate_right(self):
+        """Rotate preview 90 degrees clockwise."""
+        if self.original_preview_image:
+            self.preview_rotation = (self.preview_rotation + 90) % 360
+            self._update_preview_display()
+    
+    def rotate_180(self):
+        """Rotate preview 180 degrees."""
+        if self.original_preview_image:
+            self.preview_rotation = (self.preview_rotation + 180) % 360
+            self._update_preview_display()
             
     def show_file_info(self, file_path):
         """Show file information and EXIF data."""
@@ -817,9 +1159,20 @@ class MediaProcessorApp:
             self.info_text.tag_config('db_not_indexed', foreground='red')
             self.info_text.tag_config('volume_match', foreground='green')
             self.info_text.tag_config('volume_mismatch', foreground='orange')
+            
+            # Enable/disable Show Location and Remember Location buttons based on GPS data
+            gps_data = self.get_gps_coordinates(file_path)
+            if gps_data:
+                self.show_location_btn.config(state='normal')
+                self.remember_location_btn.config(state='normal')
+            else:
+                self.show_location_btn.config(state='disabled')
+                self.remember_location_btn.config(state='disabled')
                 
         except Exception as e:
             self.info_text.insert(tk.END, f"\nError loading info: {e}\n")
+            self.show_location_btn.config(state='disabled')
+            self.remember_location_btn.config(state='disabled')
             
     def on_volume_filter_change(self):
         """Handle volume filter change - refresh info if file is selected."""
@@ -1052,6 +1405,289 @@ class MediaProcessorApp:
             
             # Manually trigger the selection event to redisplay preview/info
             self.file_listbox.event_generate('<<ListboxSelect>>')
+    
+    def get_full_location_data(self, file_path):
+        """Extract complete location data from a file.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            Dictionary with location data or None if no GPS data
+        """
+        try:
+            # Use exiftool to get GPS and location data
+            result = subprocess.run(
+                ['exiftool', '-GPSLatitude', '-GPSLongitude', '-GPSLatitudeRef', 
+                 '-GPSLongitudeRef', '-GPSAltitude', '-City', '-State', '-Country',
+                 '-CountryCode', '-Coverage', '-json', file_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                if data and len(data) > 0:
+                    exif = data[0]
+                    
+                    # Check if GPS data exists
+                    if 'GPSLatitude' in exif and 'GPSLongitude' in exif:
+                        lat = exif['GPSLatitude']
+                        lon = exif['GPSLongitude']
+                        lat_ref = exif.get('GPSLatitudeRef', 'N')
+                        lon_ref = exif.get('GPSLongitudeRef', 'E')
+                        
+                        # Normalize reference to single letter
+                        lat_ref = lat_ref[0].upper() if lat_ref else 'N'
+                        lon_ref = lon_ref[0].upper() if lon_ref else 'E'
+                        
+                        # Convert to decimal if needed, always applying reference
+                        if isinstance(lat, str):
+                            lat = self._parse_gps_coordinate(lat, lat_ref)
+                        else:
+                            lat = float(lat)
+                            if lat_ref == 'S':
+                                lat = -lat
+                        
+                        if isinstance(lon, str):
+                            lon = self._parse_gps_coordinate(lon, lon_ref)
+                        else:
+                            lon = float(lon)
+                            if lon_ref == 'W':
+                                lon = -lon
+                        
+                        # Get altitude if available
+                        altitude = exif.get('GPSAltitude')
+                        if altitude and isinstance(altitude, str):
+                            # Parse altitude like "123.4 m"
+                            try:
+                                altitude = float(altitude.split()[0])
+                            except:
+                                altitude = None
+                        
+                        return {
+                            'latitude': lat,
+                            'longitude': lon,
+                            'altitude': altitude,
+                            'city': exif.get('City'),
+                            'state': exif.get('State'),
+                            'country': exif.get('Country'),
+                            'country_code': exif.get('CountryCode'),
+                            'coverage': exif.get('Coverage')
+                        }
+        except Exception as e:
+            print(f"Error extracting location data: {e}")
+        
+        return None
+    
+    def get_gps_coordinates(self, file_path):
+        """Extract GPS coordinates from a file.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            Tuple of (latitude, longitude, location_name) or None if no GPS data
+        """
+        try:
+            # Use exiftool to get GPS data
+            result = subprocess.run(
+                ['exiftool', '-GPSLatitude', '-GPSLongitude', '-GPSLatitudeRef', 
+                 '-GPSLongitudeRef', '-City', '-State', '-Country', '-json', file_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                if data and len(data) > 0:
+                    exif = data[0]
+                    
+                    # Debug: print raw GPS data
+                    print(f"DEBUG GPS data: {json.dumps(exif, indent=2)}")
+                    
+                    # Check if GPS data exists
+                    if 'GPSLatitude' in exif and 'GPSLongitude' in exif:
+                        lat = exif['GPSLatitude']
+                        lon = exif['GPSLongitude']
+                        lat_ref = exif.get('GPSLatitudeRef', 'N')
+                        lon_ref = exif.get('GPSLongitudeRef', 'E')
+                        
+                        print(f"DEBUG: Raw lat={lat}, lat_ref={lat_ref}")
+                        print(f"DEBUG: Raw lon={lon}, lon_ref={lon_ref}")
+                        
+                        # Normalize reference to single letter (handle both "N" and "North" formats)
+                        lat_ref = lat_ref[0].upper() if lat_ref else 'N'
+                        lon_ref = lon_ref[0].upper() if lon_ref else 'E'
+                        
+                        print(f"DEBUG: Normalized lat_ref={lat_ref}, lon_ref={lon_ref}")
+                        
+                        # Convert to decimal if needed, always applying reference
+                        if isinstance(lat, str):
+                            # Parse formats like "37 deg 46' 29.99\" N"
+                            lat = self._parse_gps_coordinate(lat, lat_ref)
+                        else:
+                            # Already a number, but still need to apply reference
+                            lat = float(lat)
+                            if lat_ref == 'S':
+                                lat = -lat
+                        
+                        if isinstance(lon, str):
+                            lon = self._parse_gps_coordinate(lon, lon_ref)
+                        else:
+                            # Already a number, but still need to apply reference
+                            lon = float(lon)
+                            if lon_ref == 'W':
+                                lon = -lon
+                        
+                        print(f"DEBUG: Final lat={lat}, lon={lon}")
+                        
+                        # Build location name
+                        location_parts = []
+                        if 'City' in exif:
+                            location_parts.append(exif['City'])
+                        if 'State' in exif:
+                            location_parts.append(exif['State'])
+                        if 'Country' in exif:
+                            location_parts.append(exif['Country'])
+                        
+                        location_name = ', '.join(location_parts) if location_parts else None
+                        
+                        return (lat, lon, location_name)
+        except Exception as e:
+            print(f"Error extracting GPS data: {e}")
+        
+        return None
+    
+    def _parse_gps_coordinate(self, coord_str, ref):
+        """Parse GPS coordinate string to decimal degrees.
+        
+        Args:
+            coord_str: Coordinate string like "37 deg 46' 29.99\" N" or just a number
+            ref: Reference (N/S for latitude, E/W for longitude)
+            
+        Returns:
+            Decimal degrees as float
+        """
+        try:
+            # If already a number, just return it
+            if isinstance(coord_str, (int, float)):
+                decimal = float(coord_str)
+            else:
+                # Parse "37 deg 46' 29.99\"" format
+                parts = coord_str.replace('deg', '').replace("'", '').replace('"', '').split()
+                if len(parts) >= 3:
+                    degrees = float(parts[0])
+                    minutes = float(parts[1])
+                    seconds = float(parts[2])
+                    decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
+                elif len(parts) == 1:
+                    decimal = float(parts[0])
+                else:
+                    return None
+            
+            # Apply reference (negative for South and West)
+            if ref in ['S', 'W']:
+                decimal = -decimal
+            
+            return decimal
+        except Exception as e:
+            print(f"Error parsing GPS coordinate: {e}")
+            return None
+    
+    def show_location(self):
+        """Show location of selected file on a map."""
+        if not self.selected_files or len(self.selected_files) != 1:
+            messagebox.showinfo("Show Location", "Please select a single file to show its location.")
+            return
+        
+        file_path = self.selected_files[0]
+        
+        # Get GPS coordinates
+        gps_data = self.get_gps_coordinates(file_path)
+        
+        if not gps_data:
+            messagebox.showinfo("No GPS Data", 
+                              f"No GPS coordinates found in:\n{os.path.basename(file_path)}")
+            return
+        
+        lat, lon, location_name = gps_data
+        
+        # Build map URL (using OpenStreetMap)
+        map_url = f"https://www.openstreetmap.org/?mlat={lat}&mlon={lon}&zoom=15"
+        
+        # Also provide Google Maps as alternative
+        google_url = f"https://www.google.com/maps?q={lat},{lon}"
+        
+        # Show dialog with options
+        location_str = f"\nLocation: {location_name}" if location_name else ""
+        message = (f"GPS Coordinates:\n"
+                  f"Latitude: {lat:.6f}\n"
+                  f"Longitude: {lon:.6f}"
+                  f"{location_str}\n\n"
+                  f"Opening in web browser...")
+        
+        # Open in default browser
+        import webbrowser
+        try:
+            webbrowser.open(map_url)
+            messagebox.showinfo("Location", message)
+        except Exception as e:
+            # If opening fails, show the URLs
+            messagebox.showinfo("Location", 
+                              f"{message}\n\n"
+                              f"OpenStreetMap:\n{map_url}\n\n"
+                              f"Google Maps:\n{google_url}")
+    
+    def remember_location(self):
+        """Remember the location data from the selected file."""
+        if not self.selected_files or len(self.selected_files) != 1:
+            messagebox.showinfo("Remember Location", "Please select a single file.")
+            return
+        
+        file_path = self.selected_files[0]
+        
+        # Get full location data
+        location_data = self.get_full_location_data(file_path)
+        
+        if not location_data:
+            messagebox.showinfo("No Location Data", 
+                              f"No location data found in:\n{os.path.basename(file_path)}")
+            return
+        
+        # Store the location data
+        self.remembered_location = location_data
+        
+        # Build summary message
+        parts = []
+        if location_data['latitude'] is not None and location_data['longitude'] is not None:
+            parts.append(f"GPS: {location_data['latitude']:.6f}, {location_data['longitude']:.6f}")
+        if location_data['altitude'] is not None:
+            parts.append(f"Altitude: {location_data['altitude']} m")
+        
+        location_parts = []
+        if location_data['city']:
+            location_parts.append(location_data['city'])
+        if location_data['state']:
+            location_parts.append(location_data['state'])
+        if location_data['country']:
+            location_parts.append(location_data['country'])
+        
+        if location_parts:
+            parts.append(f"Location: {', '.join(location_parts)}")
+        
+        if location_data['country_code']:
+            parts.append(f"Country Code: {location_data['country_code']}")
+        if location_data['coverage']:
+            parts.append(f"Coverage: {location_data['coverage']}")
+        
+        message = "Location data remembered:\n\n" + "\n".join(parts)
+        messagebox.showinfo("Location Remembered", message)
+        
+        # Update status
+        self.status_var.set("Location data remembered")
         
     def format_size(self, size_bytes):
         """Format file size in human-readable format."""
@@ -1094,7 +1730,8 @@ class MediaProcessorApp:
         
         # Get volume from main window filter, or use default
         volume = self.volume_filter_var.get().strip() or "MediaLibrary"
-        MoveMediaDialog(self.root, self.selected_files, self.db_path_var.get(), volume)
+        MoveMediaDialog(self.root, self.selected_files, self.db_path_var.get(), volume, 
+                       last_destination=self.last_move_destination, parent_app=self)
         
     def manage_duplicates(self):
         """Launch manage duplicates dialog."""
@@ -1115,7 +1752,15 @@ class MediaProcessorApp:
         if not self.check_prerequisites(require_selection=True):
             return
             
-        ApplyExifDialog(self.root, self.selected_files, self.db_path_var.get())
+        ApplyExifDialog(self.root, self.selected_files, self.db_path_var.get(), 
+                       self.remembered_location, parent_app=self)
+    
+    def delete_files(self):
+        """Launch delete files dialog."""
+        if not self.check_prerequisites(require_selection=True):
+            return
+        
+        DeleteFilesDialog(self.root, self.selected_files, self.db_path_var.get(), parent_app=self)
 
 
 class OperationDialogBase(tk.Toplevel):
@@ -1148,6 +1793,14 @@ class OperationDialogBase(tk.Toplevel):
         self.output_text.insert(tk.END, message + "\n")
         self.output_text.see(tk.END)
         self.update()
+    
+    def _append_output(self, message):
+        """Add message to output area (thread-safe version)."""
+        def append():
+            self.output_text.insert(tk.END, message)
+            self.output_text.see(tk.END)
+        # Schedule on main thread
+        self.after(0, append)
         
     def run_command_async(self, cmd, on_complete=None):
         """Run a command asynchronously."""
@@ -1260,12 +1913,14 @@ class IndexMediaDialog(OperationDialogBase):
 class MoveMediaDialog(OperationDialogBase):
     """Dialog for moving media files."""
     
-    def __init__(self, parent, files, db_path, volume="MediaLibrary"):
+    def __init__(self, parent, files, db_path, volume="MediaLibrary", last_destination=None, parent_app=None):
         super().__init__(parent, "Move Media Files", 700, 500)
         
         self.files = files
         self.db_path = db_path
         self.default_volume = volume
+        self.last_destination = last_destination
+        self.parent_app = parent_app
         
         self.setup_ui()
         
@@ -1287,7 +1942,7 @@ class MoveMediaDialog(OperationDialogBase):
         dest_frame.pack(fill=tk.X, pady=(0, 5))
         
         ttk.Label(dest_frame, text="Destination:").pack(side=tk.LEFT, padx=(0, 5))
-        self.dest_var = tk.StringVar()
+        self.dest_var = tk.StringVar(value=self.last_destination or '')
         ttk.Entry(dest_frame, textvariable=self.dest_var).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
         ttk.Button(dest_frame, text="Browse...", command=self.browse_dest).pack(side=tk.LEFT)
         
@@ -1413,6 +2068,11 @@ class MoveMediaDialog(OperationDialogBase):
                 self._append_output("\n[DRY RUN] No actual changes were made\n")
             self._append_output("=" * 70 + "\n")
             
+            # Save the destination for future use (only if not dry run and at least one file moved)
+            if not dry_run and moved_count > 0 and self.parent_app:
+                self.parent_app.last_move_destination = dest_dir
+                self.parent_app.save_config(silent=True)
+            
         except Exception as e:
             self._append_output(f"\nError: {e}\n")
             import traceback
@@ -1501,6 +2161,27 @@ class MoveMediaDialog(OperationDialogBase):
         
         action_str = "Would be " + action if dry_run else action.capitalize()
         self._append_output(f"  ✓ {action_str}\n")
+        
+        # Log audit record
+        if not dry_run:
+            # Get old volume if it existed in database
+            cursor = conn.cursor()
+            cursor.execute("SELECT volume FROM files WHERE id = ?", (file_id,))
+            result = cursor.fetchone()
+            old_volume = result[0] if result else None
+            
+            log_audit(
+                conn=conn,
+                operation='move',
+                file_path=new_path,
+                success=True,
+                file_hash=source_hash,
+                old_path=old_path,
+                new_path=new_path,
+                old_volume=old_volume,
+                new_volume=volume,
+                additional_info=f"Database action: {action}"
+            )
         
         return 'success', action
     
@@ -1954,11 +2635,13 @@ class LocateInDbDialog(OperationDialogBase):
 class ApplyExifDialog(OperationDialogBase):
     """Dialog for applying EXIF tags."""
     
-    def __init__(self, parent, files, db_path):
-        super().__init__(parent, "Apply EXIF Tags", 700, 600)
+    def __init__(self, parent, files, db_path, remembered_location=None, parent_app=None):
+        super().__init__(parent, "Apply EXIF Tags", 750, 700)
         
         self.files = files
         self.db_path = db_path
+        self.remembered_location = remembered_location or {}
+        self.parent_app = parent_app  # Reference to main app for updating remembered location
         
         self.setup_ui()
         
@@ -1973,11 +2656,82 @@ class ApplyExifDialog(OperationDialogBase):
             ttk.Label(main_frame, text=f"Database: {self.db_path}").pack(anchor=tk.W, pady=(0, 10))
         
         # Options
-        options_frame = ttk.LabelFrame(main_frame, text="Options", padding="5")
+        options_frame = ttk.LabelFrame(main_frame, text="Location & Metadata", padding="5")
         options_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Location
-        location_frame = ttk.Frame(options_frame)
+        # GPS Coordinates section
+        gps_frame = ttk.LabelFrame(options_frame, text="GPS Coordinates", padding="5")
+        gps_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Latitude
+        lat_frame = ttk.Frame(gps_frame)
+        lat_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(lat_frame, text="Latitude:").pack(side=tk.LEFT, padx=(0, 5))
+        self.latitude_var = tk.StringVar(value=str(self.remembered_location.get('latitude', '')) if self.remembered_location.get('latitude') else '')
+        ttk.Entry(lat_frame, textvariable=self.latitude_var, width=20).pack(side=tk.LEFT)
+        
+        # Longitude
+        lon_frame = ttk.Frame(gps_frame)
+        lon_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(lon_frame, text="Longitude:").pack(side=tk.LEFT, padx=(0, 5))
+        self.longitude_var = tk.StringVar(value=str(self.remembered_location.get('longitude', '')) if self.remembered_location.get('longitude') else '')
+        ttk.Entry(lon_frame, textvariable=self.longitude_var, width=20).pack(side=tk.LEFT)
+        
+        # Altitude
+        alt_frame = ttk.Frame(gps_frame)
+        alt_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(alt_frame, text="Altitude (m):").pack(side=tk.LEFT, padx=(0, 5))
+        self.altitude_var = tk.StringVar(value=str(self.remembered_location.get('altitude', '')) if self.remembered_location.get('altitude') else '')
+        ttk.Entry(alt_frame, textvariable=self.altitude_var, width=20).pack(side=tk.LEFT)
+        
+        # Clear GPS button
+        ttk.Button(gps_frame, text="Clear GPS", command=self.clear_gps).pack(anchor=tk.W, pady=(5, 0))
+        
+        # Location details section
+        location_detail_frame = ttk.LabelFrame(options_frame, text="Location Details", padding="5")
+        location_detail_frame.pack(fill=tk.X, pady=(5, 5))
+        
+        # City
+        city_frame = ttk.Frame(location_detail_frame)
+        city_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(city_frame, text="City:").pack(side=tk.LEFT, padx=(0, 5))
+        self.city_var = tk.StringVar(value=self.remembered_location.get('city', ''))
+        ttk.Entry(city_frame, textvariable=self.city_var, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # State
+        state_frame = ttk.Frame(location_detail_frame)
+        state_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(state_frame, text="State:").pack(side=tk.LEFT, padx=(0, 5))
+        self.state_var = tk.StringVar(value=self.remembered_location.get('state', ''))
+        ttk.Entry(state_frame, textvariable=self.state_var, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Country
+        country_frame = ttk.Frame(location_detail_frame)
+        country_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(country_frame, text="Country:").pack(side=tk.LEFT, padx=(0, 5))
+        self.country_var = tk.StringVar(value=self.remembered_location.get('country', ''))
+        ttk.Entry(country_frame, textvariable=self.country_var, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Country Code
+        country_code_frame = ttk.Frame(location_detail_frame)
+        country_code_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(country_code_frame, text="Country Code:").pack(side=tk.LEFT, padx=(0, 5))
+        self.country_code_var = tk.StringVar(value=self.remembered_location.get('country_code', ''))
+        ttk.Entry(country_code_frame, textvariable=self.country_code_var, width=10).pack(side=tk.LEFT)
+        
+        # Coverage
+        coverage_frame = ttk.Frame(location_detail_frame)
+        coverage_frame.pack(fill=tk.X, pady=(0, 3))
+        ttk.Label(coverage_frame, text="Coverage:").pack(side=tk.LEFT, padx=(0, 5))
+        self.coverage_var = tk.StringVar(value=self.remembered_location.get('coverage', ''))
+        ttk.Entry(coverage_frame, textvariable=self.coverage_var, width=30).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        
+        # Other metadata section
+        other_frame = ttk.LabelFrame(options_frame, text="Other Metadata", padding="5")
+        other_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        # Place (legacy field)
+        location_frame = ttk.Frame(other_frame)
         location_frame.pack(fill=tk.X, pady=(0, 5))
         
         ttk.Label(location_frame, text="Place:").pack(side=tk.LEFT, padx=(0, 5))
@@ -1985,7 +2739,7 @@ class ApplyExifDialog(OperationDialogBase):
         ttk.Entry(location_frame, textvariable=self.place_var, width=40).pack(side=tk.LEFT, fill=tk.X, expand=True)
         
         # Keywords
-        keywords_frame = ttk.Frame(options_frame)
+        keywords_frame = ttk.Frame(other_frame)
         keywords_frame.pack(fill=tk.X, pady=(0, 5))
         
         ttk.Label(keywords_frame, text="Add Keywords:").pack(side=tk.LEFT, padx=(0, 5))
@@ -1994,7 +2748,7 @@ class ApplyExifDialog(OperationDialogBase):
         ttk.Label(keywords_frame, text="(comma-separated)").pack(side=tk.LEFT, padx=(5, 0))
         
         # Caption
-        caption_frame = ttk.Frame(options_frame)
+        caption_frame = ttk.Frame(other_frame)
         caption_frame.pack(fill=tk.X, pady=(0, 5))
         
         ttk.Label(caption_frame, text="Caption:").pack(side=tk.LEFT, padx=(0, 5))
@@ -2004,12 +2758,12 @@ class ApplyExifDialog(OperationDialogBase):
         # Reprocess database
         if self.db_path:
             self.reprocess_var = tk.BooleanVar(value=True)
-            ttk.Checkbutton(options_frame, text="Update database after applying EXIF", 
+            ttk.Checkbutton(other_frame, text="Update database after applying EXIF", 
                            variable=self.reprocess_var).pack(anchor=tk.W, pady=(5, 0))
         
         # Dry run
         self.dry_run_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(options_frame, text="Dry run (preview only)", 
+        ttk.Checkbutton(other_frame, text="Dry run (preview only)", 
                        variable=self.dry_run_var).pack(anchor=tk.W, pady=(5, 0))
         
         # Output area
@@ -2020,7 +2774,89 @@ class ApplyExifDialog(OperationDialogBase):
         btn_frame.pack(fill=tk.X, pady=(10, 0))
         
         ttk.Button(btn_frame, text="Start", command=self.start).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Remember", command=self.remember_current_location).pack(side=tk.LEFT, padx=(0, 5))
         ttk.Button(btn_frame, text="Close", command=self.destroy).pack(side=tk.LEFT)
+    
+    def remember_current_location(self):
+        """Remember the current location data from the dialog fields."""
+        if not self.parent_app:
+            messagebox.showwarning("Cannot Remember", "No parent application reference available.")
+            return
+        
+        # Parse and validate GPS coordinates
+        latitude = None
+        longitude = None
+        altitude = None
+        
+        if self.latitude_var.get().strip():
+            try:
+                latitude = float(self.latitude_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Invalid Latitude", "Latitude must be a number")
+                return
+        
+        if self.longitude_var.get().strip():
+            try:
+                longitude = float(self.longitude_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Invalid Longitude", "Longitude must be a number")
+                return
+        
+        if self.altitude_var.get().strip():
+            try:
+                altitude = float(self.altitude_var.get().strip())
+            except ValueError:
+                messagebox.showerror("Invalid Altitude", "Altitude must be a number")
+                return
+        
+        # Update parent app's remembered location
+        self.parent_app.remembered_location = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'altitude': altitude,
+            'city': self.city_var.get().strip() or None,
+            'state': self.state_var.get().strip() or None,
+            'country': self.country_var.get().strip() or None,
+            'country_code': self.country_code_var.get().strip() or None,
+            'coverage': self.coverage_var.get().strip() or None
+        }
+        
+        # Build summary message
+        parts = []
+        if latitude is not None and longitude is not None:
+            parts.append(f"GPS: {latitude:.6f}, {longitude:.6f}")
+        if altitude is not None:
+            parts.append(f"Altitude: {altitude} m")
+        
+        location_parts = []
+        if self.city_var.get().strip():
+            location_parts.append(self.city_var.get().strip())
+        if self.state_var.get().strip():
+            location_parts.append(self.state_var.get().strip())
+        if self.country_var.get().strip():
+            location_parts.append(self.country_var.get().strip())
+        
+        if location_parts:
+            parts.append(f"Location: {', '.join(location_parts)}")
+        
+        if self.country_code_var.get().strip():
+            parts.append(f"Country Code: {self.country_code_var.get().strip()}")
+        if self.coverage_var.get().strip():
+            parts.append(f"Coverage: {self.coverage_var.get().strip()}")
+        
+        message = "Location data remembered:\n\n" + "\n".join(parts) if parts else "No location data to remember"
+        messagebox.showinfo("Location Remembered", message)
+    
+    def clear_gps(self):
+        """Clear all GPS and location fields."""
+        self.latitude_var.set('')
+        self.longitude_var.set('')
+        self.altitude_var.set('')
+        self.city_var.set('')
+        self.state_var.set('')
+        self.country_var.set('')
+        self.country_code_var.set('')
+        self.coverage_var.set('')
         
     def start(self):
         """Start the EXIF application."""
@@ -2037,7 +2873,49 @@ class ApplyExifDialog(OperationDialogBase):
         
         for file_path in self.files:
             cmd.extend(['--files', file_path])
+        
+        # GPS coordinates
+        if self.latitude_var.get().strip():
+            try:
+                lat = float(self.latitude_var.get().strip())
+                cmd.extend(['--latitude', str(lat)])
+            except ValueError:
+                messagebox.showerror("Invalid Latitude", "Latitude must be a number between -90 and 90")
+                return
+        
+        if self.longitude_var.get().strip():
+            try:
+                lon = float(self.longitude_var.get().strip())
+                cmd.extend(['--longitude', str(lon)])
+            except ValueError:
+                messagebox.showerror("Invalid Longitude", "Longitude must be a number between -180 and 180")
+                return
+        
+        if self.altitude_var.get().strip():
+            try:
+                alt = float(self.altitude_var.get().strip())
+                cmd.extend(['--altitude', str(alt)])
+            except ValueError:
+                messagebox.showerror("Invalid Altitude", "Altitude must be a number")
+                return
+        
+        # Location details
+        if self.city_var.get().strip():
+            cmd.extend(['--city', self.city_var.get().strip()])
+        
+        if self.state_var.get().strip():
+            cmd.extend(['--state', self.state_var.get().strip()])
+        
+        if self.country_var.get().strip():
+            cmd.extend(['--country', self.country_var.get().strip()])
+        
+        if self.country_code_var.get().strip():
+            cmd.extend(['--country-code', self.country_code_var.get().strip()])
+        
+        if self.coverage_var.get().strip():
+            cmd.extend(['--coverage', self.coverage_var.get().strip()])
             
+        # Other metadata
         if self.place_var.get():
             cmd.extend(['--place', self.place_var.get()])
             
@@ -2063,9 +2941,283 @@ class ApplyExifDialog(OperationDialogBase):
         self.run_command_async(cmd)
 
 
+class DeleteFilesDialog(OperationDialogBase):
+    """Dialog for deleting files and their database records."""
+    
+    def __init__(self, parent, files, db_path, parent_app=None):
+        super().__init__(parent, "Delete Files", 700, 500)
+        
+        self.files = files
+        self.db_path = db_path
+        self.parent_app = parent_app
+        
+        self.setup_ui()
+        
+    def setup_ui(self):
+        """Setup the dialog UI."""
+        main_frame = ttk.Frame(self, padding="10")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Warning message
+        warning_frame = ttk.Frame(main_frame)
+        warning_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        warning_label = ttk.Label(warning_frame, 
+                                 text="⚠ WARNING: This will permanently delete files!",
+                                 foreground="red",
+                                 font=('TkDefaultFont', 10, 'bold'))
+        warning_label.pack(anchor=tk.W)
+        
+        # Info
+        ttk.Label(main_frame, text=f"Deleting {len(self.files)} file(s)").pack(anchor=tk.W)
+        ttk.Label(main_frame, text=f"Database: {self.db_path}").pack(anchor=tk.W, pady=(0, 10))
+        
+        # Options
+        options_frame = ttk.LabelFrame(main_frame, text="Options", padding="5")
+        options_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Delete from database checkbox
+        self.delete_from_db_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, 
+                       text="Also delete records from database (if exists)", 
+                       variable=self.delete_from_db_var).pack(anchor=tk.W, pady=(0, 5))
+        
+        # Dry run (default to True for safety)
+        self.dry_run_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(options_frame, text="Dry run (preview only)", 
+                       variable=self.dry_run_var).pack(anchor=tk.W)
+        
+        # Buttons (before output area so they're always visible)
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill=tk.X, pady=(10, 0))
+        
+        ttk.Button(btn_frame, text="Start", command=self.start).pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Button(btn_frame, text="Close", command=self.destroy).pack(side=tk.LEFT)
+        
+        # Output area (at bottom, can expand)
+        self.add_output_area(main_frame)
+        
+        # List candidate files with full paths
+        self._list_candidate_files()
+    
+    def _list_candidate_files(self):
+        """List all candidate files for deletion in the output window."""
+        self._append_output("=" * 70 + "\n")
+        self._append_output("Files selected for deletion:\n")
+        self._append_output("=" * 70 + "\n\n")
+        
+        for i, file_path in enumerate(self.files, 1):
+            self._append_output(f"{i}. {file_path}\n")
+        
+        self._append_output("\n" + "=" * 70 + "\n")
+        self._append_output(f"Total: {len(self.files)} file(s)\n")
+        self._append_output("=" * 70 + "\n\n")
+        self._append_output("Click 'Start' to begin deletion (dry run is enabled by default)\n")
+        
+    def start(self):
+        """Start the delete operation."""
+        # Confirmation dialog if not dry run
+        if not self.dry_run_var.get():
+            # Build file list for confirmation
+            file_list = "\n".join([f"  • {os.path.basename(f)}" for f in self.files[:10]])
+            if len(self.files) > 10:
+                file_list += f"\n  ... and {len(self.files) - 10} more files"
+            
+            message = (
+                f"Are you sure you want to permanently delete {len(self.files)} file(s)?\n\n"
+                "Files to be deleted:\n"
+                f"{file_list}\n\n"
+                "This action cannot be undone!"
+            )
+            
+            result = messagebox.askyesno(
+                "Confirm Delete",
+                message,
+                icon='warning'
+            )
+            if not result:
+                return
+        
+        self.output_text.delete(1.0, tk.END)
+        threading.Thread(target=self._delete_files, daemon=True).start()
+    
+    def _delete_files(self):
+        """Delete files and database records (runs in background thread)."""
+        dry_run = self.dry_run_var.get()
+        delete_from_db = self.delete_from_db_var.get()
+        
+        try:
+            # Connect to database if needed
+            conn = None
+            if delete_from_db and self.db_path:
+                conn = sqlite3.connect(self.db_path)
+                create_database_schema(conn)
+            
+            # Print header
+            self._append_output("=" * 70 + "\n")
+            self._append_output("Delete Files\n")
+            self._append_output("=" * 70 + "\n")
+            self._append_output(f"Files to delete: {len(self.files)}\n")
+            if dry_run:
+                self._append_output("Mode: DRY RUN (no changes will be made)\n")
+            self._append_output("\n")
+            
+            # Counters
+            deleted_count = 0
+            db_deleted_count = 0
+            skipped_count = 0
+            error_count = 0
+            
+            # Process each file
+            for file_path in self.files:
+                status, db_deleted = self._process_file(file_path, conn, dry_run, delete_from_db)
+                
+                if status == 'success':
+                    deleted_count += 1
+                    if db_deleted:
+                        db_deleted_count += 1
+                elif status == 'skipped':
+                    skipped_count += 1
+                else:
+                    error_count += 1
+            
+            # Commit changes
+            if conn and not dry_run:
+                conn.commit()
+                self._append_output("\n✓ Database changes committed\n")
+            
+            if conn:
+                conn.close()
+            
+            # Print summary
+            self._append_output("\n" + "=" * 70 + "\n")
+            self._append_output("Delete complete!\n")
+            self._append_output(f"Files deleted: {deleted_count}\n")
+            self._append_output(f"Database records deleted: {db_deleted_count}\n")
+            self._append_output(f"Files skipped: {skipped_count}\n")
+            self._append_output(f"Errors: {error_count}\n")
+            if dry_run:
+                self._append_output("\n[DRY RUN] No actual changes were made\n")
+            self._append_output("=" * 70 + "\n")
+            
+            # Refresh file list in parent app if not dry run
+            if not dry_run and deleted_count > 0 and self.parent_app:
+                self.parent_app.root.after(100, self.parent_app.refresh_file_list)
+            
+        except Exception as e:
+            self._append_output(f"\nError: {e}\n")
+            import traceback
+            self._append_output(f"{traceback.format_exc()}\n")
+    
+    def _process_file(self, file_path: str, conn: sqlite3.Connection, 
+                     dry_run: bool, delete_from_db: bool) -> tuple:
+        """Process a single file: delete from filesystem and database.
+        
+        Returns:
+            tuple: (status, db_deleted) where status is 'success', 'skipped', or 'error'
+                   and db_deleted is True if database record was deleted
+        """
+        self._append_output(f"\nProcessing: {file_path}\n")
+        db_deleted = False
+        
+        # Check if source exists
+        if not os.path.exists(file_path):
+            self._append_output(f"  ⚠ File not found (may already be deleted)\n")
+            return 'skipped', False
+        
+        try:
+            # Get file info for audit log
+            file_hash = calculate_file_hash(file_path)
+            file_size = os.path.getsize(file_path)
+            
+            # Check if file exists in database
+            file_id = None
+            metadata_before = None
+            if conn and delete_from_db:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM files WHERE fullpath = ?", (file_path,))
+                result = cursor.fetchone()
+                
+                if result:
+                    file_id = result[0]
+                    self._append_output(f"  Found in database (file_id: {file_id})\n")
+                    
+                    # Get metadata for audit log
+                    cursor.execute("""
+                        SELECT f.*, im.*, vm.*
+                        FROM files f
+                        LEFT JOIN image_metadata im ON f.id = im.file_id
+                        LEFT JOIN video_metadata vm ON f.id = vm.file_id
+                        WHERE f.id = ?
+                    """, (file_id,))
+                    metadata_result = cursor.fetchone()
+                    if metadata_result:
+                        import json
+                        metadata_before = json.dumps({
+                            'file_size': file_size,
+                            'file_hash': file_hash,
+                            'db_record': str(metadata_result)
+                        })
+                else:
+                    self._append_output(f"  Not found in database\n")
+            
+            # Delete file from filesystem
+            if not dry_run:
+                os.remove(file_path)
+                self._append_output(f"  ✓ File deleted from filesystem\n")
+            else:
+                self._append_output(f"  [DRY RUN] Would delete file from filesystem\n")
+            
+            # Delete from database
+            if conn and delete_from_db and file_id:
+                if not dry_run:
+                    cursor = conn.cursor()
+                    # Delete will cascade to related tables (metadata, thumbnails)
+                    cursor.execute("DELETE FROM files WHERE id = ?", (file_id,))
+                    self._append_output(f"  ✓ Database record deleted (cascaded to metadata/thumbnails)\n")
+                    db_deleted = True
+                    
+                    # Log audit record
+                    log_audit(
+                        conn=conn,
+                        operation='delete',
+                        file_path=file_path,
+                        success=True,
+                        file_hash=file_hash,
+                        metadata_before=metadata_before,
+                        additional_info=f"File size: {file_size} bytes"
+                    )
+                else:
+                    self._append_output(f"  [DRY RUN] Would delete database record\n")
+            
+            return 'success', db_deleted
+            
+        except Exception as e:
+            self._append_output(f"  ✗ Error: {e}\n")
+            
+            # Log failed operation to audit
+            if conn and not dry_run:
+                try:
+                    log_audit(
+                        conn=conn,
+                        operation='delete',
+                        file_path=file_path,
+                        success=False,
+                        error_message=str(e),
+                        file_hash=file_hash if 'file_hash' in locals() else None
+                    )
+                except:
+                    pass
+            
+            return 'error', False
+
+
 def main():
     """Main entry point."""
-    root = tk.Tk()
+    if TKDND_AVAILABLE:
+        root = TkinterDnD.Tk()
+    else:
+        root = tk.Tk()
     app = MediaProcessorApp(root)
     root.mainloop()
 

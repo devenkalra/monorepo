@@ -21,15 +21,23 @@ meilisearch>=0.28.0
 # Graph database
 neo4j>=5.0.0
 
-# Vector database and embeddings
-chromadb>=0.4.0
-sentence-transformers>=2.2.0
+# Vector database and embeddings - DISABLED for faster builds
+# chromadb>=0.4.0
+# sentence-transformers>=2.2.0
 
-# Token counting
-tiktoken>=0.5.0
+# Token counting - DISABLED (only needed for vector search)
+# tiktoken>=0.5.0
 
 # Progress bars
 tqdm>=4.65.0
+
+# Task queue
+celery>=5.3.0
+redis>=5.0.0
+
+# CAD (STL to GLB conversion)
+trimesh>=4.0.0
+scipy>=1.11.0
 
 # Utilities
 python-dateutil>=2.8.0
@@ -39,6 +47,6 @@ markdown>=3.4.0
 Pillow>=10.0.0
 pdf2image>=1.16.0
 
-# Vector service
-flask>=3.0.0
+# Vector service - DISABLED (flask not needed in backend)
+# flask>=3.0.0
 requests>=2.31.0

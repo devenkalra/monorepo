@@ -17,6 +17,7 @@ import shlex
 import subprocess
 import sys
 from pathlib import Path
+import sqlite3
 
 import yaml
 import json
@@ -29,6 +30,24 @@ try:
     LOCATION_AVAILABLE = True
 except ImportError:
     LOCATION_AVAILABLE = False
+
+# Import audit logging from media_utils
+try:
+    # Try to import from gui subdirectory first
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'gui'))
+    from media_utils import log_audit, calculate_file_hash
+    AUDIT_AVAILABLE = True
+except ImportError:
+    try:
+        # Try direct import
+        from media_utils import log_audit, calculate_file_hash
+        AUDIT_AVAILABLE = True
+    except ImportError:
+        AUDIT_AVAILABLE = False
+        def log_audit(*args, **kwargs):
+            pass
+        def calculate_file_hash(path):
+            return None
 
 # ---------------- CONFIG ----------------
 # Existing pattern‑to‑tag mapping retained for backward compatibility.
@@ -797,22 +816,98 @@ def main():
             for tag_name, tag_value in current_file_tags.items():
                 print(f"Tag: {tag_name} = '{tag_value}'")
             
+            # Capture old EXIF data before applying changes (for audit)
+            old_exif_data = {}
+            if not args.dry_run and args.db_path and AUDIT_AVAILABLE:
+                if args.verbose >= 2:
+                    print(f"[DEBUG] Step 1: Capturing old EXIF data for audit...")
+                
+                try:
+                    # Get the current values of the tags we're about to modify
+                    for tag_name in current_file_tags.keys():
+                        try:
+                            result = subprocess.run(
+                                ['exiftool', '-s', '-s', '-s', f'-{tag_name}', file_path],
+                                capture_output=True,
+                                text=True,
+                                timeout=5
+                            )
+                            if result.returncode == 0 and result.stdout.strip():
+                                old_exif_data[tag_name] = result.stdout.strip()
+                        except Exception:
+                            pass
+                    
+                    if args.verbose >= 2:
+                        print(f"[DEBUG] Captured {len(old_exif_data)} existing EXIF values")
+                except Exception as e:
+                    if args.verbose >= 2:
+                        print(f"[DEBUG] Warning: Could not capture old EXIF data: {e}")
+            
             # Apply EXIF tags
             if args.verbose >= 2:
-                print(f"[DEBUG] Step 1: Writing EXIF tags to file...")
+                print(f"[DEBUG] Step 2: Writing EXIF tags to file...")
             
             try:
                 run_exiftool([file_path], current_file_tags, args.dry_run, verbose=args.verbose)
                 
                 if not args.dry_run:
                     if args.verbose >= 2:
-                        print(f"[DEBUG] Step 2: Verifying EXIF write...")
+                        print(f"[DEBUG] Step 3: Verifying EXIF write...")
                     
                     # Verify EXIF was actually written
                     if verify_exif_written(file_path, current_file_tags, verbose=args.verbose):
                         print(f"  ✓ EXIF tags written successfully")
+                        
+                        # Log to audit table if database is available
+                        if args.db_path and AUDIT_AVAILABLE:
+                            try:
+                                conn = sqlite3.connect(args.db_path)
+                                file_hash = calculate_file_hash(file_path)
+                                metadata_before = json.dumps(old_exif_data) if old_exif_data else None
+                                metadata_after = json.dumps(current_file_tags)
+                                
+                                log_audit(
+                                    conn=conn,
+                                    operation='update_exif',
+                                    file_path=file_path,
+                                    success=True,
+                                    file_hash=file_hash,
+                                    metadata_before=metadata_before,
+                                    metadata_after=metadata_after,
+                                    additional_info=f"Applied {len(current_file_tags)} EXIF tag(s)"
+                                )
+                                conn.commit()
+                                conn.close()
+                                
+                                if args.verbose >= 2:
+                                    print(f"[DEBUG] Audit log entry created with old EXIF data")
+                            except Exception as audit_error:
+                                if args.verbose >= 1:
+                                    print(f"  Warning: Failed to log audit entry: {audit_error}", file=sys.stderr)
                     else:
                         print(f"  ⚠ EXIF tags may not have been written", file=sys.stderr)
+                        
+                        # Log failed verification to audit
+                        if args.db_path and AUDIT_AVAILABLE:
+                            try:
+                                conn = sqlite3.connect(args.db_path)
+                                file_hash = calculate_file_hash(file_path)
+                                metadata_before = json.dumps(old_exif_data) if old_exif_data else None
+                                
+                                log_audit(
+                                    conn=conn,
+                                    operation='update_exif',
+                                    file_path=file_path,
+                                    success=False,
+                                    file_hash=file_hash,
+                                    metadata_before=metadata_before,
+                                    error_message="EXIF verification failed",
+                                    additional_info=f"Attempted to apply {len(current_file_tags)} EXIF tag(s)"
+                                )
+                                conn.commit()
+                                conn.close()
+                            except Exception:
+                                pass
                 
             except Exception as e:
                 print(f"  ✗ Failed to write EXIF tags: {e}", file=sys.stderr)
@@ -820,6 +915,29 @@ def main():
                     import traceback
                     print(f"[DEBUG] Exception details:")
                     traceback.print_exc()
+                
+                # Log failed operation to audit
+                if args.db_path and AUDIT_AVAILABLE and not args.dry_run:
+                    try:
+                        conn = sqlite3.connect(args.db_path)
+                        file_hash = calculate_file_hash(file_path) if os.path.exists(file_path) else None
+                        metadata_before = json.dumps(old_exif_data) if old_exif_data else None
+                        
+                        log_audit(
+                            conn=conn,
+                            operation='update_exif',
+                            file_path=file_path,
+                            success=False,
+                            file_hash=file_hash,
+                            metadata_before=metadata_before,
+                            error_message=str(e),
+                            additional_info=f"Attempted to apply {len(current_file_tags)} EXIF tag(s)"
+                        )
+                        conn.commit()
+                        conn.close()
+                    except Exception:
+                        pass
+                
                 continue  # Skip reprocessing if EXIF write failed
             
             # Check if file is in database and reprocess if requested

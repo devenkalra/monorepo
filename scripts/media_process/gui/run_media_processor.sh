@@ -1,4 +1,4 @@
-#!/bin/bash
+    Q#!/bin/bash
 # Launch script for Media Processor GUI
 
 # Get the directory where this script is located

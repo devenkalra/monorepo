@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1 \
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (FreeCAD for CAD app rendering)
 RUN apt-get update && apt-get install -y \
     postgresql-client \
     gcc \
@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     netcat-openbsd \
     curl \
+    freecad \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
@@ -30,8 +31,9 @@ RUN pip install --upgrade pip && \
 # Copy project files
 COPY . /app/
 
-# Create necessary directories
-RUN mkdir -p /app/staticfiles /app/mediafiles /app/logs
+# Create necessary directories (CAD render cache, textures, scenes)
+RUN mkdir -p /app/staticfiles /app/mediafiles /app/logs \
+    /app/cad/render_cache /app/cad/textures /app/cad/scene_configs /app/cad/env
 
 # Collect static files (will be overridden by volume in development)
 RUN python manage.py collectstatic --noinput || true

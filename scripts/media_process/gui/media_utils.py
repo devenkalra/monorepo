@@ -102,6 +102,26 @@ def create_database_schema(conn: sqlite3.Connection):
         )
     """)
     
+    # Audit table for tracking all operations
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            file_path TEXT NOT NULL,
+            file_hash TEXT,
+            old_path TEXT,
+            new_path TEXT,
+            old_volume TEXT,
+            new_volume TEXT,
+            metadata_before TEXT,
+            metadata_after TEXT,
+            success INTEGER NOT NULL,
+            error_message TEXT,
+            additional_info TEXT
+        )
+    """)
+    
     # Create indexes for faster queries
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_volume ON files(volume)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_extension ON files(extension)")
@@ -109,6 +129,9 @@ def create_database_schema(conn: sqlite3.Connection):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_date_taken ON image_metadata(date_taken)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_image_location ON image_metadata(latitude, longitude)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_skipped_run_timestamp ON skipped_files(run_timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_operation ON audit_log(operation)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_file_path ON audit_log(file_path)")
     
     conn.commit()
 
@@ -151,3 +174,54 @@ def is_image_file(mime_type: str, extension: str = '') -> bool:
 def is_video_file(mime_type: str) -> bool:
     """Check if file is a video."""
     return mime_type.startswith('video/')
+
+
+def log_audit(conn: sqlite3.Connection, operation: str, file_path: str,
+              success: bool = True, error_message: str = None,
+              file_hash: str = None, old_path: str = None, new_path: str = None,
+              old_volume: str = None, new_volume: str = None,
+              metadata_before: str = None, metadata_after: str = None,
+              additional_info: str = None):
+    """Log an operation to the audit table.
+    
+    Args:
+        conn: Database connection
+        operation: Type of operation (delete, move, update_exif, index, etc.)
+        file_path: Path to the file being operated on
+        success: Whether the operation succeeded
+        error_message: Error message if operation failed
+        file_hash: File hash for tracking
+        old_path: Original path (for move operations)
+        new_path: New path (for move operations)
+        old_volume: Original volume (for move operations)
+        new_volume: New volume (for move operations)
+        metadata_before: JSON string of metadata before operation
+        metadata_after: JSON string of metadata after operation
+        additional_info: Any additional information
+    """
+    from datetime import datetime
+    
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO audit_log (
+            timestamp, operation, file_path, file_hash,
+            old_path, new_path, old_volume, new_volume,
+            metadata_before, metadata_after,
+            success, error_message, additional_info
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        datetime.now().isoformat(),
+        operation,
+        file_path,
+        file_hash,
+        old_path,
+        new_path,
+        old_volume,
+        new_volume,
+        metadata_before,
+        metadata_after,
+        1 if success else 0,
+        error_message,
+        additional_info
+    ))
+    conn.commit()
