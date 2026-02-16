@@ -19,7 +19,7 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework_simplejwt.views import TokenRefreshView
-from people.static_views import login_page, api_tester_page
+from people.static_views import login_page, api_tester_page, csrf_cookie
 from people.social_auth_views import GoogleLogin, google_login_redirect, google_callback
 from people.health_views import health_check, health_detailed
 
@@ -35,6 +35,8 @@ urlpatterns = [
     path('login/', login_page, name='login_page'),
     path('api-tester/', api_tester_page, name='api_tester'),
     
+    # CSRF cookie for SPAs (cad-app, people-app)
+    path('api/auth/csrf/', csrf_cookie, name='csrf_cookie'),
     # Authentication endpoints
     path('api/auth/', include('dj_rest_auth.urls')),  # login, logout, user, password reset
     path('api/auth/registration/', include('dj_rest_auth.registration.urls')),  # registration

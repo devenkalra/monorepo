@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import ThemeToggle from './ThemeToggle';
 import ThemeSync from './ThemeSync';
 import CadUserMenu from './CadUserMenu';
-import api, { AUTH_EXPIRED_EVENT } from '../services/api';
+import api, { AUTH_EXPIRED_EVENT, ensureCsrfCookie } from '../services/api';
 import CadViewer from './cad/CadViewer';
 import CadScriptEditor from './cad/CadScriptEditor';
 import CadParamsForm from './cad/CadParamsForm';
@@ -89,8 +89,10 @@ export default function CadApp() {
   }, []);
 
   useEffect(() => {
-    loadModels();
-    loadScenes();
+    ensureCsrfCookie().then(() => {
+      loadModels();
+      loadScenes();
+    });
   }, [loadModels, loadScenes]);
 
   useEffect(() => {

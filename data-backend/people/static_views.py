@@ -1,10 +1,18 @@
 """
 Views for serving static pages (login, api tester, etc.)
 """
-from django.http import FileResponse
+from django.http import FileResponse, JsonResponse
 from django.conf import settings
 from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_GET
 from pathlib import Path
+
+
+@require_GET
+@ensure_csrf_cookie
+def csrf_cookie(request):
+    """Ensure CSRF cookie is set. Call from SPAs (cad-app, people-app) before API requests."""
+    return JsonResponse({'ok': True})
 
 
 @ensure_csrf_cookie

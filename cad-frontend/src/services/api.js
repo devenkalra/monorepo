@@ -2,13 +2,29 @@ import { getApiBaseUrl } from '../utils/apiUrl';
 
 const AUTH_EXPIRED_EVENT = 'auth-expired';
 
+function getCsrfToken() {
+  const name = 'csrftoken';
+  if (!document.cookie) return null;
+  const match = document.cookie.match(new RegExp('(^|;\\s*)' + name + '=([^;]*)'));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+/** Ensure CSRF cookie is set (call once when app loads, e.g. from /cad-app/) */
+export async function ensureCsrfCookie() {
+  const base = getApiBaseUrl();
+  await fetch(`${base}/api/auth/csrf/`, { method: 'GET', credentials: 'include' });
+}
+
 async function tryRefreshToken() {
   const refresh = localStorage.getItem('refresh_token');
   if (!refresh) return null;
   const base = getApiBaseUrl();
+  const headers = { 'Content-Type': 'application/json' };
+  const csrf = getCsrfToken();
+  if (csrf) headers['X-CSRFToken'] = csrf;
   const res = await fetch(`${base}/api/auth/token/refresh/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ refresh }),
     credentials: 'include',
   });
@@ -35,6 +51,8 @@ const api = {
     const doFetch = (token) => {
       const headers = { ...options.headers };
       if (token) headers['Authorization'] = `Bearer ${token}`;
+      const csrf = getCsrfToken();
+      if (csrf) headers['X-CSRFToken'] = csrf;
       if (options.body && !headers['Content-Type'] && !(options.body instanceof FormData)) {
         headers['Content-Type'] = 'application/json';
       }
