@@ -209,6 +209,9 @@ docker compose -f docker-compose.production.yml exec -T backend python manage.py
 print_info "Collecting static files..."
 docker compose -f docker-compose.production.yml exec -T backend python manage.py collectstatic --noinput 2>/dev/null || true
 
+print_info "Configuring Google OAuth (Site + SocialApp for bldrdojo.com)..."
+docker compose -f docker-compose.production.yml exec -T backend python manage.py setup_google_oauth --domain="bldrdojo.com" || true
+
 echo ""
 print_success "Deployment complete!"
 docker compose -f docker-compose.production.yml ps

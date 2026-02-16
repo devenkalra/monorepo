@@ -49,6 +49,8 @@ elif 'bldrdojo.com' in (os.environ.get('DJANGO_ALLOWED_HOSTS') or ''):
     ]
 else:
     CSRF_TRUSTED_ORIGINS = [
+        'http://localhost',
+        'http://127.0.0.1',
         'http://localhost:5174',
         'http://localhost:3000',
         'http://127.0.0.1:5174',
@@ -254,6 +256,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
         'people.jwt_cookie_auth.JWTCookieAuthentication',  # JWT from auth-token cookie
+        'rest_framework.authentication.SessionAuthentication',  # For Google OAuth / allauth users
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',

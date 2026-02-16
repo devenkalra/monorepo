@@ -25,6 +25,8 @@ services:
     extends:
       file: data-backend/docker-compose.local.yml
       service: backend
+    env_file:
+      - data-backend/.env  # Explicit path so GOOGLE_* vars load when run from monorepo root
     build:
       context: ./data-backend
       dockerfile: Dockerfile

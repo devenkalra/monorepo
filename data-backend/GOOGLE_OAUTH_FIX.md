@@ -37,11 +37,21 @@ You need to update your Google OAuth application's authorized redirect URIs:
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Navigate to: APIs & Services > Credentials
 3. Click on your OAuth 2.0 Client ID
-4. Under "Authorized redirect URIs", **add**:
+4. Under "Authorized redirect URIs", add **all** of these that apply:
+
+   **Production:**
    - `https://bldrdojo.com/auth/google/callback`
-5. **Keep the existing localhost URIs** for local development:
+   - `https://bldrdojo.com/accounts/google/login/callback/`
+
+   **Local development (login page uses allauth):**
+   - `http://localhost/accounts/google/login/callback/` ← **required for local Google login**
+   - `http://127.0.0.1/accounts/google/login/callback/`
+
+   **Local development (people-frontend custom flow, if used):**
+   - `http://localhost/people-app/auth/google/callback`
    - `http://localhost:5174/auth/google/callback`
-6. Save the changes
+
+5. Save the changes
 
 ### 2. Set Environment Variable (Optional)
 
@@ -71,15 +81,50 @@ After making these changes, test the Google OAuth flow:
 
 ## Troubleshooting
 
-If you see "redirect_uri_mismatch" error:
-- Check that the redirect URI in Google Console exactly matches: `https://bldrdojo.com/auth/google/callback`
-- Make sure there are no trailing slashes or typos
-- Verify the backend is using the correct `GOOGLE_OAUTH_CALLBACK_URL`
+### Username/password works, Google doesn't (localhost)
 
-If authentication fails after callback:
+The login page uses **django-allauth** directly: clicking "Google" goes to `/accounts/google/login/`. Google redirects back to:
+
+- `http://localhost/accounts/google/login/callback/` (when using nginx on port 80)
+
+**Fix:** Add this exact URL to Google Cloud Console → Credentials → your OAuth client → Authorized redirect URIs. The URL must match exactly (including trailing slash).
+
+### redirect_uri_mismatch error
+
+- Check that the redirect URI in Google Console exactly matches what your app uses
+- For localhost login page: `http://localhost/accounts/google/login/callback/`
+- For production: `https://bldrdojo.com/accounts/google/login/callback/` or `https://bldrdojo.com/auth/google/callback`
+- Make sure there are no typos; trailing slashes matter
+
+### Authentication fails after callback
+
 - Check backend logs: `docker compose logs backend --tail 50`
 - Verify the Google OAuth credentials are properly configured in Django admin
 - Test the backend endpoint: `curl https://bldrdojo.com/api/auth/google/url/`
+
+## Production Deployment
+
+For production (bldrdojo.com), ensure:
+
+1. **`data-backend/.env`** has:
+   ```
+   GOOGLE_CLIENT_ID=your-actual-client-id.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=your-actual-client-secret
+   GOOGLE_OAUTH_CALLBACK_URL=https://bldrdojo.com/auth/google/callback
+   DJANGO_ALLOWED_HOSTS=bldrdojo.com,www.bldrdojo.com
+   DJANGO_CSRF_TRUSTED_ORIGINS=https://bldrdojo.com,https://www.bldrdojo.com
+   ```
+
+2. **Google Cloud Console** → Authorized redirect URIs:
+   - `https://bldrdojo.com/accounts/google/login/callback/` (allauth login page)
+   - `https://bldrdojo.com/auth/google/callback` (people-app custom flow)
+
+3. **Deploy** – the deploy script runs `setup_google_oauth --domain="bldrdojo.com"` automatically. If credentials are missing, run manually after deploy:
+   ```bash
+   docker compose -f docker-compose.production.yml exec backend python manage.py setup_google_oauth --domain="bldrdojo.com"
+   ```
+
+4. **CSRF** – already configured when `bldrdojo.com` is in `ALLOWED_HOSTS`; the login page sends the CSRF token from the cookie.
 
 ## Note on Registration Issue
 

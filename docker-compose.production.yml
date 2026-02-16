@@ -27,6 +27,8 @@ services:
     extends:
       file: data-backend/docker-compose.yml
       service: backend
+    env_file:
+      - data-backend/.env  # Ensures GOOGLE_* etc. load when run from prod root
     build:
       context: ./data-backend
       dockerfile: Dockerfile
