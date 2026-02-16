@@ -1,0 +1,69 @@
+# Production deployment - run from monorepo root:
+# celery-worker: add if your data-backend/docker-compose.yml includes it
+#   cd /path/to/monorepo
+#   docker compose -f docker-compose.production.yml up -d
+#
+# Requires: data-backend/.env, data-backend/ssl/, data-backend/backups/
+# Build context: monorepo root (people-frontend, cad-frontend, frontend)
+
+services:
+  db:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: db
+  redis:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: redis
+  meilisearch:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: meilisearch
+  neo4j:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: neo4j
+  backend:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: backend
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile
+  frontend:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        BUILD_ENV: production
+
+volumes:
+  postgres_data:
+    name: bldrdojo-postgres-data
+  redis_data:
+    name: bldrdojo-redis-data
+  meilisearch_data:
+    name: bldrdojo-meilisearch-data
+  neo4j_data:
+    name: bldrdojo-neo4j-data
+  neo4j_logs:
+    name: bldrdojo-neo4j-logs
+  cad_render_cache:
+    name: bldrdojo-cad-render-cache
+  cad_textures:
+    name: bldrdojo-cad-textures
+  cad_env:
+    name: bldrdojo-cad-env
+  static_volume:
+    name: bldrdojo-static
+
+networks:
+  backend-network:
+    name: bldrdojo-backend-network
+    driver: bridge
+  frontend-network:
+    name: bldrdojo-frontend-network
+    driver: bridge
