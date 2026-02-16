@@ -963,7 +963,20 @@
                     body: JSON.stringify({ email, password }),
                     credentials: 'include'
                 });
-                const data = await res.json();
+                const text = await res.text();
+                let data;
+                try {
+                    data = text ? JSON.parse(text) : {};
+                } catch (_) {
+                    if (res.status >= 500) {
+                        showMessage('Server error. Please try again later.', 'error');
+                    } else if (res.status === 502 || res.status === 503) {
+                        showMessage('Service temporarily unavailable. Is the backend running?', 'error');
+                    } else {
+                        showMessage('Request failed (' + res.status + ').', 'error');
+                    }
+                    return;
+                }
                 if (res.ok) {
                     accessToken = data.access;
                     refreshToken = data.refresh;
@@ -977,7 +990,8 @@
                     showMessage(data.non_field_errors?.[0] || data.detail || 'Login failed', 'error');
                 }
             } catch (e) {
-                showMessage('Network error. Is the server running?', 'error');
+                showMessage('Network error. Is the server reachable? Check console.', 'error');
+                console.error('Login error:', e);
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Login';
@@ -1004,7 +1018,18 @@
                     body: JSON.stringify({ email, password1, password2 }),
                     credentials: 'include'
                 });
-                const data = await res.json();
+                const regText = await res.text();
+                let data;
+                try {
+                    data = regText ? JSON.parse(regText) : {};
+                } catch (_) {
+                    if (res.status >= 500 || res.status === 502 || res.status === 503) {
+                        showMessage('Server error. Please try again later.', 'error');
+                    } else {
+                        showMessage('Request failed (' + res.status + ').', 'error');
+                    }
+                    return;
+                }
                 if (res.ok) {
                     accessToken = data.access;
                     refreshToken = data.refresh;

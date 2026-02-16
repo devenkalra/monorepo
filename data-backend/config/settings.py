@@ -40,6 +40,13 @@ ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.envi
 csrf_origins_env = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
 if csrf_origins_env:
     CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins_env.split(',') if origin.strip()]
+elif 'bldrdojo.com' in (os.environ.get('DJANGO_ALLOWED_HOSTS') or ''):
+    CSRF_TRUSTED_ORIGINS = [
+        'https://bldrdojo.com',
+        'https://www.bldrdojo.com',
+        'http://bldrdojo.com',
+        'http://www.bldrdojo.com',
+    ]
 else:
     CSRF_TRUSTED_ORIGINS = [
         'http://localhost:5174',
@@ -196,10 +203,18 @@ VECTOR_MODEL = 'all-MiniLM-L6-v2'  # Sentence transformer model for embeddings
 VECTOR_SERVICE_URL = os.environ.get('VECTOR_SERVICE_URL', 'http://localhost:8002')
 
 # CORS Configuration
-# Parse CORS_ALLOWED_ORIGINS from environment or use defaults for development
+# Parse CORS_ALLOWED_ORIGINS from environment or use defaults
 cors_origins_env = os.environ.get('CORS_ALLOWED_ORIGINS', '')
 if cors_origins_env:
-    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',')]
+    CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_env.split(',') if origin.strip()]
+elif 'bldrdojo.com' in (os.environ.get('DJANGO_ALLOWED_HOSTS') or ''):
+    # Production defaults when using bldrdojo.com
+    CORS_ALLOWED_ORIGINS = [
+        "https://bldrdojo.com",
+        "https://www.bldrdojo.com",
+        "http://bldrdojo.com",
+        "http://www.bldrdojo.com",
+    ]
 else:
     # Development defaults (container may use 5175 or 5176 if 5175 is in use)
     CORS_ALLOWED_ORIGINS = [

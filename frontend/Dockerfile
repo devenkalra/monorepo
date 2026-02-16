@@ -33,8 +33,13 @@ COPY frontend/nginx.conf /etc/nginx/nginx.conf
 COPY frontend/default.conf /etc/nginx/conf.d/default.conf
 COPY frontend/default-local.conf /etc/nginx/conf.d/default-local.conf
 COPY --from=builder /out /usr/share/nginx/html
-# Use local config (HTTP only) when BUILD_ENV=local
-RUN if [ "$BUILD_ENV" = "local" ]; then mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default-prod.conf.bak && mv /etc/nginx/conf.d/default-local.conf /etc/nginx/conf.d/default.conf; fi
+# Use local config (HTTP only) when BUILD_ENV=local; otherwise exclude local config to avoid duplicate server blocks
+RUN if [ "$BUILD_ENV" = "local" ]; then \
+      mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default-prod.conf.bak && \
+      mv /etc/nginx/conf.d/default-local.conf /etc/nginx/conf.d/default.conf; \
+    else \
+      rm -f /etc/nginx/conf.d/default-local.conf; \
+    fi
 
 RUN mkdir -p /etc/nginx/ssl && \
     adduser -D -H -u 1000 -s /sbin/nologin nginx 2>/dev/null || true && \
