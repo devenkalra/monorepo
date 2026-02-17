@@ -115,17 +115,18 @@ function MainApp() {
                       )}
                       {entity.tags && entity.tags.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1">
-                          {entity.tags.slice(0, 3).map((tag, idx) => (
+                          {entity.tags.slice(0, 5).map((tag, idx) => (
                             <span
                               key={idx}
-                              className="inline-block px-2 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded"
+                              className="inline-block px-1.5 py-0.5 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-[10px] sm:text-xs rounded"
+                              title={tag}
                             >
-                              {tag}
+                              {tag.split('/').map(p => p.slice(0, 3)).join('/')}
                             </span>
                           ))}
-                          {entity.tags.length > 3 && (
-                            <span className="text-xs text-gray-500">
-                              +{entity.tags.length - 3} more
+                          {entity.tags.length > 5 && (
+                            <span className="text-[10px] sm:text-xs text-gray-500">
+                              +{entity.tags.length - 5} more
                             </span>
                           )}
                         </div>

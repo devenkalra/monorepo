@@ -24,45 +24,25 @@ export default function UserMenu() {
   const handleExport = async () => {
     try {
       setShowMenu(false);
-      
-      // Start async export
-      const response = await api.fetch('/api/entities/export-async/', {
-        method: 'POST'
-      });
-      const result = await response.json();
-      
-      if (result.success) {
-        // Show progress modal
-        setProgressTask({ taskId: result.task_id, taskType: 'export' });
-      } else {
-        alert('Export failed: ' + (result.error || 'Unknown error'));
+      const response = await api.fetch('/api/entities/export/');
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Export failed');
       }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = response.headers.get('Content-Disposition');
+      const match = disposition?.match(/filename="?([^";\n]+)"?/);
+      a.download = match ? match[1] : `entity_export_${user?.username || 'user'}_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
     } catch (error) {
       console.error('Export failed:', error);
       alert('Export failed: ' + error.message);
-    }
-  };
-
-  const handleExportComplete = async (progressData) => {
-    if (progressData.status === 'completed') {
-      try {
-        // Download the export file
-        const response = await api.fetch(`/api/entities/tasks/${progressData.task_id}/download/`);
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `entity_export_${user.username}_${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        document.body.removeChild(a);
-      } catch (error) {
-        console.error('Download failed:', error);
-        alert('Download failed: ' + error.message);
-      }
-    } else if (progressData.status === 'failed') {
-      alert('Export failed: ' + progressData.message);
     }
   };
 
@@ -519,9 +499,7 @@ export default function UserMenu() {
           taskId={progressTask.taskId}
           taskType={progressTask.taskType}
           onComplete={(progressData) => {
-            if (progressTask.taskType === 'export') {
-              handleExportComplete(progressData);
-            } else if (progressTask.taskType === 'import') {
+            if (progressTask.taskType === 'import') {
               handleImportComplete(progressData);
             } else if (progressTask.taskType === 'reindex') {
               handleReindexComplete(progressData);

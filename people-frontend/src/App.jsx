@@ -442,9 +442,6 @@ function App() {
         <div className="flex items-center gap-4">
           <div>
             <h1 className="text-xl font-semibold">Entity Browser</h1>
-            <p className="text-xs text-gray-500 dark:text-gray-400">
-              Recently updated entities
-            </p>
           </div>
           <nav className="flex items-center gap-2 text-sm">
             <a href="/people-app/" className="font-medium text-blue-600 dark:text-blue-400">People</a>
