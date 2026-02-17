@@ -25,9 +25,10 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
     const handleLongPressStart = useCallback(() => {
         longPressTriggered.current = false;
         longPressTimer.current = setTimeout(() => {
+            longPressTimer.current = null;
             longPressTriggered.current = true;
             setShowOverlay(true);
-        }, 500);
+        }, 600);
     }, []);
 
     const handleLongPressEnd = useCallback(() => {
@@ -55,8 +56,17 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
         onEntityClick(entity);
     }, [selectionMode, showOverlay, entity, onEntityClick, onToggleSelection]);
 
-    const handleMouseEnter = useCallback(() => setShowOverlay(true), []);
-    const handleMouseLeave = useCallback(() => setShowOverlay(false), []);
+    // Only use hover on devices that support it (desktop); touch devices use long-press only
+    const handleMouseEnter = useCallback(() => {
+        if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
+            setShowOverlay(true);
+        }
+    }, []);
+    const handleMouseLeave = useCallback(() => {
+        if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
+            setShowOverlay(false);
+        }
+    }, []);
 
     const typeLetter = getTypeLetter(entity.type);
 
@@ -68,6 +78,7 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
             onTouchStart={handleLongPressStart}
             onTouchEnd={handleLongPressEnd}
             onTouchMove={handleLongPressEnd}
+            onTouchCancel={handleLongPressEnd}
             className={`p-3 rounded bg-white dark:bg-gray-800 shadow hover:shadow-md transition cursor-pointer relative ${
                 isSelected ? 'ring-2 ring-blue-500' : ''
             }`}

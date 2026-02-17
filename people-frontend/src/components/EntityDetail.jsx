@@ -799,13 +799,15 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             return null;
         }
 
+        const valueBorder = "border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2";
+
         return (
             <div className="mb-4">
                 <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">
                     {label}
                 </h3>
                 {isArray ? (
-                    <div className="space-y-1">
+                    <div className={`space-y-1 ${valueBorder}`}>
                         {value.map((item, idx) => (
                             <div key={idx} className="text-gray-900 dark:text-gray-100">
                                 {isObject ? (
@@ -827,7 +829,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                         ))}
                     </div>
                 ) : (
-                    <p className="text-gray-900 dark:text-gray-100">{value}</p>
+                    <p className={`text-gray-900 dark:text-gray-100 ${valueBorder}`}>{value}</p>
                 )}
             </div>
         );
@@ -1010,7 +1012,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                             Description
                                         </h3>
                                         <div
-                                            className="prose dark:prose-invert max-w-none text-gray-900 dark:text-gray-100"
+                                            className="prose dark:prose-invert max-w-none text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2"
                                             dangerouslySetInnerHTML={{ __html: displayEntity.description }}
                                         />
                                     </div>
