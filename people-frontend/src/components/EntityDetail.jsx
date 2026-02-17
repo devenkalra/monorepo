@@ -30,15 +30,17 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const [availableRelationTypes, setAvailableRelationTypes] = useState([]);
     const [relationsFilter, setRelationsFilter] = useState('');
     const [expandedRelations, setExpandedRelations] = useState({});
+    const [geocodeLoading, setGeocodeLoading] = useState(null); // { idx, type: 'forward'|'reverse' }
 
     useEffect(() => {
         if (entity && isVisible) {
-            // Ensure urls, photos, and attachments are arrays
+            // Ensure urls, photos, attachments, and locations are arrays
             const normalizedEntity = {
                 ...entity,
                 urls: Array.isArray(entity.urls) ? entity.urls : (entity.urls ? [] : []),
                 photos: Array.isArray(entity.photos) ? entity.photos : (entity.photos ? [] : []),
-                attachments: Array.isArray(entity.attachments) ? entity.attachments : (entity.attachments ? [] : [])
+                attachments: Array.isArray(entity.attachments) ? entity.attachments : (entity.attachments ? [] : []),
+                locations: Array.isArray(entity.locations) ? entity.locations : (entity.locations ? [] : [])
             };
 
             // Store entity for display during animations
@@ -256,6 +258,117 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             const attachments = [...(prev.attachments || [])];
             [attachments[index], attachments[index + 1]] = [attachments[index + 1], attachments[index]];
             return { ...prev, attachments };
+        });
+    };
+
+    // Location helpers
+    const getGoogleMapsUrl = (loc) => {
+        const lat = loc?.latitude ?? loc?.lat;
+        const lon = loc?.longitude ?? loc?.lon;
+        if (lat != null && lon != null) {
+            return `https://www.google.com/maps?q=${lat},${lon}`;
+        }
+        const name = loc?.name || '';
+        if (name) {
+            return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`;
+        }
+        return null;
+    };
+
+    const handleLocationChange = (idx, field, value) => {
+        setEditedEntity(prev => {
+            const locs = [...(prev.locations || [])];
+            const loc = { ...(locs[idx] || {}), [field]: value };
+            locs[idx] = loc;
+            return { ...prev, locations: locs };
+        });
+    };
+
+    const handleLookupCoords = async (idx) => {
+        const loc = editedEntity.locations?.[idx] || {};
+        const name = loc.name || '';
+        if (!name.trim()) return;
+        setGeocodeLoading({ idx, type: 'forward' });
+        try {
+            const r = await api.fetch(`/api/geocode/forward/?q=${encodeURIComponent(name)}`);
+            const data = await r.json();
+            if (r.ok && data.latitude != null && data.longitude != null) {
+                setEditedEntity(prev => {
+                    const locs = [...(prev.locations || [])];
+                    locs[idx] = {
+                        ...(locs[idx] || {}),
+                        latitude: data.latitude,
+                        longitude: data.longitude,
+                        name: data.name || name,
+                        ...(data.elevation != null && { elevation: data.elevation }),
+                    };
+                    return { ...prev, locations: locs };
+                });
+            } else {
+                alert(data.error || 'Could not find coordinates');
+            }
+        } catch (e) {
+            alert('Geocoding failed');
+        } finally {
+            setGeocodeLoading(null);
+        }
+    };
+
+    const handleLookupName = async (idx) => {
+        const loc = editedEntity.locations?.[idx] || {};
+        const lat = loc.latitude ?? loc.lat;
+        const lon = loc.longitude ?? loc.lon;
+        if (lat == null || lon == null) return;
+        setGeocodeLoading({ idx, type: 'reverse' });
+        try {
+            const r = await api.fetch(`/api/geocode/reverse/?lat=${lat}&lon=${lon}`);
+            const data = await r.json();
+            if (r.ok && data.name) {
+                setEditedEntity(prev => {
+                    const locs = [...(prev.locations || [])];
+                    locs[idx] = { ...(locs[idx] || {}), name: data.name };
+                    return { ...prev, locations: locs };
+                });
+            } else {
+                alert(data.error || 'Could not find place name');
+            }
+        } catch (e) {
+            alert('Reverse geocoding failed');
+        } finally {
+            setGeocodeLoading(null);
+        }
+    };
+
+    const addLocation = () => {
+        setEditedEntity(prev => ({
+            ...prev,
+            locations: [...(prev.locations || []), { name: '', latitude: null, longitude: null }]
+        }));
+    };
+
+    const removeLocation = (idx) => {
+        setEditedEntity(prev => ({
+            ...prev,
+            locations: (prev.locations || []).filter((_, i) => i !== idx)
+        }));
+    };
+
+    const moveLocationUp = (idx) => {
+        if (idx === 0) return;
+        setEditedEntity(prev => {
+            const locs = [...(prev.locations || [])];
+            [locs[idx - 1], locs[idx]] = [locs[idx], locs[idx - 1]];
+            return { ...prev, locations: locs };
+        });
+    };
+
+    const moveLocationDown = (idx) => {
+        const locs = editedEntity.locations || [];
+        if (idx >= locs.length - 1) return;
+        setEditedEntity(prev => {
+            const arr = [...(prev.locations || [])];
+            [arr[idx], arr[idx + 1]] = [arr[idx + 1], arr[idx]];
+            return { ...prev, locations: arr };
         });
     };
 
@@ -539,9 +652,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             }
 
             // Clean up empty/null fields to avoid validation errors
-            // Remove empty strings, empty arrays, and null values
+            // Remove empty strings, empty arrays, and null values (except locations - we need to send [] to clear)
             Object.keys(dataToSave).forEach(key => {
                 const value = dataToSave[key];
+                if (key === 'locations') return; // Always send locations (including [])
                 if (value === '' || value === null ||
                     (Array.isArray(value) && value.length === 0)) {
                     delete dataToSave[key];
@@ -1166,12 +1280,133 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     )}
 
                     {/* Locations */}
-                    {displayEntity.locations && displayEntity.locations.length > 0 && (
+                    {(displayEntity.locations?.length > 0 || isEditing) && (
                         <section>
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                 Locations
                             </h3>
-                            {renderField('', displayEntity.locations, true, true)}
+
+                            {(editedEntity?.locations?.length > 0 || displayEntity.locations?.length > 0) && (
+                                <div className="mb-4 space-y-4">
+                                    {(isEditing ? editedEntity.locations : displayEntity.locations)?.map((loc, idx) => {
+                                        const name = loc?.name || '';
+                                        const lat = loc?.latitude ?? loc?.lat;
+                                        const lon = loc?.longitude ?? loc?.lon;
+                                        const elev = loc?.elevation ?? loc?.altitude ?? loc?.elev;
+                                        const mapsUrl = getGoogleMapsUrl(loc);
+                                        const hasCoords = lat != null && lon != null;
+                                        const hasName = !!name.trim();
+                                        const isLoading = geocodeLoading?.idx === idx;
+                                        const totalLocs = (isEditing ? editedEntity.locations : displayEntity.locations).length;
+
+                                        return isEditing ? (
+                                            <div key={idx} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg border border-gray-200 dark:border-gray-600">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Location {idx + 1}</span>
+                                                    <div className="flex gap-1">
+                                                        <button onClick={() => moveLocationUp(idx)} disabled={idx === 0} className="p-1 text-gray-600 dark:text-gray-300 hover:text-blue-600 disabled:opacity-30" title="Move up">↑</button>
+                                                        <button onClick={() => moveLocationDown(idx)} disabled={idx >= totalLocs - 1} className="p-1 text-gray-600 dark:text-gray-300 hover:text-blue-600 disabled:opacity-30" title="Move down">↓</button>
+                                                        <button onClick={() => removeLocation(idx)} className="p-1 text-red-600 hover:text-red-800" title="Remove">✕</button>
+                                                    </div>
+                                                </div>
+                                                <div className="grid gap-2">
+                                                    <div>
+                                                        <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Name</label>
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                value={name}
+                                                                onChange={(e) => handleLocationChange(idx, 'name', e.target.value)}
+                                                                placeholder="Place name"
+                                                                className="flex-1 px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                            />
+                                                            {hasName && (
+                                                                <button
+                                                                    onClick={() => handleLookupCoords(idx)}
+                                                                    disabled={isLoading}
+                                                                    className="px-2 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                                                >
+                                                                    {geocodeLoading?.idx === idx && geocodeLoading?.type === 'forward' ? '…' : 'Look up coords'}
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Latitude</label>
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                value={lat ?? ''}
+                                                                onChange={(e) => handleLocationChange(idx, 'latitude', e.target.value ? parseFloat(e.target.value) : null)}
+                                                                placeholder="Lat"
+                                                                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Longitude</label>
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                value={lon ?? ''}
+                                                                onChange={(e) => handleLocationChange(idx, 'longitude', e.target.value ? parseFloat(e.target.value) : null)}
+                                                                placeholder="Lon"
+                                                                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-xs text-gray-500 dark:text-gray-400 mb-0.5">Elevation (m)</label>
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                value={elev ?? ''}
+                                                                onChange={(e) => handleLocationChange(idx, 'elevation', e.target.value ? parseFloat(e.target.value) : null)}
+                                                                placeholder="m"
+                                                                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                                            />
+                                                        </div>
+                                                        {hasCoords && (
+                                                            <div className="flex items-end">
+                                                                <button
+                                                                    onClick={() => handleLookupName(idx)}
+                                                                    disabled={isLoading}
+                                                                    className="px-2 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                                                >
+                                                                    {geocodeLoading?.idx === idx && geocodeLoading?.type === 'reverse' ? '…' : 'Lookup name'}
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            /* Display mode: name only; lat/long/altitude shown only in edit */
+                                            <div key={idx} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                                                <span className="text-gray-900 dark:text-gray-100">{name || '(Unnamed)'}</span>
+                                                {mapsUrl && (
+                                                    <a
+                                                        href={mapsUrl}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="px-2 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                                                    >
+                                                        Map
+                                                    </a>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+
+                            {isEditing && (
+                                <button
+                                    onClick={addLocation}
+                                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                                >
+                                    + Add Location
+                                </button>
+                            )}
                         </section>
                     )}
 

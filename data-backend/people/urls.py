@@ -1,5 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from .geocode_views import geocode_forward, geocode_reverse
 from .views import (
     PersonViewSet, NoteViewSet, LocationViewSet, MovieViewSet, BookViewSet,
     ContainerViewSet, AssetViewSet, OrgViewSet, EntityViewSet, EntityRelationViewSet,
@@ -21,10 +22,11 @@ router.register(r'upload', UploadViewSet, basename='upload')
 router.register(r'search', SearchViewSet, basename='search')
 router.register(r'tags', TagViewSet, basename='tag')
 
-# Add explicit path for recent entities (not using router to avoid conflict)
-from django.urls import path
+# Add explicit paths (not using router to avoid conflict)
 urlpatterns = [
     path('entities/recent/', RecentEntityViewSet.as_view({'get': 'list'}), name='entity-recent'),
+    path('geocode/forward/', geocode_forward, name='geocode-forward'),
+    path('geocode/reverse/', geocode_reverse, name='geocode-reverse'),
     path('', include(router.urls)),
 ]
 

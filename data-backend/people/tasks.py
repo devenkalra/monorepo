@@ -524,3 +524,119 @@ def export_entities_async(self, user_id):
         logger.error(f"Export task {task_id} failed: {str(e)}")
         update_task_progress(task_id, 0, 0, 'failed', f'Error: {str(e)}')
         raise
+
+
+@shared_task(bind=True)
+def export_selected_entities_async(self, user_id, entity_ids, max_hops=1):
+    """
+    Export selected entities plus their relation network up to max_hops.
+    max_hops=1: selected + direct relations (avoids full graph when connected).
+    """
+    from people.models import (Entity, Person, Note, Location, Movie, Book,
+                               Container, Asset, Org, EntityRelation, Tag)
+    from people.serializers import (
+        PersonSerializer, NoteSerializer, LocationSerializer, MovieSerializer,
+        BookSerializer, ContainerSerializer, AssetSerializer, OrgSerializer,
+        EntityRelationSerializer, TagSerializer
+    )
+    from django.db.models import Q
+    from datetime import datetime
+
+    task_id = self.request.id
+    logger.info(f"Starting export-selected task {task_id} for user {user_id}, {len(entity_ids)} entities")
+
+    update_task_progress(task_id, 0, 1, 'processing', 'Building export network...')
+
+    try:
+        user = User.objects.get(id=user_id)
+        entity_ids = [str(eid) for eid in entity_ids]  # Ensure string UUIDs
+
+        # Validate all selected entities belong to user
+        user_entity_ids = set(
+            Entity.objects.filter(user=user, id__in=entity_ids).values_list('id', flat=True)
+        )
+        user_entity_ids = {str(eid) for eid in user_entity_ids}
+        invalid = set(entity_ids) - user_entity_ids
+        if invalid:
+            update_task_progress(task_id, 0, 0, 'failed', f'Invalid entity IDs: {invalid}')
+            return {'success': False, 'error': 'Some entities do not belong to you'}
+
+        # Build network: selected + related entities up to max_hops
+        network_ids = set(entity_ids)
+        for _ in range(max_hops):
+            relations = EntityRelation.objects.filter(
+                from_entity__user=user,
+                to_entity__user=user
+            ).filter(
+                Q(from_entity_id__in=network_ids) | Q(to_entity_id__in=network_ids)
+            )
+            prev_size = len(network_ids)
+            for rel in relations:
+                network_ids.add(str(rel.from_entity_id))
+                network_ids.add(str(rel.to_entity_id))
+            if len(network_ids) == prev_size:
+                break
+
+        network_ids = list(network_ids)
+        update_task_progress(task_id, 0, len(network_ids), 'processing', f'Serializing {len(network_ids)} entities...')
+
+        if check_task_cancelled(task_id):
+            update_task_progress(task_id, 0, len(network_ids), 'cancelled', 'Export cancelled')
+            return {'success': False, 'cancelled': True}
+
+        # Get entities by type (each entity appears in exactly one type-specific list)
+        people = Person.objects.filter(id__in=network_ids, user=user)
+        notes = Note.objects.filter(id__in=network_ids, user=user)
+        locations = Location.objects.filter(id__in=network_ids, user=user)
+        movies = Movie.objects.filter(id__in=network_ids, user=user)
+        books = Book.objects.filter(id__in=network_ids, user=user)
+        containers = Container.objects.filter(id__in=network_ids, user=user)
+        assets = Asset.objects.filter(id__in=network_ids, user=user)
+        orgs = Org.objects.filter(id__in=network_ids, user=user)
+
+        # Relations: only those where BOTH ends are in network
+        relations = EntityRelation.objects.filter(
+            from_entity__user=user,
+            to_entity__user=user,
+            from_entity_id__in=network_ids,
+            to_entity_id__in=network_ids
+        )
+
+        # Tags: collect tag names from all entities' tags JSON, then fetch Tag objects
+        tag_names = set()
+        for qs in [people, notes, locations, movies, books, containers, assets, orgs]:
+            for obj in qs:
+                for t in (obj.tags or []):
+                    if isinstance(t, str):
+                        tag_names.add(t)
+        tags = Tag.objects.filter(user=user, name__in=tag_names)
+
+        export_data = {
+            'export_version': '1.0',
+            'export_date': datetime.now().isoformat(),
+            'export_type': 'selected',
+            'user': {'username': user.username, 'email': user.email},
+            'people': PersonSerializer(people, many=True).data,
+            'notes': NoteSerializer(notes, many=True).data,
+            'locations': LocationSerializer(locations, many=True).data,
+            'movies': MovieSerializer(movies, many=True).data,
+            'books': BookSerializer(books, many=True).data,
+            'containers': ContainerSerializer(containers, many=True).data,
+            'assets': AssetSerializer(assets, many=True).data,
+            'orgs': OrgSerializer(orgs, many=True).data,
+            'relations': EntityRelationSerializer(relations, many=True).data,
+            'tags': TagSerializer(tags, many=True).data,
+        }
+
+        export_json = json.dumps(export_data, indent=2, default=str)
+        cache.set(f'export_data_{task_id}', export_json, timeout=3600)
+
+        total = len(network_ids)
+        update_task_progress(task_id, total, total, 'completed', f'Export complete: {total} entities')
+
+        return {'success': True, 'total': total}
+
+    except Exception as e:
+        logger.error(f"Export-selected task {task_id} failed: {str(e)}")
+        update_task_progress(task_id, 0, 0, 'failed', f'Error: {str(e)}')
+        raise

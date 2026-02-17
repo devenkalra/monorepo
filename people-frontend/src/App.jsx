@@ -7,12 +7,14 @@ import ThemeSync from './components/ThemeSync';
 import EntityDetail from './components/EntityDetail';
 import UserMenu from './components/UserMenu';
 import ConversationImport from './components/ConversationImport';
+import { useAuth } from './contexts/AuthContext';
 import api from './services/api';
 
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   
   const [entities, setEntities] = useState([]);
   const [entitiesLoading, setEntitiesLoading] = useState(true);
@@ -297,6 +299,49 @@ function App() {
     }
   };
 
+  const handleExportSelected = async () => {
+    // Use only entities from the current view (sortedEntities) - never fetch "all" from search
+    let ids;
+    if (isAllSelected) {
+      ids = sortedEntities.map((e) => e.id);
+    } else {
+      ids = sortedEntities
+        .filter((e) => selectedEntityIds.has(e.id))
+        .map((e) => e.id);
+    }
+    ids = ids.filter((id) => id && id !== '__ALL__');
+    if (ids.length === 0) {
+      alert('No entities selected to export');
+      return;
+    }
+    try {
+      setShowBulkActions(false);
+      const response = await api.fetch('/api/entities/export-selected/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_ids: ids }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Export failed');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const disposition = response.headers.get('Content-Disposition');
+      const match = disposition?.match(/filename="?([^";\n]+)"?/);
+      a.download = match ? match[1] : `entity_export_selected_${user?.username || 'user'}_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Export failed:', error);
+      alert('Export failed: ' + error.message);
+    }
+  };
+
   const fetchEntities = async () => {
     const tagSet = new Set(filters.tags);
     if (filters.primaryTag) tagSet.add(filters.primaryTag);
@@ -542,6 +587,14 @@ function App() {
                       className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-red-600 dark:text-red-400"
                     >
                       Delete
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleExportSelected();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    >
+                      Export Selected
                     </button>
                     <button
                       onClick={() => {

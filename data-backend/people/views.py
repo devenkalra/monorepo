@@ -1,7 +1,7 @@
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.core.management import call_command
 from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag
@@ -511,6 +511,123 @@ class EntityViewSet(viewsets.ModelViewSet):
             'task_id': task.id,
             'message': 'Export started. Use /api/entities/tasks/{task_id}/progress/ to check progress.'
         })
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='export-selected-async')
+    def export_selected_async(self, request):
+        """Start async export of selected entities and their relation network (requires Celery)"""
+        from people.tasks import export_selected_entities_async
+
+        entity_ids = request.data.get('entity_ids', [])
+        if not entity_ids:
+            return Response({'error': 'entity_ids is required and must not be empty'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(entity_ids, list):
+            return Response({'error': 'entity_ids must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+
+        max_hops = request.data.get('max_hops', 1)
+        task = export_selected_entities_async.delay(request.user.id, entity_ids, max_hops)
+
+        return Response({
+            'success': True,
+            'task_id': task.id,
+            'message': 'Export started. Use /api/entities/tasks/{task_id}/progress/ to check progress.'
+        })
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='export-selected',
+            parser_classes=[JSONParser])
+    def export_selected(self, request):
+        """Synchronous export of selected entities and their relation network (no Celery required)"""
+        from django.http import HttpResponse
+        from django.db.models import Q
+        import json
+
+        entity_ids = request.data.get('entity_ids') if request.data else None
+        if not entity_ids:
+            return Response({'error': 'entity_ids is required and must not be empty'}, status=status.HTTP_400_BAD_REQUEST)
+        if not isinstance(entity_ids, list):
+            return Response({'error': 'entity_ids must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+
+        entity_ids = [str(eid) for eid in entity_ids]
+        user = request.user
+
+        # max_hops: 0 = only selected, 1 = selected + direct relations. Default 1 to avoid full graph.
+        max_hops = request.data.get('max_hops', 1) if request.data else 1
+
+        # Validate all selected entities belong to user
+        user_entity_ids = set(
+            str(eid) for eid in
+            Entity.objects.filter(user=user, id__in=entity_ids).values_list('id', flat=True)
+        )
+        invalid = set(entity_ids) - user_entity_ids
+        if invalid:
+            return Response({'error': 'Some entities do not belong to you'}, status=status.HTTP_403_FORBIDDEN)
+
+        # Build network: selected + related entities up to max_hops (avoids full graph when connected)
+        network_ids = set(entity_ids)
+        for _ in range(max_hops):
+            relations_qs = EntityRelation.objects.filter(
+                from_entity__user=user,
+                to_entity__user=user
+            ).filter(
+                Q(from_entity_id__in=network_ids) | Q(to_entity_id__in=network_ids)
+            )
+            prev_size = len(network_ids)
+            for rel in relations_qs:
+                network_ids.add(str(rel.from_entity_id))
+                network_ids.add(str(rel.to_entity_id))
+            if len(network_ids) == prev_size:
+                break
+
+        network_ids_list = list(network_ids)
+
+        # Get entities by type - filter by network_ids_list only (no other entities)
+        people = Person.objects.filter(user=user).filter(id__in=network_ids_list)
+        notes = Note.objects.filter(user=user).filter(id__in=network_ids_list)
+        locations = Location.objects.filter(user=user).filter(id__in=network_ids_list)
+        movies = Movie.objects.filter(user=user).filter(id__in=network_ids_list)
+        books = Book.objects.filter(user=user).filter(id__in=network_ids_list)
+        containers = Container.objects.filter(user=user).filter(id__in=network_ids_list)
+        assets = Asset.objects.filter(user=user).filter(id__in=network_ids_list)
+        orgs = Org.objects.filter(user=user).filter(id__in=network_ids_list)
+
+        network_relations = EntityRelation.objects.filter(
+            from_entity__user=user,
+            to_entity__user=user
+        ).filter(
+            from_entity_id__in=network_ids_list,
+            to_entity_id__in=network_ids_list
+        )
+
+        tag_names = set()
+        for qs in [people, notes, locations, movies, books, containers, assets, orgs]:
+            for obj in qs:
+                for t in (obj.tags or []):
+                    if isinstance(t, str):
+                        tag_names.add(t)
+        tags = Tag.objects.filter(user=user, name__in=tag_names)
+
+        from datetime import datetime
+        export_data = {
+            'export_version': '1.0',
+            'export_date': datetime.now().isoformat(),
+            'export_type': 'selected',
+            'user': {'username': user.username, 'email': user.email},
+            'people': PersonSerializer(people, many=True).data,
+            'notes': NoteSerializer(notes, many=True).data,
+            'locations': LocationSerializer(locations, many=True).data,
+            'movies': MovieSerializer(movies, many=True).data,
+            'books': BookSerializer(books, many=True).data,
+            'containers': ContainerSerializer(containers, many=True).data,
+            'assets': AssetSerializer(assets, many=True).data,
+            'orgs': OrgSerializer(orgs, many=True).data,
+            'relations': EntityRelationSerializer(network_relations, many=True).data,
+            'tags': TagSerializer(tags, many=True).data,
+        }
+
+        export_json = json.dumps(export_data, indent=2, default=str)
+        response = HttpResponse(export_json, content_type='application/json')
+        filename = f"entity_export_selected_{user.username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
     
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], 
             url_path='tasks/(?P<task_id>[^/.]+)/download')

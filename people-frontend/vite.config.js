@@ -15,7 +15,8 @@ export default defineConfig({
     },
   },
   build: {
-    sourcemap: true,
-    minify: false,
+    sourcemap: true,  // Generates .map files; use 'inline' to embed (larger output)
+    minify: false,    // Keeps code readable in DevTools
+    target: 'esnext', // Modern output for better debugging
   },
 })
