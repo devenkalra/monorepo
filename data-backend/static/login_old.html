@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BldrDojo — Build Your World, One Project at a Time</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script>
+        (function(){
+            var s = localStorage.getItem('theme');
+            var dark = s === 'dark' ? true : (s === 'light' ? false : window.matchMedia('(prefers-color-scheme: dark)').matches);
+            if (dark) document.documentElement.classList.add('dark');
+            else document.documentElement.classList.remove('dark');
+        })();
+    </script>
+    <style>
+        /* Light theme (default when html has no .dark) */
+        :root {
+            --bg: #f6f8fa;
+            --bg-elevated: #ffffff;
+            --bg-card: #ffffff;
+            --border: #d0d7de;
+            --text: #1f2328;
+            --text-muted: #656d76;
+            --accent: #d97706;
+            --accent-hover: #b45309;
+            --accent-soft: rgba(217, 119, 6, 0.15);
+            --link: #0969da;
+            --success: #1a7f37;
+            --error: #cf222e;
+            --cta-text: #ffffff;
+        }
+        /* Dark theme (when html.dark) */
+        html.dark {
+            --bg: #0a0c10;
+            --bg-elevated: #12151c;
+            --bg-card: #161922;
+            --border: #252a36;
+            --text: #e6edf3;
+            --text-muted: #8b949e;
+            --accent: #f59e0b;
+            --accent-hover: #fbbf24;
+            --accent-soft: rgba(245, 158, 11, 0.15);
+            --link: #58a6ff;
+            --success: #3fb950;
+            --error: #f85149;
+            --cta-text: #0a0c10;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+        
+        /* Hero */
+        .hero {
+            min-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 4rem 1.5rem 3rem;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120%;
+            height: 80%;
+            background: radial-gradient(ellipse at center, var(--accent-soft) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        
+        .hero-badge {
+            display: inline-block;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: var(--accent);
+            margin-bottom: 1.5rem;
+        }
+        
+        .hero h1 {
+            font-size: clamp(2.25rem, 5vw, 3.5rem);
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            max-width: 20ch;
+            margin: 0 auto 1rem;
+            line-height: 1.15;
+        }
+        
+        .hero-sub {
+            font-size: clamp(1rem, 2vw, 1.25rem);
+            color: var(--text-muted);
+            max-width: 42ch;
+            margin: 0 auto 2.5rem;
+        }
+        
+        .hero-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 1rem 2rem;
+            background: var(--accent);
+            color: var(--cta-text);
+            font-weight: 600;
+            font-size: 1.1rem;
+            border-radius: 10px;
+            text-decoration: none;
+            transition: background 0.2s, transform 0.2s;
+            border: none;
+            cursor: pointer;
+        }
+        
+        .hero-cta:hover {
+            background: var(--accent-hover);
+            transform: translateY(-2px);
+        }
+        
+        .hero-visual {
+            margin-top: 4rem;
+            width: 100%;
+            max-width: 520px;
+        }
+        
+        .hero-mockup {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2rem;
+            min-height: 180px;
+        }
+        
+        .mockup-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .mockup-node-circle {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: var(--accent-soft);
+            border: 2px solid var(--accent);
+            position: relative;
+        }
+        
+        .mockup-node-circle::after {
+            content: '';
+            position: absolute;
+            inset: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            opacity: 0.5;
+        }
+        
+        .mockup-lines {
+            display: flex;
+            gap: 4px;
+            margin-top: 4px;
+        }
+        
+        .mockup-line {
+            width: 20px;
+            height: 2px;
+            background: var(--border);
+            border-radius: 1px;
+        }
+        
+        .mockup-wireframe {
+            width: 64px;
+            height: 64px;
+            border: 2px solid var(--accent);
+            border-radius: 4px;
+            position: relative;
+            transform: rotateX(20deg) rotateY(-25deg);
+        }
+        
+        .mockup-wireframe::before,
+        .mockup-wireframe::after {
+            content: '';
+            position: absolute;
+            border: 1px solid var(--accent);
+            opacity: 0.6;
+        }
+        
+        .mockup-wireframe::before {
+            top: 0;
+            left: 50%;
+            width: 0;
+            height: 100%;
+            border-left: 1px solid var(--accent);
+            transform: translateX(-50%);
+        }
+        
+        .mockup-wireframe::after {
+            top: 50%;
+            left: 0;
+            width: 100%;
+            height: 0;
+            border-top: 1px solid var(--accent);
+            transform: translateY(-50%);
+        }
+        
+        .mockup-connect {
+            width: 32px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--accent), var(--accent));
+            opacity: 0.6;
+            border-radius: 1px;
+        }
+        
+        .mockup-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+        
+        /* Sections */
+        section {
+            padding: 4rem 1.5rem;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        
+        .section-title {
+            font-size: 1.75rem;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        
+        /* Builder Suite */
+        .builder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .builder-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            transition: border-color 0.2s;
+        }
+        
+        .builder-card:hover {
+            border-color: var(--accent);
+        }
+        
+        .builder-card h3 {
+            font-size: 1.25rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .builder-card .icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            background: var(--accent-soft);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+        }
+        
+        .builder-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+        
+        .builder-card a {
+            display: inline-block;
+            margin-top: 1rem;
+            color: var(--accent);
+            font-weight: 500;
+            text-decoration: none;
+            font-size: 0.9rem;
+        }
+        
+        .builder-card a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Coming Soon */
+        .coming-soon {
+            background: var(--bg-elevated);
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .coming-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+        }
+        
+        .coming-item {
+            text-align: center;
+            padding: 1.5rem;
+        }
+        
+        .coming-item .icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 1rem;
+            border-radius: 12px;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+        
+        .coming-item h4 {
+            font-size: 1rem;
+            margin-bottom: 0.25rem;
+        }
+        
+        .coming-item p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        
+        .coming-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+        
+        /* Changelog */
+        .changelog {
+            max-width: 560px;
+            margin: 0 auto;
+        }
+        
+        .changelog-item {
+            display: flex;
+            gap: 1rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .changelog-item:last-child {
+            border-bottom: none;
+        }
+        
+        .changelog-date {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            min-width: 90px;
+        }
+        
+        .changelog-text {
+            font-size: 0.95rem;
+            color: var(--text);
+        }
+        
+        /* Footer / Access */
+        .footer {
+            padding: 4rem 1.5rem 3rem;
+            background: var(--bg-elevated);
+            border-top: 1px solid var(--border);
+        }
+        
+        .footer-inner {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+        
+        .footer-access {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2.5rem;
+            margin-bottom: 3rem;
+        }
+        
+        .footer-access h3 {
+            font-size: 1.25rem;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        
+        .footer-auth-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .social-btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.95rem;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--bg);
+            color: var(--text);
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        
+        .social-btn:hover {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+        }
+        
+        .social-btn.google { border-color: #4285f4; color: #4285f4; }
+        .social-btn.google:hover { background: rgba(66, 133, 244, 0.15); }
+        
+        .social-btn.github { border-color: var(--text-muted); }
+        .social-btn.github:hover { border-color: var(--text); background: var(--bg-elevated); }
+        
+        .footer-links {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            justify-content: center;
+            font-size: 0.9rem;
+        }
+        
+        .footer-links a {
+            color: var(--text-muted);
+            text-decoration: none;
+        }
+        
+        .footer-links a:hover {
+            color: var(--link);
+        }
+        
+        .footer-copy {
+            text-align: center;
+            margin-top: 2rem;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        
+        /* Auth Modal */
+        .auth-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        
+        .auth-modal.active {
+            display: flex;
+        }
+        
+        .auth-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 420px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        
+        .auth-header {
+            padding: 1.5rem 2rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .auth-header h2 {
+            font-size: 1.25rem;
+        }
+        
+        .auth-close {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 1.5rem;
+            line-height: 1;
+            padding: 0.25rem;
+        }
+        
+        .auth-close:hover {
+            color: var(--text);
+        }
+        
+        .auth-tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .auth-tab {
+            flex: 1;
+            padding: 1rem;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-weight: 500;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        .auth-tab.active {
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+        }
+        
+        .auth-tab:hover {
+            color: var(--text);
+        }
+        
+        .auth-body {
+            padding: 2rem;
+        }
+        
+        .auth-form {
+            display: none;
+        }
+        
+        .auth-form.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+        
+        .form-group label {
+            display: block;
+            font-size: 0.9rem;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+        }
+        
+        .form-group input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 1rem;
+        }
+        
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        
+        .auth-submit {
+            width: 100%;
+            padding: 1rem;
+            background: var(--accent);
+            color: var(--bg);
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            margin-top: 0.5rem;
+            transition: background 0.2s;
+        }
+        
+        .auth-submit:hover {
+            background: var(--accent-hover);
+        }
+        
+        .auth-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .auth-divider {
+            text-align: center;
+            margin: 1.5rem 0;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+        
+        .message {
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+            display: none;
+        }
+        
+        .message.error {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--error);
+            border: 1px solid rgba(248, 81, 73, 0.3);
+        }
+        
+        .message.success {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--success);
+            border: 1px solid rgba(63, 185, 80, 0.3);
+        }
+        
+        .message.active { display: block; }
+        
+        .test-users {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .test-users h4 {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+        
+        .test-user {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            padding: 0.5rem;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 2px 0;
+        }
+        
+        .test-user:hover {
+            background: var(--bg-elevated);
+        }
+        
+        .register-link {
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+        
+        .register-link a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        
+        .register-link a:hover {
+            text-decoration: underline;
+        }
+        
+        .theme-toggle {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            width: 44px;
+            height: 44px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            color: var(--text);
+            font-size: 1.25rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .theme-toggle:hover {
+            border-color: var(--accent);
+            background: var(--accent-soft);
+        }
+        .theme-toggle-inline {
+            position: static;
+            width: auto;
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark/light mode" id="theme-toggle">☀️</button>
+    <!-- Hero -->
+    <section class="hero">
+        <span class="hero-badge">BldrDojo</span>
+        <h1>Build Your World, One Project at a Time.</h1>
+        <p class="hero-sub">A unified suite of "Builder" apps designed for your Second Brain, 3D woodworking designs, and personal curation.</p>
+        <button class="hero-cta" onclick="openAuthModal()">Enter the Dojo / Login</button>
+        
+        <div class="hero-visual">
+            <div class="hero-mockup">
+                <div class="mockup-node">
+                    <div class="mockup-node-circle"></div>
+                    <div class="mockup-lines">
+                        <span class="mockup-line"></span>
+                        <span class="mockup-line"></span>
+                        <span class="mockup-line"></span>
+                    </div>
+                    <span class="mockup-label">Second Brain</span>
+                </div>
+                <div class="mockup-connect"></div>
+                <div class="mockup-node">
+                    <div class="mockup-wireframe"></div>
+                    <span class="mockup-label">3D CAD</span>
+                </div>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Builder Suite -->
+    <section>
+        <h2 class="section-title">The Builder Suite</h2>
+        <div class="builder-grid">
+            <div class="builder-card">
+                <h3><span class="icon">🧠</span> The Second Brain</h3>
+                <p>Capture, connect, and catalyze your thoughts. A personal knowledge graph that grows as you do.</p>
+                <a href="/people-app/">Open Second Brain →</a>
+            </div>
+            <div class="builder-card">
+                <h3><span class="icon">📐</span> 3D Design (Woodworking CAD)</h3>
+                <p>Precision modeling for the physical world. Sketch, measure, and visualize your next timber project before the first cut.</p>
+                <a href="/cad-app/">Open 3D CAD →</a>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Coming Soon -->
+    <section class="coming-soon">
+        <h2 class="section-title">Coming Soon: The Curated Life</h2>
+        <div class="coming-grid">
+            <div class="coming-item">
+                <div class="icon">🎬</div>
+                <h4>The Screening Room</h4>
+                <p>Track movies, documentaries, and cinematic inspirations.</p>
+                <span class="coming-badge">Coming soon</span>
+            </div>
+            <div class="coming-item">
+                <div class="icon">📚</div>
+                <h4>The Library</h4>
+                <p>A dedicated space for your reading list and book summaries.</p>
+                <span class="coming-badge">Coming soon</span>
+            </div>
+            <div class="coming-item">
+                <div class="icon">📅</div>
+                <h4>Project Timelines</h4>
+                <p>Milestone tracking for long-term builds.</p>
+                <span class="coming-badge">Coming soon</span>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Changelog -->
+    <section>
+        <h2 class="section-title">News & Changelog</h2>
+        <div class="changelog">
+            <div class="changelog-item">
+                <span class="changelog-date">Feb 2026</span>
+                <span class="changelog-text">Beta launch of the 3D CAD module with auto-cutlist generation.</span>
+            </div>
+            <div class="changelog-item">
+                <span class="changelog-date">Jan 2026</span>
+                <span class="changelog-text">Integration of Neo4j-backed graph visualization for the Second Brain.</span>
+            </div>
+            <div class="changelog-item">
+                <span class="changelog-date">Dec 2025</span>
+                <span class="changelog-text">BldrDojo.com domain goes live.</span>
+            </div>
+        </div>
+    </section>
+    
+    <!-- Footer / Access -->
+    <footer class="footer">
+        <div class="footer-inner">
+            <div class="footer-access">
+                <h3>Login / Sign Up</h3>
+                <div class="footer-auth-row">
+                    <button class="social-btn theme-toggle-inline" onclick="toggleTheme()" id="theme-toggle-footer" aria-label="Toggle theme">☀️</button>
+                    <button class="social-btn google" onclick="socialLogin('google')">Google</button>
+                    <button class="social-btn github" onclick="socialLogin('github')">GitHub</button>
+                    <button class="social-btn" onclick="openAuthModal()">Email</button>
+                </div>
+                <p class="footer-links">
+                    <a href="#">Documentation</a>
+                    <a href="#">Privacy</a>
+                    <a href="#">Feedback</a>
+                </p>
+            </div>
+            <p class="footer-copy">© 2025–2026 BldrDojo. Build your world.</p>
+        </div>
+    </footer>
+    
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="auth-modal">
+        <div class="auth-box">
+            <div class="auth-header">
+                <h2>Enter the Dojo</h2>
+                <button class="auth-close" onclick="closeAuthModal()">&times;</button>
+            </div>
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="switchAuthTab('login')">Login</button>
+                <button class="auth-tab" onclick="switchAuthTab('register')">Register</button>
+            </div>
+            <div class="auth-body">
+                <div id="message" class="message"></div>
+                
+                <div class="test-users">
+                    <h4>Test users (click to fill)</h4>
+                    <div class="test-user" onclick="fillCredentials('alice@example.com', 'testpass123')">alice@example.com</div>
+                    <div class="test-user" onclick="fillCredentials('bob@example.com', 'testpass123')">bob@example.com</div>
+                </div>
+                
+                <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" required placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Password</label>
+                        <input type="password" id="login-password" required placeholder="••••••••">
+                    </div>
+                    <button type="submit" class="auth-submit" id="login-btn">Login</button>
+                </form>
+                
+                <p class="auth-divider">Or continue with</p>
+                
+                <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+                    <button type="button" class="social-btn google" onclick="socialLogin('google')" style="flex:1">Google</button>
+                    <button type="button" class="social-btn github" onclick="socialLogin('github')" style="flex:1">GitHub</button>
+                </div>
+                
+                <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label for="reg-email">Email</label>
+                        <input type="email" id="reg-email" required placeholder="your@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-password1">Password</label>
+                        <input type="password" id="reg-password1" required minlength="8" placeholder="••••••••">
+                    </div>
+                    <div class="form-group">
+                        <label for="reg-password2">Confirm Password</label>
+                        <input type="password" id="reg-password2" required minlength="8" placeholder="••••••••">
+                    </div>
+                    <button type="submit" class="auth-submit" id="register-btn">Create Account</button>
+                </form>
+                
+                <p class="register-link" id="register-link">
+                    Don't have an account? <a href="#" onclick="switchAuthTab('register'); return false;">Register</a>
+                </p>
+                <p class="register-link" id="login-link" style="display:none">
+                    Already have an account? <a href="#" onclick="switchAuthTab('login'); return false;">Login</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = '';
+        let accessToken = null;
+        
+        function getCsrfToken() {
+            const name = 'csrftoken';
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+        let refreshToken = null;
+        let currentUser = null;
+        
+        function toggleTheme() {
+            const dark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', dark ? 'dark' : 'light');
+            updateThemeIcons();
+        }
+        
+        function updateThemeIcons() {
+            const dark = document.documentElement.classList.contains('dark');
+            const icon = dark ? '🌙' : '☀️';
+            const t1 = document.getElementById('theme-toggle');
+            const t2 = document.getElementById('theme-toggle-footer');
+            if (t1) t1.textContent = icon;
+            if (t2) t2.textContent = icon;
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            updateThemeIcons();
+            accessToken = localStorage.getItem('access_token');
+            refreshToken = localStorage.getItem('refresh_token');
+            const userStr = localStorage.getItem('current_user');
+            if (accessToken && userStr) {
+                currentUser = JSON.parse(userStr);
+                window.location.href = '/people-app/';
+            }
+        });
+        
+        function openAuthModal() {
+            document.getElementById('auth-modal').classList.add('active');
+        }
+        
+        function closeAuthModal() {
+            document.getElementById('auth-modal').classList.remove('active');
+        }
+        
+        function switchAuthTab(tab) {
+            document.querySelectorAll('.auth-tab').forEach((t, i) => {
+                t.classList.toggle('active', (tab === 'login' && i === 0) || (tab === 'register' && i === 1));
+            });
+            document.querySelectorAll('.auth-form').forEach(f => f.classList.remove('active'));
+            document.getElementById(tab + '-form').classList.add('active');
+            document.getElementById('register-link').style.display = tab === 'login' ? 'block' : 'none';
+            document.getElementById('login-link').style.display = tab === 'register' ? 'block' : 'none';
+            hideMessage();
+        }
+        
+        function fillCredentials(email, password) {
+            document.getElementById('login-email').value = email;
+            document.getElementById('login-password').value = password;
+        }
+        
+        function showMessage(text, type) {
+            const el = document.getElementById('message');
+            el.textContent = text;
+            el.className = 'message ' + type + ' active';
+        }
+        
+        function hideMessage() {
+            document.getElementById('message').classList.remove('active');
+        }
+        
+        async function handleLogin(event) {
+            event.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const btn = document.getElementById('login-btn');
+            btn.disabled = true;
+            btn.textContent = 'Logging in...';
+            hideMessage();
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/login/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ email, password }),
+                    credentials: 'include'
+                });
+                const text = await res.text();
+                let data;
+                try {
+                    data = text ? JSON.parse(text) : {};
+                } catch (_) {
+                    if (res.status >= 500) {
+                        showMessage('Server error. Please try again later.', 'error');
+                    } else if (res.status === 502 || res.status === 503) {
+                        showMessage('Service temporarily unavailable. Is the backend running?', 'error');
+                    } else {
+                        showMessage('Request failed (' + res.status + ').', 'error');
+                    }
+                    return;
+                }
+                if (res.ok) {
+                    accessToken = data.access;
+                    refreshToken = data.refresh;
+                    currentUser = data.user;
+                    localStorage.setItem('access_token', accessToken);
+                    localStorage.setItem('refresh_token', refreshToken);
+                    localStorage.setItem('current_user', JSON.stringify(currentUser));
+                    showMessage('Welcome! Redirecting...', 'success');
+                    setTimeout(() => { window.location.href = '/people-app/'; }, 500);
+                } else {
+                    showMessage(data.non_field_errors?.[0] || data.detail || 'Login failed', 'error');
+                }
+            } catch (e) {
+                showMessage('Network error. Is the server reachable? Check console.', 'error');
+                console.error('Login error:', e);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Login';
+            }
+        }
+        
+        async function handleRegister(event) {
+            event.preventDefault();
+            const email = document.getElementById('reg-email').value;
+            const password1 = document.getElementById('reg-password1').value;
+            const password2 = document.getElementById('reg-password2').value;
+            const btn = document.getElementById('register-btn');
+            if (password1 !== password2) {
+                showMessage('Passwords do not match', 'error');
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = 'Creating account...';
+            hideMessage();
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/registration/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCsrfToken()
+                    },
+                    body: JSON.stringify({ email, password1, password2 }),
+                    credentials: 'include'
+                });
+                const regText = await res.text();
+                let data;
+                try {
+                    data = regText ? JSON.parse(regText) : {};
+                } catch (_) {
+                    if (res.status >= 500 || res.status === 502 || res.status === 503) {
+                        showMessage('Server error. Please try again later.', 'error');
+                    } else {
+                        showMessage('Request failed (' + res.status + ').', 'error');
+                    }
+                    return;
+                }
+                if (res.ok) {
+                    accessToken = data.access;
+                    refreshToken = data.refresh;
+                    currentUser = data.user;
+                    localStorage.setItem('access_token', accessToken);
+                    localStorage.setItem('refresh_token', refreshToken);
+                    localStorage.setItem('current_user', JSON.stringify(currentUser));
+                    showMessage('Account created! Redirecting...', 'success');
+                    setTimeout(() => { window.location.href = '/people-app/'; }, 500);
+                } else {
+                    const errs = [];
+                    if (data.email) errs.push(...data.email);
+                    if (data.password1) errs.push(...data.password1);
+                    if (data.non_field_errors) errs.push(...data.non_field_errors);
+                    showMessage(errs.join('. ') || 'Registration failed', 'error');
+                }
+            } catch (e) {
+                showMessage('Network error.', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Create Account';
+            }
+        }
+        
+        function socialLogin(provider) {
+            window.location.href = `${API_BASE}/accounts/${provider}/login/`;
+        }
+        
+        document.getElementById('auth-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'auth-modal') closeAuthModal();
+        });
+    </script>
+</body>
+</html>
