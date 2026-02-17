@@ -96,6 +96,7 @@ MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',  # CORS - must be before CommonMiddleware
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'config.middleware.DisableCSRFForAPIMiddleware',  # Exempt /api/ from CSRF (JWT/token auth)
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -305,6 +306,7 @@ ACCOUNT_USER_MODEL_USERNAME_FIELD = 'username'
 
 # Social account settings
 SOCIALACCOUNT_AUTO_SIGNUP = True  # Automatically create account from social login
+SOCIALACCOUNT_LOGIN_ON_GET = True  # Skip unstyled intermediate page; redirect straight to Google
 SOCIALACCOUNT_EMAIL_REQUIRED = True
 SOCIALACCOUNT_QUERY_EMAIL = True
 # Use custom adapter to auto-connect social accounts to existing users with matching email

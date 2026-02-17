@@ -9,6 +9,8 @@ export default function UserMenu() {
   const [showMenu, setShowMenu] = useState(false);
   const [showIngestModal, setShowIngestModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
   const [progressTask, setProgressTask] = useState(null); // { taskId, taskType }
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
@@ -67,17 +69,25 @@ export default function UserMenu() {
   const handleImportClick = () => {
     setShowMenu(false);
     setShowImportModal(true);
+    setImportFile(null);
+    if (importFileInputRef.current) importFileInputRef.current.value = '';
   };
 
-  const handleImportFile = async (event) => {
+  const handleImportFileSelect = (event) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    setImportFile(file || null);
+  };
 
+  const handleImportSubmit = async () => {
+    if (!importFile) return;
+    setImporting(true);
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      const { ensureCsrfCookie } = await import('../services/api');
+      await ensureCsrfCookie();
 
-      // Start async import
+      const formData = new FormData();
+      formData.append('file', importFile);
+
       const response = await api.fetch('/api/entities/import-async/', {
         method: 'POST',
         body: formData,
@@ -86,8 +96,8 @@ export default function UserMenu() {
       const result = await response.json();
       
       if (result.success) {
-        // Close import modal and show progress modal
         setShowImportModal(false);
+        setImportFile(null);
         setProgressTask({ taskId: result.task_id, taskType: 'import' });
       } else {
         alert('Import failed: ' + (result.error || 'Unknown error'));
@@ -95,6 +105,8 @@ export default function UserMenu() {
     } catch (error) {
       console.error('Import failed:', error);
       alert('Import failed: ' + error.message);
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -395,24 +407,46 @@ export default function UserMenu() {
       {/* Import Data Modal */}
       {showImportModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Import Data</h3>
-            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Import Data</h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
               Select a JSON file exported from this application to import your entities, notes, and relations.
             </p>
-            <input
-              ref={importFileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleImportFile}
-              className="block w-full text-sm text-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 focus:outline-none mb-4"
-            />
-            <div className="flex justify-end space-x-2">
+            <div className="space-y-3 mb-5">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Select Import File:
+              </label>
+              <div className="flex gap-3 items-stretch">
+                <label className="flex-shrink-0 px-4 py-2.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 dark:bg-amber-600 dark:hover:bg-amber-700 rounded-lg cursor-pointer transition-colors flex items-center">
+                  Browse…
+                  <input
+                    ref={importFileInputRef}
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportFileSelect}
+                    className="sr-only"
+                  />
+                </label>
+                <div className="flex-1 min-w-0 flex items-center px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50">
+                  <span className={`text-sm truncate ${importFile ? 'text-gray-900 dark:text-gray-200' : 'text-gray-400 dark:text-gray-500'}`}>
+                    {importFile ? importFile.name : 'No file chosen'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowImportModal(false)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleImportSubmit}
+                disabled={!importFile || importing}
+                className="px-4 py-2 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+              >
+                {importing ? 'Importing…' : 'Import'}
               </button>
             </div>
           </div>

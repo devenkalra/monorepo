@@ -1,9 +1,12 @@
 import React from 'react';
 import { getMediaUrl } from '../utils/apiUrl';
 
-function EntityList({ entities, onEntityClick, selectionMode = false, selectedEntityIds = new Set(), onToggleSelection }) {
+function EntityList({ entities, loading = false, onEntityClick, selectionMode = false, selectedEntityIds = new Set(), onToggleSelection }) {
+    if (loading) {
+        return <p className="text-center text-gray-500 py-8">Loading…</p>;
+    }
     if (!entities.length) {
-        return <p className="text-center text-gray-500">No entities found.</p>;
+        return <p className="text-center text-gray-500 py-8">No entities found.</p>;
     }
 
     const getFirstPhotoThumbnail = (entity) => {

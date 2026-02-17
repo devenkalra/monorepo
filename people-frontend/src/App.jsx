@@ -15,6 +15,7 @@ function App() {
   const [searchParams] = useSearchParams();
   
   const [entities, setEntities] = useState([]);
+  const [entitiesLoading, setEntitiesLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [filters, setFilters] = useState({
     primaryTag: '',
@@ -324,6 +325,7 @@ function App() {
     }
 
     try {
+      setEntitiesLoading(true);
       const resp = await api.fetch(`${url}?${params.toString()}`);
       const data = await resp.json();
       // Handle both paginated response {results: [...]} and array response [...]
@@ -337,6 +339,8 @@ function App() {
     } catch (error) {
       console.error('Failed to fetch entities', error);
       setEntities([]);
+    } finally {
+      setEntitiesLoading(false);
     }
   };
 
@@ -557,7 +561,8 @@ function App() {
         </div>
         
         <EntityList 
-          entities={sortedEntities} 
+          entities={sortedEntities}
+          loading={entitiesLoading}
           onEntityClick={handleEntityClick}
           selectionMode={selectionMode}
           selectedEntityIds={selectedEntityIds}

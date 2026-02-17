@@ -1,4 +1,5 @@
 import { getApiBaseUrl } from '../utils/apiUrl';
+import { ensureCsrfCookie } from '../services/api';
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { jwtDecode } from 'jwt-decode';
 
@@ -8,6 +9,11 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Ensure CSRF cookie is set for API requests (needed for session auth)
+  useEffect(() => {
+    ensureCsrfCookie();
+  }, []);
 
   // Load user from localStorage or cookie (Django auth)
   useEffect(() => {

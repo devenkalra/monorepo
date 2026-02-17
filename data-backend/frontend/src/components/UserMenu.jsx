@@ -400,17 +400,23 @@ export default function UserMenu() {
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
               Select a JSON file exported from this application to import your entities, notes, and relations.
             </p>
+            <div className="file-input-container">
+              <input type="file" id="file-upload" className="hidden-input"/>
+              <label htmlFor="file-upload" className="custom-file-button">
+                <span>Upload Image</span>
+              </label>
+            </div>
             <input
-              ref={importFileInputRef}
-              type="file"
-              accept=".json"
-              onChange={handleImportFile}
-              className="block w-full text-sm text-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 focus:outline-none mb-4"
+                ref={importFileInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportFile}
+                className="block w-full text-sm text-gray-900 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg cursor-pointer bg-gray-50 dark:bg-gray-700 focus:outline-none mb-4"
             />
             <div className="flex justify-end space-x-2">
               <button
-                onClick={() => setShowImportModal(false)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                  onClick={() => setShowImportModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Cancel
               </button>
@@ -418,10 +424,10 @@ export default function UserMenu() {
           </div>
         </div>
       )}
-      
+
       {/* Ingest Conversation Modal */}
       {showIngestModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Ingest Conversation</h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
