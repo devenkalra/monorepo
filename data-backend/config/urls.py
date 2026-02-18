@@ -53,4 +53,5 @@ urlpatterns = [
     # Main API
     path('api/', include('people.urls')),
     path('api/cad/', include('cad.urls')),
+    path('api/food/', include('food.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { getMediaUrl } from '../utils/apiUrl';
 
 /** Shorten each part of a hierarchical tag to first 3 chars (e.g. people/family → peo/fam) */
@@ -19,17 +19,38 @@ function getTypeLetter(type) {
 /** Renders a single entity row with type overlay and hover/long-press details */
 function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onToggleSelection, onEntityClick }) {
     const [showOverlay, setShowOverlay] = useState(false);
+    const [overlayPosition, setOverlayPosition] = useState({ top: 0, left: 0 });
+    const thumbnailRef = useRef(null);
     const longPressTimer = useRef(null);
     const longPressTriggered = useRef(false);
+    const hideOverlayTimer = useRef(null);
+
+    const updateOverlayPosition = useCallback(() => {
+        if (thumbnailRef.current) {
+            const rect = thumbnailRef.current.getBoundingClientRect();
+            const overlayWidth = 220;
+            const overlayMinHeight = 80;
+            const gap = 8;
+            const left = rect.right + gap;
+            const fitsRight = left + overlayWidth <= window.innerWidth - 8;
+            let top = rect.top;
+            top = Math.max(8, Math.min(top, window.innerHeight - overlayMinHeight - 8));
+            setOverlayPosition({
+                top,
+                left: fitsRight ? left : rect.left - overlayWidth - gap,
+            });
+        }
+    }, []);
 
     const handleLongPressStart = useCallback(() => {
         longPressTriggered.current = false;
         longPressTimer.current = setTimeout(() => {
             longPressTimer.current = null;
             longPressTriggered.current = true;
+            updateOverlayPosition();
             setShowOverlay(true);
         }, 600);
-    }, []);
+    }, [updateOverlayPosition]);
 
     const handleLongPressEnd = useCallback(() => {
         if (longPressTimer.current) {
@@ -57,15 +78,28 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
     }, [selectionMode, showOverlay, entity, onEntityClick, onToggleSelection]);
 
     // Only use hover on devices that support it (desktop); touch devices use long-press only
+    // Delay hide so moving from thumbnail to overlay doesn't flicker
     const handleMouseEnter = useCallback(() => {
+        if (hideOverlayTimer.current) {
+            clearTimeout(hideOverlayTimer.current);
+            hideOverlayTimer.current = null;
+        }
         if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
+            updateOverlayPosition();
             setShowOverlay(true);
         }
-    }, []);
+    }, [updateOverlayPosition]);
     const handleMouseLeave = useCallback(() => {
         if (typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches) {
-            setShowOverlay(false);
+            hideOverlayTimer.current = setTimeout(() => {
+                hideOverlayTimer.current = null;
+                setShowOverlay(false);
+            }, 150);
         }
+    }, []);
+
+    useEffect(() => () => {
+        if (hideOverlayTimer.current) clearTimeout(hideOverlayTimer.current);
     }, []);
 
     const typeLetter = getTypeLetter(entity.type);
@@ -73,8 +107,6 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
     return (
         <li
             onClick={handleClick}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
             onTouchStart={handleLongPressStart}
             onTouchEnd={handleLongPressEnd}
             onTouchMove={handleLongPressEnd}
@@ -93,8 +125,13 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
                         className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                 )}
-                {/* Thumbnail with type badge overlay */}
-                <div className="relative flex-shrink-0">
+                {/* Thumbnail with type badge overlay - hover here shows overlay; click elsewhere goes to detail */}
+                <div
+                    ref={thumbnailRef}
+                    className="relative flex-shrink-0"
+                    onMouseEnter={handleMouseEnter}
+                    onMouseLeave={handleMouseLeave}
+                >
                     {thumbnailUrl ? (
                         <img src={thumbnailUrl} alt="" className="w-12 h-12 rounded object-cover" />
                     ) : (
@@ -138,28 +175,31 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
                     )}
                 </div>
             </div>
-            {/* Hover / long-press overlay */}
+            {/* Hover / long-press overlay - fixed position to the right of icon */}
             {showOverlay && (
                 <div
-                    className="absolute inset-0 z-10 rounded bg-gray-900/80 dark:bg-gray-950/80 text-white p-3 overflow-auto"
+                    className="fixed z-[9999] w-[220px] rounded-lg shadow-xl bg-white dark:bg-gray-950 text-gray-900 dark:text-white p-3 border border-gray-200 dark:border-gray-700"
+                    style={{ top: overlayPosition.top, left: overlayPosition.left }}
+                    onMouseEnter={handleMouseEnter}
+                    onMouseLeave={handleMouseLeave}
                     onClick={(e) => { e.stopPropagation(); setShowOverlay(false); }}
                 >
                     <div className="text-xs space-y-2" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-start">
-                            <span className="font-semibold text-sm">{entity.display || entity.label || 'Untitled'}</span>
+                        <div className="flex justify-between items-start gap-2">
+                            <span className="font-semibold text-sm truncate">{entity.display || entity.label || 'Untitled'}</span>
                             <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); setShowOverlay(false); }}
-                                className="text-gray-400 hover:text-white p-0.5 -m-0.5"
+                                className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white p-0.5 -m-0.5 flex-shrink-0"
                                 aria-label="Close"
                             >
                                 ✕
                             </button>
                         </div>
                         <dl className="space-y-1">
-                            <div><dt className="text-gray-400">Type</dt><dd>{entity.type}</dd></div>
+                            <div><dt className="text-gray-500 dark:text-gray-400">Type</dt><dd>{entity.type}</dd></div>
                             {entity.tags?.length > 0 && (
-                                <div><dt className="text-gray-400">Tags</dt><dd>{entity.tags.join(', ')}</dd></div>
+                                <div><dt className="text-gray-500 dark:text-gray-400">Tags</dt><dd className="break-words">{entity.tags.join(', ')}</dd></div>
                             )}
                         </dl>
                     </div>

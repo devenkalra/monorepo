@@ -1008,6 +1008,15 @@
 
     const isProduction = /^bldrdojo\.com$/i.test(window.location.hostname) || /^www\.bldrdojo\.com$/i.test(window.location.hostname);
 
+    function getRedirectUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get('next');
+        if (next && (next.startsWith('/people-app') || next.startsWith('/cad-app') || next.startsWith('/food-app'))) {
+            return next.startsWith('/') ? next : '/' + next;
+        }
+        return '/people-app/';
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
         updateThemeIcons();
         if (isProduction) {
@@ -1019,7 +1028,7 @@
         const userStr = localStorage.getItem('current_user');
         if (accessToken && userStr) {
             currentUser = JSON.parse(userStr);
-            window.location.href = '/people-app/';
+            window.location.href = getRedirectUrl();
         }
     });
 
@@ -1098,7 +1107,7 @@
                 localStorage.setItem('current_user', JSON.stringify(currentUser));
                 showMessage('Welcome! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = '/people-app/';
+                    window.location.href = getRedirectUrl();
                 }, 500);
             } else {
                 showMessage(data.non_field_errors?.[0] || data.detail || 'Login failed', 'error');
@@ -1156,7 +1165,7 @@
                 localStorage.setItem('current_user', JSON.stringify(currentUser));
                 showMessage('Account created! Redirecting...', 'success');
                 setTimeout(() => {
-                    window.location.href = '/people-app/';
+                    window.location.href = getRedirectUrl();
                 }, 500);
             } else {
                 const errs = [];

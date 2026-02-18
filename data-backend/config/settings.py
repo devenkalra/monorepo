@@ -34,7 +34,7 @@ SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-4!!v@8jh2)275w
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.environ.get('DJANGO_ALLOWED_HOSTS') else ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.environ.get('DJANGO_ALLOWED_HOSTS') else ['localhost', '192.168.4.200', '127.0.0.1']
 
 # CSRF trusted origins for production
 csrf_origins_env = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
@@ -87,6 +87,7 @@ INSTALLED_APPS = [
     # Apps
     'people.apps.PeopleConfig',
     'cad.apps.CadConfig',
+    'food.apps.FoodConfig',
 ]
 
 SITE_ID = 1

@@ -4,6 +4,9 @@
 #
 # This ensures frontend build context includes people-frontend and cad-frontend.
 
+# Use same project name as data-backend so we reuse existing volumes/network
+name: data-backend
+
 services:
   db:
     extends:
@@ -22,27 +25,120 @@ services:
       file: data-backend/docker-compose.local.yml
       service: neo4j
   backend:
-    extends:
-      file: data-backend/docker-compose.local.yml
-      service: backend
-    env_file:
-      - data-backend/.env  # Explicit path so GOOGLE_* vars load when run from monorepo root
     build:
       context: ./data-backend
       dockerfile: Dockerfile
+    container_name: bldrdojo-local-backend
+    env_file:
+      - data-backend/.env
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data-backend:/app
+      - static_volume_local:/app/staticfiles
+      - media_volume_local:/app/media
+      - cad_render_cache_local:/app/cad/render_cache
+      - cad_textures_local:/app/cad/textures
+      - cad_env_local:/app/cad/env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DJANGO_DEBUG=True
+      - DJANGO_SECRET_KEY=local-dev-secret-key-change-in-production
+      - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,bldrdojo.com,www.bldrdojo.com,192.168.4.200
+      - POSTGRES_DB=entitydb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=dbpassword
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://:localredispass@redis:6379/0
+      - REDIS_PASSWORD=localredispass
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=localmeilikey
+      - MEILISEARCH_LOCAL_PORT=7701
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=localneo4jpass
+      - VECTOR_SERVICE_URL=http://vector-service:5000
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176
+      - GOOGLE_OAUTH_CALLBACK_URL=http://localhost/people-app/auth/google/callback
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: >
+      sh -c "
+        python manage.py migrate &&
+        python manage.py collectstatic --noinput &&
+        python manage.py runserver 0.0.0.0:8000
+      "
   celery-worker:
-    extends:
-      file: data-backend/docker-compose.local.yml
-      service: celery-worker
-  frontend:
-    extends:
-      file: data-backend/docker-compose.local.yml
-      service: frontend
     build:
-      context: .  # Monorepo root - has people-frontend, cad-frontend, frontend
+      context: ./data-backend
+      dockerfile: Dockerfile
+    container_name: bldrdojo-local-celery-worker
+    restart: unless-stopped
+    volumes:
+      - ./data-backend:/app
+      - media_volume_local:/app/media
+      - cad_render_cache_local:/app/cad/render_cache
+      - cad_textures_local:/app/cad/textures
+      - cad_env_local:/app/cad/env
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DJANGO_DEBUG=True
+      - POSTGRES_DB=entitydb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=dbpassword
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://:localredispass@redis:6379/0
+      - MEILISEARCH_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=localmeilikey
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=localneo4jpass
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - backend-network
+    command: celery -A config worker --loglevel=info --concurrency=2
+  frontend:
+    build:
+      context: .
       dockerfile: frontend/Dockerfile
       args:
         BUILD_ENV: local
+    container_name: bldrdojo-local-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - static_volume_local:/app/staticfiles:ro
+      - media_volume_local:/app/media
+    depends_on:
+      - backend
+    networks:
+      - backend-network
 
 volumes:
   postgres_data_local:

@@ -17,13 +17,21 @@ RUN cd cad-frontend && npm ci
 COPY cad-frontend/ ./cad-frontend/
 RUN cd cad-frontend && npm run build
 
-# Combine outputs: people at /people-app/, cad at /cad-app/
+# Build food-frontend
+COPY food-frontend/package*.json ./food-frontend/
+RUN cd food-frontend && npm ci
+COPY food-frontend/ ./food-frontend/
+RUN cd food-frontend && npm run build
+
+# Combine outputs: people at /people-app/, cad at /cad-app/, food at /food-app/
 # Root / and /login/ are proxied to Django for auth
-RUN mkdir -p /out/people-app /out/cad-app && \
+RUN mkdir -p /out/people-app /out/cad-app /out/food-app && \
     cp people-frontend/dist/index.html /out/people-app/ && \
     cp -r people-frontend/dist/assets /out/people-app/ 2>/dev/null || true && \
     cp cad-frontend/dist/index.html /out/cad-app/ && \
-    cp -r cad-frontend/dist/assets /out/cad-app/ 2>/dev/null || true
+    cp -r cad-frontend/dist/assets /out/cad-app/ 2>/dev/null || true && \
+    cp food-frontend/dist/index.html /out/food-app/ && \
+    cp -r food-frontend/dist/assets /out/food-app/ 2>/dev/null || true
 
 # Final nginx image
 FROM nginx:alpine

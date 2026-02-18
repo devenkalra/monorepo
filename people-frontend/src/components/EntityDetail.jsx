@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ImageLightbox from './ImageLightbox';
 import RichTextEditor from './RichTextEditor';
@@ -31,6 +31,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const [relationsFilter, setRelationsFilter] = useState('');
     const [expandedRelations, setExpandedRelations] = useState({});
     const [geocodeLoading, setGeocodeLoading] = useState(null); // { idx, type: 'forward'|'reverse' }
+    const [isDraggingPhotos, setIsDraggingPhotos] = useState(false);
+    const [isDraggingAttachments, setIsDraggingAttachments] = useState(false);
 
     useEffect(() => {
         if (entity && isVisible) {
@@ -190,6 +192,47 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         const files = Array.from(e.target.files);
         setNewAttachments(prev => [...prev, ...files]);
     };
+
+    const addFilesFromDrop = useCallback((e, addFiles, filter = () => true) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.files?.length) {
+            const files = Array.from(e.dataTransfer.files).filter(filter);
+            if (files.length) addFiles((prev) => [...prev, ...files]);
+        } else if (e.dataTransfer.items) {
+            for (let i = 0; i < e.dataTransfer.items.length; i++) {
+                const item = e.dataTransfer.items[i];
+                if (item.kind === 'file') {
+                    const file = item.getAsFile();
+                    if (file && filter(file)) addFiles((prev) => [...prev, file]);
+                } else if (item.kind === 'string' && item.type === 'text/uri-list') {
+                    item.getAsString((url) => {
+                        fetch(url, { mode: 'cors' })
+                            .then((r) => r.blob())
+                            .then((blob) => {
+                                const ext = (blob.type || '').split('/')[1] || 'png';
+                                const file = new File([blob], `image.${ext}`, { type: blob.type || 'image/png' });
+                                if (filter(file)) addFiles((prev) => [...prev, file]);
+                            })
+                            .catch(() => {});
+                    });
+                    break;
+                }
+            }
+        }
+    }, []);
+
+    const handlePhotoDrop = useCallback((e) => {
+        setIsDraggingPhotos(false);
+        if (!isEditing) return;
+        addFilesFromDrop(e, setNewPhotos, (f) => f.type?.startsWith('image/'));
+    }, [isEditing, addFilesFromDrop]);
+
+    const handleAttachmentDrop = useCallback((e) => {
+        setIsDraggingAttachments(false);
+        if (!isEditing) return;
+        addFilesFromDrop(e, setNewAttachments);
+    }, [isEditing, addFilesFromDrop]);
 
     const handleDeletePhoto = (photo) => {
         setDeletedPhotos(prev => [...prev, photo]);
@@ -1414,7 +1457,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
 
                     {/* Photos */}
                     {(displayEntity.photos?.length > 0 || newPhotos.length > 0 || isEditing) && (
-                        <section>
+                        <section
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (isEditing) setIsDraggingPhotos(true); }}
+                            onDragLeave={(e) => { e.preventDefault(); if (!e.currentTarget.contains(e.relatedTarget)) setIsDraggingPhotos(false); }}
+                            onDrop={handlePhotoDrop}
+                            className={isDraggingPhotos ? 'rounded-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 p-2 -m-2' : ''}
+                        >
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                 Photos
                             </h3>
@@ -1592,9 +1640,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                 </div>
                             )}
 
-                            {/* Add Photos Button */}
+                            {/* Add Photos Button + Drop Zone */}
                             {isEditing && (
-                                <div>
+                                <div className="rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    <p className="mb-2">Drop images here (files or from a webpage)</p>
                                     <label className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">
                                         <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1615,7 +1664,12 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
 
                     {/* Attachments */}
                     {(displayEntity.attachments?.length > 0 || newAttachments.length > 0 || isEditing) && (
-                        <section>
+                        <section
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (isEditing) setIsDraggingAttachments(true); }}
+                            onDragLeave={(e) => { e.preventDefault(); if (!e.currentTarget.contains(e.relatedTarget)) setIsDraggingAttachments(false); }}
+                            onDrop={handleAttachmentDrop}
+                            className={isDraggingAttachments ? 'rounded-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 p-2 -m-2' : ''}
+                        >
                             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
                                 Attachments
                             </h3>
@@ -1821,9 +1875,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                 </div>
                             )}
 
-                            {/* Add Attachments Button */}
+                            {/* Add Attachments Button + Drop Zone */}
                             {isEditing && (
-                                <div>
+                                <div className="rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    <p className="mb-2">Drop files here (files or from a webpage)</p>
                                     <label className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">
                                         <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />

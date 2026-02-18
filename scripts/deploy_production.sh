@@ -13,6 +13,7 @@
 #   frontend/
 #   people-frontend/
 #   cad-frontend/
+#   food-frontend/
 #   docker-compose.production.yml
 
 set -e
@@ -80,6 +81,7 @@ SYNC_PATHS=(
     "data-backend/config"
     "data-backend/people"
     "data-backend/cad"
+    "data-backend/food"
     "data-backend/static"
     "data-backend/requirements.txt"
     "data-backend/Dockerfile"
@@ -88,6 +90,7 @@ SYNC_PATHS=(
     "frontend"
     "people-frontend"
     "cad-frontend"
+    "food-frontend"
     "docker-compose.production.yml"
     "docker-compose.staging.yml"
     "scripts"
@@ -278,7 +281,7 @@ fi
 echo ""
 print_info "Building Docker images..."
 cd "$DEPLOY_DIR"
-docker compose -f "$COMPOSE_FILE" build --no-cache backend frontend
+docker compose -f "$COMPOSE_FILE" build --no-cache backend celery-worker frontend
 
 print_info "Restarting services..."
 docker compose -f "$COMPOSE_FILE" up -d

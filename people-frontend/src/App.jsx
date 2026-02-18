@@ -447,6 +447,8 @@ function App() {
             <a href="/people-app/" className="font-medium text-blue-600 dark:text-blue-400">People</a>
             <span className="text-gray-400">|</span>
             <a href="/cad-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">CAD</a>
+            <span className="text-gray-400">|</span>
+            <a href="/food-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Food</a>
           </nav>
         </div>
         <div className="flex items-center gap-2">

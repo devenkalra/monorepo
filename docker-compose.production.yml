@@ -1,10 +1,9 @@
 # Production deployment - run from monorepo root:
-# celery-worker: add if your data-backend/docker-compose.yml includes it
 #   cd /path/to/monorepo
 #   docker compose -f docker-compose.production.yml up -d
 #
 # Requires: data-backend/.env, data-backend/ssl/, data-backend/backups/
-# Build context: monorepo root (people-frontend, cad-frontend, frontend)
+# Build context: monorepo root (people-frontend, cad-frontend, food-frontend, frontend)
 
 services:
   db:
@@ -29,6 +28,15 @@ services:
       service: backend
     env_file:
       - data-backend/.env  # Ensures GOOGLE_* etc. load when run from prod root
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile
+  celery-worker:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: celery-worker
+    env_file:
+      - data-backend/.env
     build:
       context: ./data-backend
       dockerfile: Dockerfile

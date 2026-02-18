@@ -407,6 +407,13 @@ function App() {
             >
               CAD
             </Link>
+            <span className="text-gray-400">|</span>
+            <a
+              href="/food-app/"
+              className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+            >
+              Food
+            </a>
           </nav>
         </div>
         <div className="flex items-center gap-2">

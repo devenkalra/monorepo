@@ -4,8 +4,10 @@
   "scripts": {
     "dev:people": "cd people-frontend && npm run dev",
     "dev:cad": "cd cad-frontend && npm run dev",
+    "dev:food": "cd food-frontend && npm run dev",
     "build:people": "cd people-frontend && npm run build",
     "build:cad": "cd cad-frontend && npm run build",
-    "build:all": "npm run build:people && npm run build:cad"
+    "build:food": "cd food-frontend && npm run build",
+    "build:all": "npm run build:people && npm run build:cad && npm run build:food"
   }
 }
