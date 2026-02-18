@@ -293,6 +293,8 @@ export default function CadApp() {
           <a href="/people-app/" className="text-sm font-medium text-gray-500 dark:text-[#8b949e] hover:text-gray-900 dark:hover:text-[#e6edf3]">People</a>
           <span className="text-gray-300 dark:text-[#30363d]">|</span>
           <span className="text-sm font-semibold text-blue-600 dark:text-[#58a6ff]">CAD</span>
+          <span className="text-gray-300 dark:text-[#30363d]">|</span>
+          <a href="/food-app/" className="text-sm font-medium text-gray-500 dark:text-[#8b949e] hover:text-gray-900 dark:hover:text-[#e6edf3]">Food</a>
         </nav>
         <div className="flex items-center gap-2">
           <ThemeToggle />

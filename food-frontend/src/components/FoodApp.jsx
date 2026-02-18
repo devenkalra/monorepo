@@ -34,6 +34,16 @@ export default function FoodApp() {
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Food</h1>
         <nav className="flex items-center gap-2 text-sm">
+          <a href="/people-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
+            People
+          </a>
+          <span className="text-gray-400">|</span>
+          <a href="/cad-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
+            CAD
+          </a>
+          <span className="text-gray-400">|</span>
+          <span className="font-medium text-amber-600 dark:text-amber-400">Food</span>
+          <span className="text-gray-400">|</span>
           <Link
             to="/"
             className={`font-medium ${location.pathname === '/' ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
