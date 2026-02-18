@@ -17,7 +17,7 @@ from .permissions import IsFoodSpotOwner, IsFoodOwner
 class FoodSpotViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsFoodSpotOwner]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['name', 'location', 'description', 'tags']
+    search_fields = ['name', 'description', 'tags']
     ordering_fields = ['name', 'created_at', 'modified_at']
     ordering = ['-modified_at']
 

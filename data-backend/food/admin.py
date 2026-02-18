@@ -6,7 +6,17 @@ from .models import FoodSpot, Food, Media, Review
 
 @admin.register(FoodSpot)
 class FoodSpotAdmin(admin.ModelAdmin):
-    list_display = ['name', 'location', 'added_by', 'created_at']
+    list_display = ['name', 'locations_summary', 'added_by', 'created_at']
+
+    @admin.display(description='Locations')
+    def locations_summary(self, obj):
+        if not obj.locations:
+            return '-'
+        parts = [obj.locations[0].get('street'), obj.locations[0].get('city'), obj.locations[0].get('state')]
+        addr = ', '.join(p for p in parts if p)
+        if len(obj.locations) > 1:
+            addr += f' (+{len(obj.locations) - 1})'
+        return addr or '-'
 
 
 @admin.register(Food)

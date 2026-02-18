@@ -29,7 +29,7 @@ class FoodSpotListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FoodSpot
-        fields = ['id', 'name', 'location', 'description', 'tags', 'photos', 'attachments', 'urls',
+        fields = ['id', 'name', 'locations', 'description', 'tags', 'photos', 'attachments', 'urls',
                   'added_by', 'added_by_username', 'food_count', 'foods', 'created_at', 'modified_at']
 
     def get_food_count(self, obj):
@@ -49,7 +49,7 @@ class FoodSpotDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = FoodSpot
-        fields = ['id', 'name', 'location', 'description', 'tags', 'photos', 'attachments', 'urls',
+        fields = ['id', 'name', 'locations', 'description', 'tags', 'photos', 'attachments', 'urls',
                   'added_by', 'added_by_username', 'foods', 'media', 'reviews', 'created_at', 'modified_at']
 
     def get_foods(self, obj):
@@ -60,7 +60,7 @@ class FoodSpotDetailSerializer(serializers.ModelSerializer):
 class FoodSpotWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = FoodSpot
-        fields = ['id', 'name', 'location', 'description', 'tags', 'photos', 'attachments', 'urls',
+        fields = ['id', 'name', 'locations', 'description', 'tags', 'photos', 'attachments', 'urls',
                   'created_at', 'modified_at']
         read_only_fields = ['id', 'created_at', 'modified_at']
 

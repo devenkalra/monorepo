@@ -9,7 +9,8 @@ class FoodSpot(models.Model):
 
     added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_spots')
     name = models.CharField(max_length=255)
-    location = models.CharField(max_length=500, blank=True)
+    # Each location: {street, city, state, country, postal_code, phone}
+    locations = models.JSONField(default=list, blank=True, null=True)
     description = models.TextField(blank=True)
     tags = models.JSONField(default=list, blank=True, null=True)  # Single-level tags, e.g. ["vegan", "breakfast"]
     photos = models.JSONField(default=list, blank=True, null=True)  # Same scheme as people: list of {url, thumbnail_url} or url strings

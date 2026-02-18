@@ -57,8 +57,24 @@ export default function FoodSpotDetail({ apiBase, user }) {
           </Link>
         )}
       </div>
-      {spot.location && (
-        <p className="text-gray-600 dark:text-gray-400 mb-4">{spot.location}</p>
+      {spot.locations && spot.locations.length > 0 && (
+        <div className="mb-4 space-y-3">
+          <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Locations</h3>
+          {spot.locations.map((loc, idx) => {
+            const parts = [loc.street, loc.city, loc.state, loc.country, loc.postal_code].filter(Boolean);
+            const addr = parts.join(', ');
+            return (
+              <div key={idx} className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
+                {addr && <p className="text-gray-700 dark:text-gray-300">{addr}</p>}
+                {loc.phone && (
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                    <a href={`tel:${loc.phone}`} className="hover:underline">{loc.phone}</a>
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
       {spot.tags && spot.tags.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-4">

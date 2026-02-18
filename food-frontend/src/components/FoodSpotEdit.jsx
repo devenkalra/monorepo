@@ -10,7 +10,7 @@ export default function FoodSpotEdit({ apiBase }) {
   const id = idParam && idParam !== 'create' ? idParam : null;
   const navigate = useNavigate();
   const [name, setName] = useState('');
-  const [location, setLocation] = useState('');
+  const [locations, setLocations] = useState([{ street: '', city: '', state: '', country: '', postal_code: '', phone: '' }]);
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState([]);
   const [photos, setPhotos] = useState([]);
@@ -25,7 +25,16 @@ export default function FoodSpotEdit({ apiBase }) {
         const res = await api.fetch(`${apiBase}/spots/${id}/`);
         const data = await res.json();
         setName(data.name || '');
-        setLocation(data.location || '');
+        setLocations(Array.isArray(data.locations) && data.locations.length > 0
+          ? data.locations.map((l) => ({
+              street: l.street || '',
+              city: l.city || '',
+              state: l.state || '',
+              country: l.country || '',
+              postal_code: l.postal_code || '',
+              phone: l.phone || '',
+            }))
+          : [{ street: '', city: '', state: '', country: '', postal_code: '', phone: '' }]);
         setDescription(data.description || '');
         setTags(data.tags || []);
         setPhotos(data.photos || []);
@@ -42,7 +51,8 @@ export default function FoodSpotEdit({ apiBase }) {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { name, location, description, tags, photos, urls };
+      const cleaned = locations.filter((l) => l.street || l.city || l.state || l.country || l.postal_code || l.phone);
+      const body = { name, locations: cleaned, description, tags, photos, urls };
       if (id) {
         await api.fetch(`${apiBase}/spots/${id}/`, {
           method: 'PATCH',
@@ -91,13 +101,100 @@ export default function FoodSpotEdit({ apiBase }) {
           />
         </div>
         <div>
-          <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Location</label>
-          <input
-            type="text"
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-          />
+          <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">Locations</label>
+          <div className="space-y-4">
+            {locations.map((loc, idx) => (
+              <div key={idx} className="p-4 rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 space-y-2">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Location {idx + 1}</span>
+                  {locations.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setLocations((prev) => prev.filter((_, i) => i !== idx))}
+                      className="text-sm text-red-600 dark:text-red-400 hover:underline"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    placeholder="Street"
+                    value={loc.street}
+                    onChange={(e) => {
+                      const next = [...locations];
+                      next[idx] = { ...next[idx], street: e.target.value };
+                      setLocations(next);
+                    }}
+                    className="sm:col-span-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="City"
+                    value={loc.city}
+                    onChange={(e) => {
+                      const next = [...locations];
+                      next[idx] = { ...next[idx], city: e.target.value };
+                      setLocations(next);
+                    }}
+                    className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="State"
+                    value={loc.state}
+                    onChange={(e) => {
+                      const next = [...locations];
+                      next[idx] = { ...next[idx], state: e.target.value };
+                      setLocations(next);
+                    }}
+                    className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Country"
+                    value={loc.country}
+                    onChange={(e) => {
+                      const next = [...locations];
+                      next[idx] = { ...next[idx], country: e.target.value };
+                      setLocations(next);
+                    }}
+                    className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Postal Code"
+                    value={loc.postal_code}
+                    onChange={(e) => {
+                      const next = [...locations];
+                      next[idx] = { ...next[idx], postal_code: e.target.value };
+                      setLocations(next);
+                    }}
+                    className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  />
+                  <input
+                    type="tel"
+                    placeholder="Phone"
+                    value={loc.phone}
+                    onChange={(e) => {
+                      const next = [...locations];
+                      next[idx] = { ...next[idx], phone: e.target.value };
+                      setLocations(next);
+                    }}
+                    className="sm:col-span-2 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
+                  />
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setLocations((prev) => [...prev, { street: '', city: '', state: '', country: '', postal_code: '', phone: '' }])}
+              className="text-sm text-amber-600 dark:text-amber-400 hover:underline"
+            >
+              + Add location
+            </button>
+          </div>
         </div>
         <div>
           <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Tags</label>

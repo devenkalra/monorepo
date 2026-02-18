@@ -65,8 +65,13 @@ export default function FoodSpotsList({ apiBase }) {
               >
                 <div>
                   <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">{spot.name}</h2>
-                  {spot.location && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400">{spot.location}</p>
+                  {spot.locations && spot.locations.length > 0 && (
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {spot.locations.map((loc) => {
+                        const parts = [loc.street, loc.city, loc.state].filter(Boolean);
+                        return parts.join(', ');
+                      }).filter(Boolean).join(' • ')}
+                    </p>
                   )}
                   {spot.tags && spot.tags.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
