@@ -16,6 +16,7 @@ import SpotListEdit from './SpotListEdit';
 import FoodListsList from './FoodListsList';
 import FoodListDetail from './FoodListDetail';
 import FoodListEdit from './FoodListEdit';
+import HelpModal from './HelpModal';
 import api, { ensureCsrfCookie, AUTH_EXPIRED_EVENT } from '../services/api';
 
 const API_BASE = '/api/food';
@@ -24,6 +25,7 @@ export default function FoodApp() {
   const { user } = useAuth();
   const location = useLocation();
   const [showSessionExpiredModal, setShowSessionExpiredModal] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   useEffect(() => {
     ensureCsrfCookie();
@@ -36,59 +38,63 @@ export default function FoodApp() {
   }, []);
 
   const header = (
-    <header className="flex items-center justify-between gap-3 mb-4 p-4 border-b border-gray-200 dark:border-gray-700">
-      <div className="flex items-center gap-4">
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Food</h1>
-        <nav className="flex items-center gap-2 text-sm">
-          <a href="/people-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
-            People
-          </a>
-          <span className="text-gray-400">|</span>
-          <a href="/cad-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
-            CAD
-          </a>
-          <span className="text-gray-400">|</span>
-          <span className="font-medium text-amber-600 dark:text-amber-400">Food</span>
-          <span className="text-gray-400">|</span>
-          <Link
-            to="/"
-            className={`font-medium ${location.pathname === '/' ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
-          >
-            Spots
-          </Link>
-          <span className="text-gray-400">|</span>
-          <Link
-            to="/foods"
-            className={`font-medium ${location.pathname.startsWith('/foods') && !location.pathname.startsWith('/food-lists') ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
-          >
-            Foods
-          </Link>
-          <span className="text-gray-400">|</span>
-          <Link
-            to="/spot-lists"
-            className={`font-medium ${location.pathname.startsWith('/spot-lists') ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
-          >
-            Spot Lists
-          </Link>
-          <span className="text-gray-400">|</span>
-          <Link
-            to="/food-lists"
-            className={`font-medium ${location.pathname.startsWith('/food-lists') ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
-          >
-            Food Lists
-          </Link>
-        </nav>
+    <header className="mb-4 border-b border-gray-200 dark:border-gray-700">
+      <div className="flex items-center justify-between gap-3 p-4">
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Food</h1>
+          <nav className="flex items-center gap-2 text-sm">
+            <a href="/people-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
+              People
+            </a>
+            <span className="text-gray-400">|</span>
+            <a href="/cad-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">
+              CAD
+            </a>
+            <span className="text-gray-400">|</span>
+            <button onClick={() => setShowHelp(true)} className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Help</button>
+          </nav>
+        </div>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <FoodUserMenu />
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <ThemeToggle />
-        <FoodUserMenu />
-      </div>
+      <nav className="flex items-center gap-2 px-4 pb-3 text-sm text-gray-600 dark:text-gray-400">
+        <Link
+          to="/"
+          className={`font-medium ${location.pathname === '/' ? 'text-amber-600 dark:text-amber-400' : 'hover:text-gray-900 dark:hover:text-gray-100'}`}
+        >
+          Spots
+        </Link>
+        <span className="text-gray-300 dark:text-gray-600">|</span>
+        <Link
+          to="/foods"
+          className={`font-medium ${location.pathname.startsWith('/foods') && !location.pathname.startsWith('/food-lists') ? 'text-amber-600 dark:text-amber-400' : 'hover:text-gray-900 dark:hover:text-gray-100'}`}
+        >
+          Foods
+        </Link>
+        <span className="text-gray-300 dark:text-gray-600">|</span>
+        <Link
+          to="/spot-lists"
+          className={`font-medium ${location.pathname.startsWith('/spot-lists') ? 'text-amber-600 dark:text-amber-400' : 'hover:text-gray-900 dark:hover:text-gray-100'}`}
+        >
+          Spot Lists
+        </Link>
+        <span className="text-gray-300 dark:text-gray-600">|</span>
+        <Link
+          to="/food-lists"
+          className={`font-medium ${location.pathname.startsWith('/food-lists') ? 'text-amber-600 dark:text-amber-400' : 'hover:text-gray-900 dark:hover:text-gray-100'}`}
+        >
+          Food Lists
+        </Link>
+      </nav>
     </header>
   );
 
   return (
     <>
       <ThemeSync />
+      <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
       {showSessionExpiredModal && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-600 min-w-[320px]">

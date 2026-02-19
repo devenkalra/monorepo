@@ -7,6 +7,7 @@ import ThemeSync from './components/ThemeSync';
 import EntityDetail from './components/EntityDetail';
 import UserMenu from './components/UserMenu';
 import ConversationImport from './components/ConversationImport';
+import HelpModal from './components/HelpModal';
 import { useAuth } from './contexts/AuthContext';
 import api from './services/api';
 
@@ -39,6 +40,7 @@ function App() {
   const [isAllSelected, setIsAllSelected] = useState(false);
   const [totalEntityCount, setTotalEntityCount] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Handle URL changes (back/forward navigation)
   useEffect(() => {
@@ -444,11 +446,11 @@ function App() {
             <h1 className="text-xl font-semibold">Entity Browser</h1>
           </div>
           <nav className="flex items-center gap-2 text-sm">
-            <a href="/people-app/" className="font-medium text-blue-600 dark:text-blue-400">People</a>
-            <span className="text-gray-400">|</span>
             <a href="/cad-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">CAD</a>
             <span className="text-gray-400">|</span>
             <a href="/food-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Food</a>
+            <span className="text-gray-400">|</span>
+            <button onClick={() => setShowHelp(true)} className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Help</button>
           </nav>
         </div>
         <div className="flex items-center gap-2">
@@ -463,6 +465,7 @@ function App() {
   return (
     <>
       <ThemeSync />
+      <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
       <div className="mx-auto w-full max-w-5xl p-4 pb-24">
         {mobileHeader}

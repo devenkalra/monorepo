@@ -2,12 +2,12 @@ import React from 'react';
 
 const FOOD_HELP = (
   <div className="space-y-3 text-sm text-gray-600 dark:text-gray-400">
-    <p><strong>Food</strong> — Track restaurants, dishes, and food spots.</p>
+    <p><strong>Food</strong> — Track and share favorite, dishes and food spots.</p>
     <ul className="list-disc list-inside space-y-1 ml-2">
       <li><strong>Spots</strong> — Restaurants, cafes, food trucks. Add locations, photos, tags.</li>
       <li><strong>Foods</strong> — Dishes or items. Link them to spots where they&apos;re served.</li>
-      <li><strong>Spot Lists</strong> — Curate lists like &quot;Best tacos in town&quot; or &quot;Date night spots&quot;.</li>
-      <li><strong>Food Lists</strong> — Lists of dishes to try or favorites.</li>
+      <li><strong>Spot Lists</strong> — Create and share lists like &quot;Best tacos in town&quot; or &quot;Date night spots&quot;.</li>
+      <li><strong>Food Lists</strong> — Create and share bucket list of dishes to try or favorites.</li>
     </ul>
   </div>
 );

@@ -21,6 +21,11 @@ export default defineConfig({
         changeOrigin: true,
         ws: true,
       },
+      '/food-app': {
+        target: 'http://localhost:5175',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   build: {

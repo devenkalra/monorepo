@@ -852,13 +852,17 @@
         <div class="builder-card">
             <h3><span class="icon">🧠</span> The Second Brain</h3>
             <p>Capture, connect, and catalyze your life - the people, places, and thoughts in your life. A personal knowledge graph that grows as you do.</p>
-            <a href="#" onclick="openLearnMore('second-brain'); return false;">Learn More</a>
+            <a href="#" onclick="openLearnMore('second-brain'); return false;">Help</a>
         </div>
         <div class="builder-card">
-            <h3><span class="icon">📐</span> 3D Design with ease!</h3>
-            <p>Design 3D models with parameters. Wood working, 3d printing, just some fun, with confidence. Sketch, measure, and visualize your next project before
-                the first cut.</p>
-            <a href="#" onclick="openLearnMore('cad'); return false;">Learn More</a>
+            <h3><span class="icon">📐</span> 3D Design</h3>
+            <p>Design 3D models with parameters. Wood working, 3d printing, just some fun, with confidence. Sketch, measure, and visualize your next project before the first cut.</p>
+            <a href="#" onclick="openLearnMore('cad'); return false;">Help</a>
+        </div>
+        <div class="builder-card">
+            <h3><span class="icon">🍽️</span> Food</h3>
+            <p>Track restaurants, dishes, and food spots. Build lists of your favorite places and foods. Add photos, locations, and notes.</p>
+            <a href="#" onclick="openLearnMore('food'); return false;">Help</a>
         </div>
     </div>
 </section>
@@ -1200,6 +1204,11 @@
             title: '📐 3D Design (Woodworking CAD)',
             blurb: 'Precision modeling for the physical world. Sketch, measure, and visualize your next timber project before the first cut. Parameterized Python scripts generate 3D geometry—adjust dimensions, preview in real time, and export to STL for CNC or 3D printing.',
             url: '/cad-app/'
+        },
+        'food': {
+            title: '🍽️ Food',
+            blurb: 'Track restaurants, cafes, and food spots. Add foods and link them to where they\'re served. Create spot lists (e.g. "Best tacos in town") and food lists (e.g. "Dishes to try"). Add photos, locations, tags, and notes.',
+            url: '/food-app/'
         }
     };
 
@@ -1207,9 +1216,8 @@
         const data = LEARN_CONTENT[app];
         if (!data) return;
         document.getElementById('learn-title').innerHTML = data.title;
-        document.getElementById('learn-content').innerHTML = '<p>' + data.blurb + '</p>';
-        //document.getElementById('learn-cta').href = data.url;
-        //document.getElementById('learn-cta').textContent = app === 'second-brain' ? 'Open Second Brain →' : 'Open 3D CAD →';
+        const ctaHtml = data.url ? '<p><a href="' + data.url + '" class="learn-cta">Open ' + (app === 'second-brain' ? 'Second Brain' : app === 'cad' ? '3D CAD' : 'Food') + ' →</a></p>' : '';
+        document.getElementById('learn-content').innerHTML = '<p>' + data.blurb + '</p>' + ctaHtml;
         document.getElementById('learn-modal').classList.add('active');
     }
 
