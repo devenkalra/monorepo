@@ -129,40 +129,10 @@ if [ "$BACKUP_TYPE" = "incremental" ]; then
     exit 0
 fi
 
-# 2. Backup Neo4j Database (full only)
-echo -e "${YELLOW}Backing up Neo4j database...${NC}"
-NEO4J_BACKUP_DIR="$BACKUP_DIR/neo4j"
-mkdir -p "$NEO4J_BACKUP_DIR"
+# Neo4j and MeiliSearch are derived from PostgreSQL - no need to backup.
+# Restore rebuilds them via sync_neo4j and reindex_meilisearch.
 
-# Export Neo4j data using cypher-shell
-$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T neo4j cypher-shell -u neo4j -p password \
-    "CALL apoc.export.json.all('/var/lib/neo4j/export/backup.json', {useTypes:true})" \
-    2>/dev/null || echo "Note: APOC export not available, using alternative method"
-
-# Alternative: Export using docker cp
-$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T neo4j neo4j-admin database dump neo4j \
-    --to-path=/var/lib/neo4j/backups 2>/dev/null || true
-
-# Copy backup files from container
-NEO4J_CID=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q neo4j 2>/dev/null)
-[ -n "$NEO4J_CID" ] && docker cp "$NEO4J_CID:/var/lib/neo4j/data" "$NEO4J_BACKUP_DIR/" 2>/dev/null || \
-    echo "Note: Direct data copy not available"
-
-# Create a simple export using cypher
-$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T neo4j cypher-shell -u neo4j -p password \
-    "MATCH (n) RETURN n LIMIT 10" > "$NEO4J_BACKUP_DIR/sample_data.txt" 2>/dev/null || true
-
-if [ -d "$NEO4J_BACKUP_DIR/data" ]; then
-    tar -czf "$NEO4J_BACKUP_DIR.tar.gz" -C "$NEO4J_BACKUP_DIR" .
-    rm -rf "$NEO4J_BACKUP_DIR"
-    NEO4J_SIZE=$(du -h "$NEO4J_BACKUP_DIR.tar.gz" | cut -f1)
-    echo -e "${GREEN}✓ Neo4j backup complete${NC} (Size: $NEO4J_SIZE)"
-else
-    echo -e "${YELLOW}⚠ Neo4j backup partial - data directory not accessible${NC}"
-fi
-echo ""
-
-# 3. Backup Media Files
+# 2. Backup Media Files
 echo -e "${YELLOW}Backing up media files...${NC}"
 MEDIA_DIR="$PROJECT_DIR/media"
 if [ -d "$MEDIA_DIR" ]; then
@@ -175,63 +145,15 @@ else
 fi
 echo ""
 
-# 4. Backup MeiliSearch Data
-echo -e "${YELLOW}Backing up MeiliSearch data...${NC}"
-MEILI_BACKUP_DIR="$BACKUP_DIR/meilisearch"
-mkdir -p "$MEILI_BACKUP_DIR"
-
-# Create MeiliSearch dump via API
-MEILI_URL="http://localhost:7701"
-MEILI_KEY=$(grep MEILI_MASTER_KEY "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "masterKey")
-
-# Trigger dump creation
-DUMP_RESPONSE=$(curl -s -X POST "$MEILI_URL/dumps" \
-    -H "Authorization: Bearer $MEILI_KEY" 2>/dev/null || echo "{}")
-
-if echo "$DUMP_RESPONSE" | grep -q "taskUid"; then
-    TASK_UID=$(echo "$DUMP_RESPONSE" | grep -o '"taskUid":[0-9]*' | cut -d: -f2)
-    echo "Waiting for MeiliSearch dump to complete (Task: $TASK_UID)..."
-    
-    # Wait for dump to complete (max 60 seconds)
-    for i in {1..60}; do
-        TASK_STATUS=$(curl -s "$MEILI_URL/tasks/$TASK_UID" \
-            -H "Authorization: Bearer $MEILI_KEY" 2>/dev/null | grep -o '"status":"[^"]*"' | cut -d'"' -f4)
-        
-        if [ "$TASK_STATUS" = "succeeded" ]; then
-            echo -e "${GREEN}✓ MeiliSearch dump created${NC}"
-            break
-        elif [ "$TASK_STATUS" = "failed" ]; then
-            echo -e "${YELLOW}⚠ MeiliSearch dump failed${NC}"
-            break
-        fi
-        sleep 1
-    done
-    
-    # Copy dump files from container
-    MEILI_CID=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q meilisearch 2>/dev/null)
-    if [ -n "$MEILI_CID" ]; then
-        docker cp "$MEILI_CID:/meili_data/dumps" "$MEILI_BACKUP_DIR/" 2>/dev/null || echo -e "${YELLOW}⚠ Could not copy MeiliSearch dumps${NC}"
-    fi
-    
-    if [ -d "$MEILI_BACKUP_DIR/dumps" ]; then
-        tar -czf "$MEILI_BACKUP_DIR.tar.gz" -C "$MEILI_BACKUP_DIR" dumps/
-        rm -rf "$MEILI_BACKUP_DIR/dumps"
-        MEILI_SIZE=$(du -h "$MEILI_BACKUP_DIR.tar.gz" | cut -f1)
-        echo -e "${GREEN}✓ MeiliSearch backup complete${NC} (Size: $MEILI_SIZE)"
-    fi
-else
-    echo -e "${YELLOW}⚠ MeiliSearch backup skipped (API not accessible)${NC}"
-fi
-echo ""
-
-# 5. Backup Configuration Files
+# 3. Backup Configuration Files
 echo -e "${YELLOW}Backing up configuration files...${NC}"
 CONFIG_DIR="$BACKUP_DIR/config"
 mkdir -p "$CONFIG_DIR"
 
 # Copy important config files (excluding secrets)
 [ -f "$PROJECT_DIR/.env.example" ] && cp "$PROJECT_DIR/.env.example" "$CONFIG_DIR/"
-[ -f "$PROJECT_DIR/docker-compose.local.yml" ] && cp "$PROJECT_DIR/docker-compose.local.yml" "$CONFIG_DIR/"
+# Save the compose file actually in use (production or local)
+[ -f "$COMPOSE_FILE" ] && cp "$COMPOSE_FILE" "$CONFIG_DIR/$(basename "$COMPOSE_FILE")"
 [ -f "$PROJECT_DIR/config/settings.py" ] && cp "$PROJECT_DIR/config/settings.py" "$CONFIG_DIR/"
 [ -f "$PROJECT_DIR/requirements.txt" ] && cp "$PROJECT_DIR/requirements.txt" "$CONFIG_DIR/"
 
@@ -243,7 +165,7 @@ fi
 echo -e "${GREEN}✓ Configuration backup complete${NC}"
 echo ""
 
-# 6. Export data via Django management command
+# 4. Export data via Django (optional, PostgreSQL is source of truth)
 echo -e "${YELLOW}Exporting application data via Django...${NC}"
 $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T backend python manage.py dumpdata \
     --natural-foreign --natural-primary \
@@ -260,7 +182,7 @@ else
 fi
 echo ""
 
-# 7. Create backup manifest
+# 5. Create backup manifest
 echo -e "${YELLOW}Creating backup manifest...${NC}"
 cat > "$BACKUP_DIR/MANIFEST.txt" << EOF
 ========================================
@@ -273,12 +195,12 @@ Backup Information:
   Location: $BACKUP_DIR
 
 Contents:
-  ✓ postgres_dump.sql.gz       - PostgreSQL database dump
+  ✓ postgres_dump.sql.gz       - PostgreSQL database (source of truth)
   ✓ media_files.tar.gz          - All uploaded media files
   ✓ django_data.json.gz         - Django application data export
   ✓ config/                     - Configuration files (sanitized)
-  $([ -f "$NEO4J_BACKUP_DIR.tar.gz" ] && echo "  ✓ neo4j.tar.gz                - Neo4j graph database" || echo "  ⚠ neo4j backup incomplete")
-  $([ -f "$MEILI_BACKUP_DIR.tar.gz" ] && echo "  ✓ meilisearch.tar.gz          - MeiliSearch index data" || echo "  ⚠ meilisearch backup skipped")
+
+Note: Neo4j and MeiliSearch are derived from PostgreSQL and are rebuilt on restore.
 
 Backup Sizes:
 $(du -h "$BACKUP_DIR"/* | sed 's/^/  /')
@@ -297,7 +219,22 @@ EOF
 echo -e "${GREEN}✓ Manifest created${NC}"
 echo ""
 
-# 8. Create backup archive (optional)
+# 6. Rsync to Dreamhost (optional - set DREAMHOST_RSYNC_DEST to enable)
+if [ -n "${DREAMHOST_RSYNC_DEST}" ]; then
+    echo -e "${YELLOW}Syncing backup to Dreamhost...${NC}"
+    RSYNC_SSH_KEY="${DREAMHOST_SSH_KEY:-$HOME/.ssh/dreamhost.pem}"
+    KEY_PATH="${RSYNC_SSH_KEY/#\~/$HOME}"
+    if [ -f "$KEY_PATH" ]; then
+        rsync -avP -e "ssh -i $KEY_PATH" "$BACKUP_DIR"/ "$DREAMHOST_RSYNC_DEST$BACKUP_NAME/" && \
+            echo -e "${GREEN}✓ Rsync to Dreamhost complete${NC}" || \
+            echo -e "${YELLOW}⚠ Rsync failed (check DREAMHOST_RSYNC_DEST and SSH key)${NC}"
+    else
+        echo -e "${YELLOW}⚠ Rsync skipped: SSH key not found at $KEY_PATH${NC}"
+    fi
+    echo ""
+fi
+
+# 7. Create backup archive (optional)
 if [ "$CREATE_ARCHIVE" = "true" ]; then
     echo -e "${YELLOW}Creating compressed archive...${NC}"
     ARCHIVE_NAME="$BACKUP_ROOT/${BACKUP_NAME}.tar.gz"

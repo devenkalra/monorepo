@@ -15,8 +15,6 @@
 #   --dry-run          Show what would be restored without doing it
 #   --db-only          Restore only the database
 #   --media-only       Restore only media files
-#   --skip-neo4j       Skip Neo4j restoration
-#   --skip-meilisearch Skip MeiliSearch restoration
 
 set -e
 
@@ -43,8 +41,6 @@ BACKUP_NAME="$1"
 DRY_RUN=false
 DB_ONLY=false
 MEDIA_ONLY=false
-SKIP_NEO4J=false
-SKIP_MEILISEARCH=false
 
 shift || true
 while [[ $# -gt 0 ]]; do
@@ -61,14 +57,6 @@ while [[ $# -gt 0 ]]; do
             MEDIA_ONLY=true
             shift
             ;;
-        --skip-neo4j)
-            SKIP_NEO4J=true
-            shift
-            ;;
-        --skip-meilisearch)
-            SKIP_MEILISEARCH=true
-            shift
-            ;;
         --help|-h)
             echo "Usage: ./scripts/restore.sh <backup-name> [options]"
             echo ""
@@ -76,8 +64,6 @@ while [[ $# -gt 0 ]]; do
             echo "  --dry-run          Show what would be restored without doing it"
             echo "  --db-only          Restore only the database"
             echo "  --media-only       Restore only media files"
-            echo "  --skip-neo4j       Skip Neo4j restoration"
-            echo "  --skip-meilisearch Skip MeiliSearch restoration"
             echo "  -h, --help         Show this help message"
             echo ""
             echo "Examples:"
@@ -193,42 +179,9 @@ if [ "$MEDIA_ONLY" = false ] && [ -f "$BACKUP_DIR/postgres_dump.sql.gz" ]; then
     echo ""
 fi
 
-# 2. Restore Neo4j Database
-if [ "$MEDIA_ONLY" = false ] && [ "$SKIP_NEO4J" = false ] && [ -f "$BACKUP_DIR/neo4j.tar.gz" ]; then
-    echo -e "${YELLOW}Restoring Neo4j database...${NC}"
-    
-    if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY RUN] Would restore neo4j.tar.gz"
-    else
-        # Stop Neo4j
-        $DOCKER_COMPOSE -f "$COMPOSE_FILE" stop neo4j
-        
-        # Extract backup
-        NEO4J_TMP="/tmp/neo4j_restore_$$"
-        mkdir -p "$NEO4J_TMP"
-        tar -xzf "$BACKUP_DIR/neo4j.tar.gz" -C "$NEO4J_TMP"
-        
-        # Copy to container
-        NEO4J_CONTAINER=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q neo4j)
-        if [ -n "$NEO4J_CONTAINER" ]; then
-            docker cp "$NEO4J_TMP/data" "$NEO4J_CONTAINER:/var/lib/neo4j/"
-            echo -e "${GREEN}✓ Neo4j data copied${NC}"
-        fi
-        
-        # Cleanup
-        rm -rf "$NEO4J_TMP"
-        
-        # Restart Neo4j
-        $DOCKER_COMPOSE -f "$COMPOSE_FILE" start neo4j
-        echo "Waiting for Neo4j to start..."
-        sleep 10
-        
-        echo -e "${GREEN}✓ Neo4j database restored${NC}"
-    fi
-    echo ""
-fi
+# Neo4j is derived from PostgreSQL - rebuilt via sync_neo4j (see step 6)
 
-# 3. Restore Media Files
+# 2. Restore Media Files
 if [ "$DB_ONLY" = false ] && [ -f "$BACKUP_DIR/media_files.tar.gz" ]; then
     echo -e "${YELLOW}Restoring media files...${NC}"
     
@@ -254,45 +207,9 @@ if [ "$DB_ONLY" = false ] && [ -f "$BACKUP_DIR/media_files.tar.gz" ]; then
     echo ""
 fi
 
-# 4. Restore MeiliSearch Data
-if [ "$MEDIA_ONLY" = false ] && [ "$SKIP_MEILISEARCH" = false ] && [ -f "$BACKUP_DIR/meilisearch.tar.gz" ]; then
-    echo -e "${YELLOW}Restoring MeiliSearch data...${NC}"
-    
-    if [ "$DRY_RUN" = true ]; then
-        echo "  [DRY RUN] Would restore meilisearch.tar.gz"
-    else
-        # Extract dump
-        MEILI_TMP="/tmp/meili_restore_$$"
-        mkdir -p "$MEILI_TMP"
-        tar -xzf "$BACKUP_DIR/meilisearch.tar.gz" -C "$MEILI_TMP"
-        
-        # Copy to container
-        MEILI_CONTAINER=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q meilisearch)
-        if [ -n "$MEILI_CONTAINER" ] && [ -d "$MEILI_TMP/dumps" ]; then
-            docker cp "$MEILI_TMP/dumps" "$MEILI_CONTAINER:/meili_data/"
-            
-            # Get the latest dump file
-            DUMP_FILE=$(ls -t "$MEILI_TMP/dumps"/*.dump 2>/dev/null | head -1 | xargs basename)
-            
-            if [ -n "$DUMP_FILE" ]; then
-                # Import via API
-                MEILI_URL="http://localhost:7701"
-                MEILI_KEY=$(grep MEILI_MASTER_KEY "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2 || echo "masterKey")
-                
-                curl -X POST "$MEILI_URL/dumps/$DUMP_FILE/restore" \
-                    -H "Authorization: Bearer $MEILI_KEY" 2>/dev/null || true
-                
-                echo -e "${GREEN}✓ MeiliSearch data restored${NC}"
-            fi
-        fi
-        
-        # Cleanup
-        rm -rf "$MEILI_TMP"
-    fi
-    echo ""
-fi
+# MeiliSearch is derived from PostgreSQL - rebuilt via reindex_meilisearch (see step 6)
 
-# 5. Restore Django Data (alternative method)
+# 3. Restore Django Data (alternative method)
 if [ "$MEDIA_ONLY" = false ] && [ -f "$BACKUP_DIR/django_data.json.gz" ]; then
     echo -e "${YELLOW}Django data export available (django_data.json.gz)${NC}"
     echo "  To restore Django data, run:"
@@ -301,17 +218,22 @@ if [ "$MEDIA_ONLY" = false ] && [ -f "$BACKUP_DIR/django_data.json.gz" ]; then
     echo ""
 fi
 
-# 6. Run migrations and reindex
+# 6. Run migrations and rebuild Neo4j + MeiliSearch from PostgreSQL
 if [ "$DRY_RUN" = false ] && [ "$MEDIA_ONLY" = false ]; then
     echo -e "${YELLOW}Running database migrations...${NC}"
     $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T backend python manage.py migrate --noinput 2>/dev/null || \
         echo -e "${YELLOW}⚠ Could not run migrations (run manually if needed)${NC}"
     echo ""
     
-    echo -e "${YELLOW}Reindexing MeiliSearch (clearing index first to avoid duplicates)...${NC}"
+    echo -e "${YELLOW}Rebuilding Neo4j from PostgreSQL...${NC}"
+    $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T backend python manage.py sync_neo4j 2>/dev/null || \
+        echo -e "${YELLOW}⚠ Could not sync Neo4j (run manually: python manage.py sync_neo4j)${NC}"
+    echo ""
+    
+    echo -e "${YELLOW}Rebuilding MeiliSearch from PostgreSQL (clearing first to avoid duplicates)...${NC}"
     $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T backend python manage.py reindex_meilisearch --clear-first 2>/dev/null || \
         echo -e "${YELLOW}⚠ Could not reindex (run manually: python manage.py reindex_meilisearch --clear-first)${NC}"
-    echo -e "${GREEN}✓ Reindexing complete${NC}"
+    echo -e "${GREEN}✓ Neo4j and MeiliSearch rebuilt${NC}"
     echo ""
 fi
 
