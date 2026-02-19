@@ -1,0 +1,97 @@
+# Staging deployment - new version runs alongside production
+# Uses same DB/Redis/etc. as production. Test at https://bldrdojo.com:8443
+#
+# Usage:
+#   ./scripts/deploy_production.sh --staging   # Deploy to staging
+#   ./scripts/deploy_production.sh --promote   # Switch production to new version
+#
+# Staging listens on ports 8080 (HTTP) and 8443 (HTTPS).
+# Add firewall rule if needed: ufw allow 8443/tcp
+
+services:
+  celery-worker:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: celery-worker
+    container_name: bldrdojo-staging-celery-worker
+    env_file:
+      - data-backend/.env
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile
+    volumes:
+      - /var/lib/bldrdojo/media:/app/media
+      - cad_render_cache:/app/cad/render_cache
+      - cad_textures:/app/cad/textures
+      - cad_env:/app/cad/env
+      - ./logs-staging:/app/logs
+    depends_on:
+      - backend
+    networks:
+      - backend-network
+      - staging-network
+    command: celery -A config worker --loglevel=info --concurrency=2
+  backend:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: backend
+    container_name: bldrdojo-staging-backend
+    env_file:
+      - data-backend/.env
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile
+    volumes:
+      - static_volume_staging:/app/staticfiles
+      - /var/lib/bldrdojo/media:/app/media
+      - cad_render_cache:/app/cad/render_cache
+      - cad_textures:/app/cad/textures
+      - cad_env:/app/cad/env
+      - ./logs-staging:/app/logs
+    networks:
+      - backend-network
+      - staging-network
+
+  frontend:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: frontend
+    container_name: bldrdojo-staging-frontend
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        BUILD_ENV: production
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - static_volume_staging:/app/staticfiles:ro
+      - /var/lib/bldrdojo/media:/app/media
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./logs-staging/nginx:/var/log/nginx
+    depends_on:
+      - backend
+    networks:
+      - staging-network
+
+volumes:
+  static_volume_staging:
+    name: bldrdojo-static-staging
+  cad_render_cache:
+    external: true
+    name: bldrdojo-cad-render-cache
+  cad_textures:
+    external: true
+    name: bldrdojo-cad-textures
+  cad_env:
+    external: true
+    name: bldrdojo-cad-env
+
+networks:
+  backend-network:
+    external: true
+    name: bldrdojo-backend-network
+  staging-network:
+    name: bldrdojo-staging-network
+    driver: bridge
