@@ -2,17 +2,21 @@
 #
 # Backup Script for Data Backend Application
 #
-# This script backs up:
-# - PostgreSQL database
-# - Neo4j graph database
-# - Media files (photos, attachments, thumbnails)
-# - MeiliSearch index data
-# - Application configuration
+# Supports full and incremental backups:
+#   --full        (default) Backs up PostgreSQL, Neo4j, Media, MeiliSearch, config
+#   --incremental Backs up PostgreSQL only (faster, for frequent runs)
+#
+# Run full backup weekly, incremental daily. Both produce restorable backups.
+# For catastrophic restore: use the most recent full backup, or an incremental
+# (which contains the complete database snapshot).
 #
 # Usage:
-#   ./scripts/backup.sh [backup-name]
+#   ./scripts/backup.sh [backup-name] [--full|--incremental]
 #
-# If no backup name is provided, uses timestamp.
+# Examples:
+#   ./scripts/backup.sh                    # Full backup with timestamp
+#   ./scripts/backup.sh my_backup --full   # Full backup named my_backup
+#   ./scripts/backup.sh inc_daily --incremental  # Incremental (DB only)
 
 set -e
 
@@ -28,28 +32,68 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKUP_ROOT="${BACKUP_ROOT:-$HOME/backups/data-backend}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_NAME="${1:-backup_$TIMESTAMP}"
-BACKUP_DIR="$BACKUP_ROOT/$BACKUP_NAME"
+COMPOSE_FILE="${COMPOSE_FILE:-$PROJECT_DIR/docker-compose.local.yml}"
+POSTGRES_DB="${POSTGRES_DB:-entitydb}"
 
-# Docker compose file
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.local.yml"
+# Parse arguments
+BACKUP_NAME=""
+BACKUP_TYPE="full"
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --full)
+            BACKUP_TYPE="full"
+            shift
+            ;;
+        --incremental)
+            BACKUP_TYPE="incremental"
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: ./scripts/backup.sh [backup-name] [--full|--incremental]"
+            echo ""
+            echo "  --full        (default) Back up everything: PostgreSQL, Neo4j, Media, MeiliSearch, config"
+            echo "  --incremental Back up PostgreSQL only (faster, run more frequently)"
+            echo ""
+            echo "Examples:"
+            echo "  ./scripts/backup.sh                     # Full backup, auto-named"
+            echo "  ./scripts/backup.sh weekly --full       # Full backup named 'weekly'"
+            echo "  ./scripts/backup.sh daily --incremental # Incremental backup named 'daily'"
+            exit 0
+            ;;
+        -*)
+            echo -e "${RED}Unknown option: $1${NC}"
+            exit 1
+            ;;
+        *)
+            BACKUP_NAME="$1"
+            shift
+            ;;
+    esac
+done
+
+BACKUP_NAME="${BACKUP_NAME:-backup_${BACKUP_TYPE}_$TIMESTAMP}"
+BACKUP_DIR="$BACKUP_ROOT/$BACKUP_NAME"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  Data Backend Backup Script${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "${YELLOW}Backup name:${NC} $BACKUP_NAME"
+echo -e "${YELLOW}Backup type:${NC} $BACKUP_TYPE"
 echo -e "${YELLOW}Backup location:${NC} $BACKUP_DIR"
 echo ""
 
 # Check if docker-compose is running
-if ! docker-compose -f "$COMPOSE_FILE" ps | grep -q "Up"; then
+if ! docker compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up" && \
+   ! docker-compose -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"; then
     echo -e "${RED}Error: Docker containers are not running${NC}"
-    echo -e "${YELLOW}Please start the application first:${NC}"
-    echo -e "  cd $PROJECT_DIR"
-    echo -e "  docker-compose -f docker-compose.local.yml up -d"
+    echo -e "${YELLOW}Please start the application first${NC}"
     exit 1
 fi
+
+# Use docker compose (v2) or docker-compose (v1)
+DOCKER_COMPOSE="docker compose"
+docker compose version &>/dev/null || DOCKER_COMPOSE="docker-compose"
 
 # Create backup directory
 echo -e "${YELLOW}Creating backup directory...${NC}"
@@ -59,43 +103,53 @@ mkdir -p "$BACKUP_DIR"
 cat > "$BACKUP_DIR/backup_metadata.txt" << EOF
 Backup Name: $BACKUP_NAME
 Backup Date: $(date)
-Backup Type: Full
+Backup Type: $BACKUP_TYPE
 Application: Data Backend
 Hostname: $(hostname)
 User: $(whoami)
+Database: $POSTGRES_DB
 EOF
 
 echo -e "${GREEN}✓ Backup directory created${NC}"
 echo ""
 
-# 1. Backup PostgreSQL Database
-echo -e "${YELLOW}Backing up PostgreSQL database...${NC}"
-docker-compose -f "$COMPOSE_FILE" exec -T db pg_dump -U postgres postgres > "$BACKUP_DIR/postgres_dump.sql"
+# 1. Backup PostgreSQL Database (always, for both full and incremental)
+echo -e "${YELLOW}Backing up PostgreSQL database ($POSTGRES_DB)...${NC}"
+$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db pg_dump -U postgres "$POSTGRES_DB" > "$BACKUP_DIR/postgres_dump.sql"
 gzip "$BACKUP_DIR/postgres_dump.sql"
 PG_SIZE=$(du -h "$BACKUP_DIR/postgres_dump.sql.gz" | cut -f1)
 echo -e "${GREEN}✓ PostgreSQL backup complete${NC} (Size: $PG_SIZE)"
 echo ""
 
-# 2. Backup Neo4j Database
+# For incremental, we're done after PostgreSQL
+if [ "$BACKUP_TYPE" = "incremental" ]; then
+    echo -e "${GREEN}Incremental backup complete (PostgreSQL only)${NC}"
+    echo ""
+    echo -e "${BLUE}Note:${NC} For full restore, use a full backup. Incremental contains DB only."
+    exit 0
+fi
+
+# 2. Backup Neo4j Database (full only)
 echo -e "${YELLOW}Backing up Neo4j database...${NC}"
 NEO4J_BACKUP_DIR="$BACKUP_DIR/neo4j"
 mkdir -p "$NEO4J_BACKUP_DIR"
 
 # Export Neo4j data using cypher-shell
-docker-compose -f "$COMPOSE_FILE" exec -T neo4j cypher-shell -u neo4j -p password \
+$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T neo4j cypher-shell -u neo4j -p password \
     "CALL apoc.export.json.all('/var/lib/neo4j/export/backup.json', {useTypes:true})" \
     2>/dev/null || echo "Note: APOC export not available, using alternative method"
 
 # Alternative: Export using docker cp
-docker-compose -f "$COMPOSE_FILE" exec -T neo4j neo4j-admin database dump neo4j \
+$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T neo4j neo4j-admin database dump neo4j \
     --to-path=/var/lib/neo4j/backups 2>/dev/null || true
 
 # Copy backup files from container
-docker cp $(docker-compose -f "$COMPOSE_FILE" ps -q neo4j):/var/lib/neo4j/data "$NEO4J_BACKUP_DIR/" 2>/dev/null || \
+NEO4J_CID=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q neo4j 2>/dev/null)
+[ -n "$NEO4J_CID" ] && docker cp "$NEO4J_CID:/var/lib/neo4j/data" "$NEO4J_BACKUP_DIR/" 2>/dev/null || \
     echo "Note: Direct data copy not available"
 
 # Create a simple export using cypher
-docker-compose -f "$COMPOSE_FILE" exec -T neo4j cypher-shell -u neo4j -p password \
+$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T neo4j cypher-shell -u neo4j -p password \
     "MATCH (n) RETURN n LIMIT 10" > "$NEO4J_BACKUP_DIR/sample_data.txt" 2>/dev/null || true
 
 if [ -d "$NEO4J_BACKUP_DIR/data" ]; then
@@ -154,8 +208,10 @@ if echo "$DUMP_RESPONSE" | grep -q "taskUid"; then
     done
     
     # Copy dump files from container
-    docker cp $(docker-compose -f "$COMPOSE_FILE" ps -q meilisearch):/meili_data/dumps "$MEILI_BACKUP_DIR/" 2>/dev/null || \
-        echo -e "${YELLOW}⚠ Could not copy MeiliSearch dumps${NC}"
+    MEILI_CID=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q meilisearch 2>/dev/null)
+    if [ -n "$MEILI_CID" ]; then
+        docker cp "$MEILI_CID:/meili_data/dumps" "$MEILI_BACKUP_DIR/" 2>/dev/null || echo -e "${YELLOW}⚠ Could not copy MeiliSearch dumps${NC}"
+    fi
     
     if [ -d "$MEILI_BACKUP_DIR/dumps" ]; then
         tar -czf "$MEILI_BACKUP_DIR.tar.gz" -C "$MEILI_BACKUP_DIR" dumps/
@@ -189,7 +245,7 @@ echo ""
 
 # 6. Export data via Django management command
 echo -e "${YELLOW}Exporting application data via Django...${NC}"
-docker-compose -f "$COMPOSE_FILE" exec -T backend python manage.py dumpdata \
+$DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T backend python manage.py dumpdata \
     --natural-foreign --natural-primary \
     --exclude contenttypes --exclude auth.permission \
     --indent 2 > "$BACKUP_DIR/django_data.json" 2>/dev/null || \

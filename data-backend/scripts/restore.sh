@@ -31,7 +31,12 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BACKUP_ROOT="${BACKUP_ROOT:-$HOME/backups/data-backend}"
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.local.yml"
+COMPOSE_FILE="${COMPOSE_FILE:-$PROJECT_DIR/docker-compose.local.yml}"
+POSTGRES_DB="${POSTGRES_DB:-entitydb}"
+
+# Use docker compose (v2) or docker-compose (v1)
+DOCKER_COMPOSE="docker compose"
+docker compose version &>/dev/null || DOCKER_COMPOSE="docker-compose"
 
 # Parse arguments
 BACKUP_NAME="$1"
@@ -145,10 +150,10 @@ if [ "$DRY_RUN" = false ]; then
 fi
 
 # Check if docker-compose is running
-if ! docker-compose -f "$COMPOSE_FILE" ps | grep -q "Up"; then
+if ! $DOCKER_COMPOSE -f "$COMPOSE_FILE" ps 2>/dev/null | grep -q "Up"; then
     echo -e "${YELLOW}Docker containers are not running. Starting them...${NC}"
     if [ "$DRY_RUN" = false ]; then
-        docker-compose -f "$COMPOSE_FILE" up -d
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" up -d
         echo "Waiting for services to be ready..."
         sleep 10
     fi
@@ -158,30 +163,30 @@ fi
 
 # 1. Restore PostgreSQL Database
 if [ "$MEDIA_ONLY" = false ] && [ -f "$BACKUP_DIR/postgres_dump.sql.gz" ]; then
-    echo -e "${YELLOW}Restoring PostgreSQL database...${NC}"
+    echo -e "${YELLOW}Restoring PostgreSQL database ($POSTGRES_DB)...${NC}"
     
     if [ "$DRY_RUN" = true ]; then
         echo "  [DRY RUN] Would restore postgres_dump.sql.gz"
     else
-        # Drop existing connections
-        docker-compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c \
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='postgres' AND pid <> pg_backend_pid();" \
+        # Terminate connections to target database
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db psql -U postgres -c \
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$POSTGRES_DB' AND pid <> pg_backend_pid();" \
             2>/dev/null || true
         
-        # Drop and recreate database
-        docker-compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS postgres_backup;" 2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "CREATE DATABASE postgres_backup;" 2>/dev/null || true
+        # Create temp database for restore
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS ${POSTGRES_DB}_restore;" 2>/dev/null || true
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "CREATE DATABASE ${POSTGRES_DB}_restore;" 2>/dev/null || true
         
         # Restore from backup
         gunzip -c "$BACKUP_DIR/postgres_dump.sql.gz" | \
-            docker-compose -f "$COMPOSE_FILE" exec -T db psql -U postgres postgres_backup
+            $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db psql -U postgres "${POSTGRES_DB}_restore"
         
         # Swap databases
-        docker-compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c \
-            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='postgres' AND pid <> pg_backend_pid();" \
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db psql -U postgres -c \
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$POSTGRES_DB' AND pid <> pg_backend_pid();" \
             2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "DROP DATABASE postgres;" 2>/dev/null || true
-        docker-compose -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "ALTER DATABASE postgres_backup RENAME TO postgres;" 2>/dev/null || true
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "DROP DATABASE IF EXISTS $POSTGRES_DB;" 2>/dev/null || true
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T db psql -U postgres -c "ALTER DATABASE ${POSTGRES_DB}_restore RENAME TO $POSTGRES_DB;" 2>/dev/null || true
         
         echo -e "${GREEN}✓ PostgreSQL database restored${NC}"
     fi
@@ -196,7 +201,7 @@ if [ "$MEDIA_ONLY" = false ] && [ "$SKIP_NEO4J" = false ] && [ -f "$BACKUP_DIR/n
         echo "  [DRY RUN] Would restore neo4j.tar.gz"
     else
         # Stop Neo4j
-        docker-compose -f "$COMPOSE_FILE" stop neo4j
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" stop neo4j
         
         # Extract backup
         NEO4J_TMP="/tmp/neo4j_restore_$$"
@@ -204,7 +209,7 @@ if [ "$MEDIA_ONLY" = false ] && [ "$SKIP_NEO4J" = false ] && [ -f "$BACKUP_DIR/n
         tar -xzf "$BACKUP_DIR/neo4j.tar.gz" -C "$NEO4J_TMP"
         
         # Copy to container
-        NEO4J_CONTAINER=$(docker-compose -f "$COMPOSE_FILE" ps -q neo4j)
+        NEO4J_CONTAINER=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q neo4j)
         if [ -n "$NEO4J_CONTAINER" ]; then
             docker cp "$NEO4J_TMP/data" "$NEO4J_CONTAINER:/var/lib/neo4j/"
             echo -e "${GREEN}✓ Neo4j data copied${NC}"
@@ -214,7 +219,7 @@ if [ "$MEDIA_ONLY" = false ] && [ "$SKIP_NEO4J" = false ] && [ -f "$BACKUP_DIR/n
         rm -rf "$NEO4J_TMP"
         
         # Restart Neo4j
-        docker-compose -f "$COMPOSE_FILE" start neo4j
+        $DOCKER_COMPOSE -f "$COMPOSE_FILE" start neo4j
         echo "Waiting for Neo4j to start..."
         sleep 10
         
@@ -262,7 +267,7 @@ if [ "$MEDIA_ONLY" = false ] && [ "$SKIP_MEILISEARCH" = false ] && [ -f "$BACKUP
         tar -xzf "$BACKUP_DIR/meilisearch.tar.gz" -C "$MEILI_TMP"
         
         # Copy to container
-        MEILI_CONTAINER=$(docker-compose -f "$COMPOSE_FILE" ps -q meilisearch)
+        MEILI_CONTAINER=$($DOCKER_COMPOSE -f "$COMPOSE_FILE" ps -q meilisearch)
         if [ -n "$MEILI_CONTAINER" ] && [ -d "$MEILI_TMP/dumps" ]; then
             docker cp "$MEILI_TMP/dumps" "$MEILI_CONTAINER:/meili_data/"
             
@@ -296,19 +301,16 @@ if [ "$MEDIA_ONLY" = false ] && [ -f "$BACKUP_DIR/django_data.json.gz" ]; then
     echo ""
 fi
 
-# 6. Run migrations and sync
+# 6. Run migrations and reindex
 if [ "$DRY_RUN" = false ] && [ "$MEDIA_ONLY" = false ]; then
     echo -e "${YELLOW}Running database migrations...${NC}"
-    docker-compose -f "$COMPOSE_FILE" exec -T backend python manage.py migrate --noinput 2>/dev/null || \
+    $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T backend python manage.py migrate --noinput 2>/dev/null || \
         echo -e "${YELLOW}⚠ Could not run migrations (run manually if needed)${NC}"
     echo ""
     
-    echo -e "${YELLOW}Reindexing MeiliSearch...${NC}"
-    docker-compose -f "$COMPOSE_FILE" exec -T backend python manage.py shell << 'EOF' 2>/dev/null || true
-from people.sync import sync_all_to_meilisearch
-sync_all_to_meilisearch()
-print("Reindexing complete")
-EOF
+    echo -e "${YELLOW}Reindexing MeiliSearch (clearing index first to avoid duplicates)...${NC}"
+    $DOCKER_COMPOSE -f "$COMPOSE_FILE" exec -T backend python manage.py reindex_meilisearch --clear-first 2>/dev/null || \
+        echo -e "${YELLOW}⚠ Could not reindex (run manually: python manage.py reindex_meilisearch --clear-first)${NC}"
     echo -e "${GREEN}✓ Reindexing complete${NC}"
     echo ""
 fi
