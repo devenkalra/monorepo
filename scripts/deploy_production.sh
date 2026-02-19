@@ -175,7 +175,7 @@ if [[ "$MODE" == "promote" ]]; then
     cd "$PROD_DIR"
     docker compose -f docker-compose.production.yml up -d
     sleep 5
-    docker compose -f docker-compose.production.yml exec -T backend python manage.py migrate --noinput 2>/dev/null || true
+    docker compose -f docker-compose.production.yml exec -T backend python manage.py migrate --noinput
     docker compose -f docker-compose.production.yml exec -T backend python manage.py collectstatic --noinput 2>/dev/null || true
     docker compose -f docker-compose.production.yml exec -T backend python manage.py setup_google_oauth --domain="bldrdojo.com" || true
     echo ""
@@ -288,7 +288,7 @@ docker compose -f "$COMPOSE_FILE" up -d
 
 print_info "Running migrations..."
 sleep 5
-docker compose -f "$COMPOSE_FILE" exec -T backend python manage.py migrate --noinput 2>/dev/null || true
+docker compose -f "$COMPOSE_FILE" exec -T backend python manage.py migrate --noinput
 
 print_info "Collecting static files..."
 docker compose -f "$COMPOSE_FILE" exec -T backend python manage.py collectstatic --noinput 2>/dev/null || true
