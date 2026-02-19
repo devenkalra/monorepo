@@ -9,6 +9,7 @@ export default function FoodDetail({ apiBase, user }) {
   const navigate = useNavigate();
   const [food, setFood] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -32,6 +33,20 @@ export default function FoodDetail({ apiBase, user }) {
 
   const canEdit = user && food.added_by === (user.id ?? user.pk);
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete "${food.name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.fetch(`${apiBase}/foods/${id}/`, { method: 'DELETE' });
+      navigate('/foods');
+    } catch (err) {
+      console.error('Failed to delete', err);
+      alert('Failed to delete.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-4">
@@ -45,12 +60,22 @@ export default function FoodDetail({ apiBase, user }) {
       <div className="flex justify-between items-start mb-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{food.name}</h1>
         {canEdit && (
-          <Link
-            to={`/food/${id}/edit`}
-            className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
-          >
-            Edit
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              to={`/food/${id}/edit`}
+              className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
+            >
+              Edit
+            </Link>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
         )}
       </div>
       {food.alsocalled && (

@@ -11,6 +11,7 @@ export default function FoodSpotDetail({ apiBase, user }) {
   const [loading, setLoading] = useState(true);
   const [descCollapsed, setDescCollapsed] = useState(true);
   const [selectedFoodId, setSelectedFoodId] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -34,6 +35,20 @@ export default function FoodSpotDetail({ apiBase, user }) {
 
   const canEdit = user && spot.added_by === (user.id ?? user.pk);
 
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete "${spot.name}"? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.fetch(`${apiBase}/spots/${id}/`, { method: 'DELETE' });
+      navigate('/');
+    } catch (err) {
+      console.error('Failed to delete', err);
+      alert('Failed to delete.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const selectedFood = spot.foods?.find((f) => f.id === selectedFoodId);
 
   return (
@@ -49,12 +64,22 @@ export default function FoodSpotDetail({ apiBase, user }) {
       <div className="flex justify-between items-start mb-4">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{spot.name}</h1>
         {canEdit && (
-          <Link
-            to={`/spot/${id}/edit`}
-            className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
-          >
-            Edit
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              to={`/spot/${id}/edit`}
+              className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
+            >
+              Edit
+            </Link>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="text-sm font-medium text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </div>
         )}
       </div>
       {spot.locations && spot.locations.length > 0 && (

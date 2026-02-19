@@ -10,6 +10,12 @@ import FoodSpotEdit from './FoodSpotEdit';
 import FoodsList from './FoodsList';
 import FoodDetail from './FoodDetail';
 import FoodEdit from './FoodEdit';
+import SpotListsList from './SpotListsList';
+import SpotListDetail from './SpotListDetail';
+import SpotListEdit from './SpotListEdit';
+import FoodListsList from './FoodListsList';
+import FoodListDetail from './FoodListDetail';
+import FoodListEdit from './FoodListEdit';
 import api, { ensureCsrfCookie, AUTH_EXPIRED_EVENT } from '../services/api';
 
 const API_BASE = '/api/food';
@@ -53,9 +59,23 @@ export default function FoodApp() {
           <span className="text-gray-400">|</span>
           <Link
             to="/foods"
-            className={`font-medium ${location.pathname.startsWith('/foods') ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
+            className={`font-medium ${location.pathname.startsWith('/foods') && !location.pathname.startsWith('/food-lists') ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
           >
             Foods
+          </Link>
+          <span className="text-gray-400">|</span>
+          <Link
+            to="/spot-lists"
+            className={`font-medium ${location.pathname.startsWith('/spot-lists') ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
+          >
+            Spot Lists
+          </Link>
+          <span className="text-gray-400">|</span>
+          <Link
+            to="/food-lists"
+            className={`font-medium ${location.pathname.startsWith('/food-lists') ? 'text-amber-600 dark:text-amber-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
+          >
+            Food Lists
           </Link>
         </nav>
       </div>
@@ -96,10 +116,18 @@ export default function FoodApp() {
             <Route path="/spot/create" element={<FoodSpotEdit apiBase={API_BASE} />} />
             <Route path="/spot/:id" element={<FoodSpotDetail apiBase={API_BASE} user={user} />} />
             <Route path="/spot/:id/edit" element={<FoodSpotEdit apiBase={API_BASE} />} />
+            <Route path="/spot-lists" element={<SpotListsList apiBase={API_BASE} />} />
+            <Route path="/spot-lists/create" element={<SpotListEdit apiBase={API_BASE} />} />
+            <Route path="/spot-lists/:id" element={<SpotListDetail apiBase={API_BASE} />} />
+            <Route path="/spot-lists/:id/edit" element={<SpotListEdit apiBase={API_BASE} />} />
             <Route path="/foods" element={<FoodsList apiBase={API_BASE} />} />
             <Route path="/food/create" element={<FoodEdit apiBase={API_BASE} />} />
             <Route path="/food/:id" element={<FoodDetail apiBase={API_BASE} user={user} />} />
             <Route path="/food/:id/edit" element={<FoodEdit apiBase={API_BASE} />} />
+            <Route path="/food-lists" element={<FoodListsList apiBase={API_BASE} />} />
+            <Route path="/food-lists/create" element={<FoodListEdit apiBase={API_BASE} />} />
+            <Route path="/food-lists/:id" element={<FoodListDetail apiBase={API_BASE} />} />
+            <Route path="/food-lists/:id/edit" element={<FoodListEdit apiBase={API_BASE} />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </div>

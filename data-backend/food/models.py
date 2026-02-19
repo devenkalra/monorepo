@@ -1,5 +1,6 @@
 """Food app models - FoodSpot, Food, Media, Review."""
 
+import uuid
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -7,6 +8,7 @@ from django.contrib.auth.models import User
 class FoodSpot(models.Model):
     """A place that serves food (restaurant, cafe, etc.)."""
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_spots')
     name = models.CharField(max_length=255)
     # Each location: {street, city, state, country, postal_code, phone}
@@ -32,6 +34,7 @@ class FoodSpot(models.Model):
 class Food(models.Model):
     """A food item that can be served at multiple spots."""
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='foods')
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
@@ -57,6 +60,7 @@ class Food(models.Model):
 class Media(models.Model):
     """Photo, video, or YouTube link attached to a FoodSpot or Food."""
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     photo = models.URLField(blank=True)
     video = models.URLField(blank=True)
     youtube_url = models.URLField(blank=True)
@@ -78,9 +82,48 @@ class Media(models.Model):
         return "Media"
 
 
+class FoodSpotList(models.Model):
+    """User-created list of food spots."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_spot_lists')
+    name = models.CharField(max_length=255)
+    spots = models.ManyToManyField(FoodSpot, blank=True, related_name='spot_lists')
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-modified_at']
+        verbose_name = 'Food spot list'
+        verbose_name_plural = 'Food spot lists'
+
+    def __str__(self):
+        return self.name
+
+
+class FoodList(models.Model):
+    """User-created list of foods."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_lists')
+    name = models.CharField(max_length=255)
+    foods = models.ManyToManyField(Food, blank=True, related_name='food_lists')
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-modified_at']
+        verbose_name = 'Food list'
+        verbose_name_plural = 'Food lists'
+
+    def __str__(self):
+        return self.name
+
+
 class Review(models.Model):
     """Review for a FoodSpot or Food."""
 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_reviews')
     rating = models.PositiveSmallIntegerField()
     note = models.TextField(blank=True)

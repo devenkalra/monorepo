@@ -2,7 +2,7 @@
 
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import FoodSpot, Food, Media, Review
+from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review
 
 
 class MediaSerializer(serializers.ModelSerializer):
@@ -99,4 +99,49 @@ class FoodWriteSerializer(serializers.ModelSerializer):
         model = Food
         fields = ['id', 'name', 'description', 'alsocalled', 'tags', 'served_at', 'photos', 'attachments', 'urls',
                   'created_at', 'modified_at']
+        read_only_fields = ['id', 'created_at', 'modified_at']
+
+
+# User-created lists of spots/foods
+class SpotListSerializer(serializers.ModelSerializer):
+    """Serializer for FoodSpotList (user's list of spots)."""
+    spots = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FoodSpotList
+        fields = ['id', 'name', 'spots', 'created_at', 'modified_at']
+        read_only_fields = ['id', 'created_at', 'modified_at']
+
+    def get_spots(self, obj):
+        return [{'id': s.id, 'name': s.name} for s in obj.spots.all().order_by('name')]
+
+
+class SpotListWriteSerializer(serializers.ModelSerializer):
+    spots = serializers.PrimaryKeyRelatedField(many=True, queryset=FoodSpot.objects.all(), required=False)
+
+    class Meta:
+        model = FoodSpotList
+        fields = ['id', 'name', 'spots', 'created_at', 'modified_at']
+        read_only_fields = ['id', 'created_at', 'modified_at']
+
+
+class FoodItemListSerializer(serializers.ModelSerializer):
+    """Serializer for FoodList (user's list of foods)."""
+    foods = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FoodList
+        fields = ['id', 'name', 'foods', 'created_at', 'modified_at']
+        read_only_fields = ['id', 'created_at', 'modified_at']
+
+    def get_foods(self, obj):
+        return [{'id': f.id, 'name': f.name} for f in obj.foods.all().order_by('name')]
+
+
+class FoodItemListWriteSerializer(serializers.ModelSerializer):
+    foods = serializers.PrimaryKeyRelatedField(many=True, queryset=Food.objects.all(), required=False)
+
+    class Meta:
+        model = FoodList
+        fields = ['id', 'name', 'foods', 'created_at', 'modified_at']
         read_only_fields = ['id', 'created_at', 'modified_at']

@@ -5,13 +5,15 @@ from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import FoodSpot, Food, Media, Review
+from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review
 from .serializers import (
     FoodSpotListSerializer, FoodSpotDetailSerializer, FoodSpotWriteSerializer,
     FoodListSerializer, FoodDetailSerializer, FoodWriteSerializer,
+    SpotListSerializer, SpotListWriteSerializer,
+    FoodItemListSerializer, FoodItemListWriteSerializer,
     MediaSerializer, ReviewSerializer,
 )
-from .permissions import IsFoodSpotOwner, IsFoodOwner
+from .permissions import IsFoodSpotOwner, IsFoodOwner, IsFoodSpotListOwner, IsFoodListOwner
 
 
 class FoodSpotViewSet(viewsets.ModelViewSet):
@@ -82,3 +84,33 @@ class ReviewViewSet(viewsets.ModelViewSet):
         return Review.objects.filter(
             Q(food_spot__added_by=user) | Q(food__added_by=user)
         )
+
+
+class FoodSpotListViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsFoodSpotListOwner]
+
+    def get_queryset(self):
+        return FoodSpotList.objects.filter(added_by=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action in ('create', 'update', 'partial_update'):
+            return SpotListWriteSerializer
+        return SpotListSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(added_by=self.request.user)
+
+
+class FoodListViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsFoodListOwner]
+
+    def get_queryset(self):
+        return FoodList.objects.filter(added_by=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action in ('create', 'update', 'partial_update'):
+            return FoodItemListWriteSerializer
+        return FoodItemListSerializer
+
+    def perform_create(self, serializer):
+        serializer.save(added_by=self.request.user)
