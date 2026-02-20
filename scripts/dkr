@@ -1,0 +1,158 @@
+#!/usr/bin/env bash
+# Docker compose wrapper: dkr [options] <command> [command-params...] [services...]
+#
+# Usage:
+#   dkr [-e dev|prod] <command> [params...] [services...]
+#
+# Options:
+#   -e, --env dev|prod    Use dev (docker-compose.local.yml) or prod (docker-compose.production.yml). Default: dev
+#   -f, --file PATH       Override compose file
+#   -n, --dry-run         Print command without executing
+#
+# Commands:
+#   log, logs [-l N] [-f] [services...]   View logs. -l N = tail N lines, -f = follow
+#   restart [services...]                 Restart services
+#   build [services...]                   Build services
+#   up [-d] [services...]                 Start. -d = detached
+#   down                                  Stop and remove containers
+#
+# Examples:
+#   dkr log -l100 backend frontend
+#   dkr log -l 50 -f backend
+#   dkr build frontend
+#   dkr -e prod restart backend
+#   dkr up -d
+#   dkr down
+#   dkr -n build frontend          # dry run: print command only
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_ROOT"
+
+# Defaults
+ENV="dev"
+COMPOSE_FILE=""
+COMMAND=""
+declare -a FLAGS
+declare -a SERVICES
+
+# Resolve compose file from env
+get_compose_file() {
+  if [[ -n "$COMPOSE_FILE" ]]; then
+    echo "$COMPOSE_FILE"
+  elif [[ "$ENV" == "prod" ]]; then
+    echo "docker-compose.production.yml"
+  else
+    echo "docker-compose.local.yml"
+  fi
+}
+
+dc() {
+  local f
+  f="$(get_compose_file)"
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "docker compose -f $f $*"
+  else
+    docker compose -f "$f" "$@"
+  fi
+}
+
+usage() {
+  sed -n '2,25p' "$0" | sed 's/^# \?//'
+  exit 1
+}
+
+# Parse options (before command)
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -e|--env)
+      ENV="$2"
+      shift 2
+      ;;
+    -f|--file)
+      COMPOSE_FILE="$2"
+      shift 2
+      ;;
+    -n|--dry-run)
+      DRY_RUN=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      ;;
+    log|logs|restart|build|up|down)
+      COMMAND="$1"
+      shift
+      break
+      ;;
+    *)
+      echo "Unknown option: $1"
+      usage
+      ;;
+  esac
+done
+
+[[ -z "$COMMAND" ]] && { echo "Missing command."; usage; }
+
+# Parse command-specific flags and services
+# Flags: start with - (e.g. -l100, -f, -d)
+# Services: everything else
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == -* ]]; then
+    FLAGS+=("$1")
+    # -l may take separate arg: -l 100
+    if [[ "$1" == -l || "$1" == --tail ]]; then
+      shift
+      [[ $# -gt 0 ]] && FLAGS+=("$1")
+    fi
+    shift
+  else
+    SERVICES+=("$1")
+    shift
+  fi
+done
+
+# Build docker compose args from FLAGS for each command
+case "$COMMAND" in
+  log|logs)
+    TAIL=""
+    FOLLOW=""
+    for f in "${FLAGS[@]}"; do
+      if [[ "$f" == -l* ]]; then
+        TAIL="${f#-l}"
+      elif [[ "$f" == --tail=* ]]; then
+        TAIL="${f#--tail=}"
+      elif [[ "$f" =~ ^[0-9]+$ ]]; then
+        TAIL="$f"
+      elif [[ "$f" == -f || "$f" == --follow ]]; then
+        FOLLOW="-f"
+      fi
+    done
+    ARGS=()
+    [[ -n "$TAIL" ]] && ARGS+=(--tail="$TAIL")
+    [[ -n "$FOLLOW" ]] && ARGS+=(-f)
+    dc logs "${ARGS[@]}" "${SERVICES[@]}"
+    ;;
+  restart)
+    dc restart "${SERVICES[@]}"
+    ;;
+  build)
+    dc build "${SERVICES[@]}"
+    ;;
+  up)
+    ARGS=()
+    for f in "${FLAGS[@]}"; do
+      [[ "$f" == -d || "$f" == --detach ]] && ARGS+=(-d)
+    done
+    dc up "${ARGS[@]}" "${SERVICES[@]}"
+    ;;
+  down)
+    dc down
+    ;;
+  *)
+    echo "Unknown command: $COMMAND"
+    usage
+    ;;
+esac
