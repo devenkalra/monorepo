@@ -200,7 +200,7 @@ services:
         condition: service_healthy
     networks:
       - backend-network
-    command: celery -A config worker --loglevel=info --concurrency=2
+    command: celery -A config worker --loglevel=info --concurrency=2 --max-memory-per-child=250000
 
   # React Frontend with Nginx (container + people + cad)
   frontend:

@@ -66,6 +66,30 @@ docker compose -f docker-compose.production.yml down
 docker compose -f docker-compose.production.yml up -d
 ```
 
+## Celery worker restarting
+
+If `celery-worker` keeps restarting, check its logs:
+
+```bash
+docker compose -f docker-compose.production.yml logs celery-worker --tail 200
+```
+
+Common causes:
+
+| Cause | Fix |
+|-------|-----|
+| Redis connection failed | Verify `REDIS_URL` in `.env` – format `redis://:PASSWORD@redis:6379/0`. If password has `@` or `:`, URL-encode it. |
+| OOM (out of memory) | Reduce concurrency: in docker-compose, change command to `celery -A config worker --loglevel=info --concurrency=1` |
+| Django/model import error | Same as backend – migration or model mismatch. Run migrations, restart. |
+| Redis not ready | Add `restart: on-failure` and a short `healthcheck` delay, or increase `depends_on` wait. |
+
+**Temporary workaround** – run without celery to get the site up (async tasks like import/export won’t work):
+
+```bash
+docker compose -f docker-compose.production.yml up -d
+docker compose -f docker-compose.production.yml stop celery-worker
+```
+
 ## Common causes
 
 | Cause | Fix |

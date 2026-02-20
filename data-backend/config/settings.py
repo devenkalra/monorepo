@@ -361,16 +361,28 @@ REST_AUTH = {
 }
 
 # Cache Configuration - Use Redis for shared cache between Django and Celery
+def _get_redis_url():
+    """Build Redis URL from REDIS_PASSWORD when set, to avoid URL parsing issues with special chars (e.g. +)."""
+    from urllib.parse import quote
+    password = os.environ.get('REDIS_PASSWORD')
+    if password:
+        # Build correct URL: redis://:password@host:port/db (password must be URL-encoded)
+        encoded = quote(password, safe='')
+        return f'redis://:{encoded}@redis:6379/0'
+    return os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+
+_REDIS_URL = _get_redis_url()
+
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': os.environ.get('REDIS_URL', 'redis://redis:6379/0'),
+        'LOCATION': _REDIS_URL,
     }
 }
 
 # Celery Configuration
-CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://redis:6379/0')
+CELERY_BROKER_URL = _REDIS_URL
+CELERY_RESULT_BACKEND = _REDIS_URL
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'

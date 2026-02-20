@@ -1,24 +1,33 @@
 # Generated migration for UserProfile with displayname
+# Made idempotent for production where table may already exist
 
-from django.conf import settings
-from django.db import migrations, models
-import django.db.models.deletion
+from django.db import migrations
+
+
+def create_userprofile_if_not_exists(apps, schema_editor):
+    """Create people_userprofile table if it doesn't exist (idempotent)."""
+    from django.db import connection
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS people_userprofile (
+                id BIGSERIAL PRIMARY KEY,
+                displayname VARCHAR(255) NULL,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES auth_user(id) ON DELETE CASCADE
+            )
+        """)
+
+
+def noop(apps, schema_editor):
+    pass
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        migrations.swappable_dependency('auth.User'),
         ('people', '0002_update_tag_for_production'),
     ]
 
     operations = [
-        migrations.CreateModel(
-            name='UserProfile',
-            fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('displayname', models.CharField(blank=True, max_length=255, null=True)),
-                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, related_name='userprofile', to=settings.AUTH_USER_MODEL)),
-            ],
-        ),
+        migrations.RunPython(create_userprofile_if_not_exists, noop),
     ]
