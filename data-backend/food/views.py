@@ -5,13 +5,14 @@ from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review
+from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review, FoodSpotFoodRating
 from .serializers import (
     FoodSpotListSerializer, FoodSpotDetailSerializer, FoodSpotWriteSerializer,
     FoodListSerializer, FoodDetailSerializer, FoodWriteSerializer,
     SpotListSerializer, SpotListWriteSerializer,
     FoodItemListSerializer, FoodItemListWriteSerializer,
     MediaSerializer, ReviewSerializer,
+    FoodSpotFoodRatingSerializer, FoodSpotFoodRatingWriteSerializer,
 )
 from .permissions import IsFoodSpotOwner, IsFoodOwner, IsFoodSpotListOwner, IsFoodListOwner
 
@@ -94,6 +95,22 @@ class ReviewViewSet(viewsets.ModelViewSet):
         ).filter(
             Q(food__isnull=True) | Q(food__private=False) | Q(food__added_by=user)
         )
+
+    def perform_create(self, serializer):
+        serializer.save(added_by=self.request.user)
+
+
+class FoodSpotFoodRatingViewSet(viewsets.ModelViewSet):
+    """Create/update rating for a food at a specific spot. POST upserts (one rating per user per food per spot)."""
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return FoodSpotFoodRating.objects.filter(added_by=self.request.user)
+
+    def get_serializer_class(self):
+        if self.action in ('create', 'update', 'partial_update'):
+            return FoodSpotFoodRatingWriteSerializer
+        return FoodSpotFoodRatingSerializer
 
 
 class FoodSpotListViewSet(viewsets.ModelViewSet):

@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import MediaSection from './MediaSection';
 import YouTubeSection from './YouTubeSection';
+import RatingStars from './RatingStars';
 
 export default function FoodDetail({ apiBase, user }) {
   const { id } = useParams();
@@ -120,18 +121,22 @@ export default function FoodDetail({ apiBase, user }) {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Served at</h2>
           <div className="flex flex-wrap gap-2">
             {food.served_at.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setSelectedSpotId(selectedSpotId === s.id ? null : s.id)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                  selectedSpotId === s.id
-                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 ring-1 ring-amber-300 dark:ring-amber-700'
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                {s.name}
-              </button>
+              <div key={s.id} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSpotId(selectedSpotId === s.id ? null : s.id)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                    selectedSpotId === s.id
+                      ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 ring-1 ring-amber-300 dark:ring-amber-700'
+                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                  }`}
+                >
+                  {s.name}
+                </button>
+                {s.rating_avg != null && (
+                  <RatingStars value={s.rating_avg} count={s.rating_count} size="sm" />
+                )}
+              </div>
             ))}
           </div>
           {selectedSpotId && (() => {

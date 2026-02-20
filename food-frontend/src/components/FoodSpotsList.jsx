@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
+import RatingStars from './RatingStars';
 
 export default function FoodSpotsList({ apiBase, user }) {
   const [spots, setSpots] = useState([]);
@@ -67,6 +68,11 @@ export default function FoodSpotsList({ apiBase, user }) {
               >
                 <div className="min-w-0 flex-1">
                   <span className="font-medium text-gray-900 dark:text-gray-100">{spot.name}</span>
+                  {spot.rating_avg != null && (
+                    <span className="ml-2 inline-flex items-center">
+                      <RatingStars value={spot.rating_avg} count={spot.rating_count} size="sm" />
+                    </span>
+                  )}
                   {spot.added_by_username && (
                     <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">added by {spot.added_by_username}</span>
                   )}

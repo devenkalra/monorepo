@@ -1,10 +1,10 @@
 """Food app serializers."""
 
-from django.db.models import Q
+from django.db.models import Q, Avg
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from people.models import get_user_display_name
-from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review
+from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review, FoodSpotFoodRating
 
 
 class MediaSerializer(serializers.ModelSerializer):
@@ -20,25 +20,51 @@ class ReviewSerializer(serializers.ModelSerializer):
     def get_added_by_username(self, obj):
         return get_user_display_name(obj.added_by)
 
+    def validate_rating(self, value):
+        if value is None or value < 1 or value > 5:
+            raise serializers.ValidationError('Rating must be between 1 and 5.')
+        return value
+
     class Meta:
         model = Review
-        fields = ['id', 'added_by', 'added_by_username', 'rating', 'note', 'created_at', 'modified_at']
+        fields = ['id', 'added_by', 'added_by_username', 'rating', 'note', 'food_spot', 'food', 'created_at', 'modified_at']
         read_only_fields = ['id', 'added_by', 'created_at', 'modified_at']
 
 
 class FoodSpotListSerializer(serializers.ModelSerializer):
     """Light serializer for list views."""
     added_by_username = serializers.SerializerMethodField()
+    rating_avg = serializers.SerializerMethodField()
+    rating_count = serializers.SerializerMethodField()
 
     def get_added_by_username(self, obj):
         return get_user_display_name(obj.added_by)
+
+    def get_rating_avg(self, obj):
+        result = Review.objects.filter(food_spot=obj, food__isnull=True).aggregate(avg=Avg('rating'))
+        avg = result['avg']
+        return round(avg, 1) if avg is not None else None
+
+    def get_rating_count(self, obj):
+        return Review.objects.filter(food_spot=obj, food__isnull=True).count()
+
+    my_rating = serializers.SerializerMethodField()
+
+    def get_my_rating(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            r = Review.objects.filter(food_spot=obj, food__isnull=True, added_by=request.user).first()
+            return r.rating if r else None
+        return None
+
     food_count = serializers.SerializerMethodField()
     foods = serializers.SerializerMethodField()
 
     class Meta:
         model = FoodSpot
         fields = ['id', 'name', 'locations', 'description', 'tags', 'photos', 'attachments', 'urls',
-                  'added_by', 'added_by_username', 'food_count', 'foods', 'created_at', 'modified_at']
+                  'added_by', 'added_by_username', 'rating_avg', 'rating_count', 'my_rating', 'food_count', 'foods',
+                  'created_at', 'modified_at']
 
     def get_food_count(self, obj):
         request = self.context.get('request')
@@ -58,9 +84,29 @@ class FoodSpotListSerializer(serializers.ModelSerializer):
 class FoodSpotDetailSerializer(serializers.ModelSerializer):
     """Full serializer with nested foods, media, reviews."""
     added_by_username = serializers.SerializerMethodField()
+    rating_avg = serializers.SerializerMethodField()
+    rating_count = serializers.SerializerMethodField()
 
     def get_added_by_username(self, obj):
         return get_user_display_name(obj.added_by)
+
+    def get_rating_avg(self, obj):
+        result = Review.objects.filter(food_spot=obj, food__isnull=True).aggregate(avg=Avg('rating'))
+        avg = result['avg']
+        return round(avg, 1) if avg is not None else None
+
+    def get_rating_count(self, obj):
+        return Review.objects.filter(food_spot=obj, food__isnull=True).count()
+
+    my_rating = serializers.SerializerMethodField()
+
+    def get_my_rating(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            r = Review.objects.filter(food_spot=obj, food__isnull=True, added_by=request.user).first()
+            return r.rating if r else None
+        return None
+
     foods = serializers.SerializerMethodField()
     media = MediaSerializer(many=True, read_only=True)
     reviews = ReviewSerializer(many=True, read_only=True)
@@ -68,7 +114,8 @@ class FoodSpotDetailSerializer(serializers.ModelSerializer):
     class Meta:
         model = FoodSpot
         fields = ['id', 'name', 'locations', 'description', 'tags', 'photos', 'attachments', 'urls',
-                  'added_by', 'added_by_username', 'foods', 'media', 'reviews', 'created_at', 'modified_at']
+                  'added_by', 'added_by_username', 'rating_avg', 'rating_count', 'my_rating', 'foods', 'media', 'reviews',
+                  'created_at', 'modified_at']
 
     def get_foods(self, obj):
         request = self.context.get('request')
@@ -76,7 +123,71 @@ class FoodSpotDetailSerializer(serializers.ModelSerializer):
             foods = obj.foods.filter(Q(private=False) | Q(added_by=request.user)).order_by('name')
         else:
             foods = obj.foods.filter(private=False).order_by('name')
-        return FoodListSerializer(foods, many=True).data
+        # Include rating for each food at this spot
+        result = []
+        for f in foods:
+            rating_result = FoodSpotFoodRating.objects.filter(
+                food=f, food_spot=obj
+            ).aggregate(avg=Avg('rating'))
+            rating_avg = rating_result['avg']
+            rating_count = FoodSpotFoodRating.objects.filter(food=f, food_spot=obj).count()
+            data = FoodListSerializer(f, context=self.context).data
+            data['rating_avg'] = round(rating_avg, 1) if rating_avg is not None else None
+            data['rating_count'] = rating_count
+            if request and request.user.is_authenticated:
+                my_r = FoodSpotFoodRating.objects.filter(
+                    food=f, food_spot=obj, added_by=request.user
+                ).first()
+                data['my_rating'] = my_r.rating if my_r else None
+            else:
+                data['my_rating'] = None
+            result.append(data)
+        return result
+
+
+class FoodSpotFoodRatingSerializer(serializers.ModelSerializer):
+    """Serializer for rating a food at a specific spot."""
+
+    def validate_rating(self, value):
+        if value is None or value < 1 or value > 5:
+            raise serializers.ValidationError('Rating must be between 1 and 5.')
+        return value
+
+    class Meta:
+        model = FoodSpotFoodRating
+        fields = ['id', 'food', 'food_spot', 'rating', 'created_at', 'modified_at']
+        read_only_fields = ['id', 'created_at', 'modified_at']
+
+
+class FoodSpotFoodRatingWriteSerializer(serializers.ModelSerializer):
+    """Write serializer for creating/updating food-at-spot rating."""
+
+    def validate_rating(self, value):
+        if value is None or value < 1 or value > 5:
+            raise serializers.ValidationError('Rating must be between 1 and 5.')
+        return value
+
+    class Meta:
+        model = FoodSpotFoodRating
+        fields = ['food', 'food_spot', 'rating']
+
+    def validate(self, attrs):
+        food = attrs['food']
+        food_spot = attrs['food_spot']
+        if not food_spot.foods.filter(id=food.id).exists():
+            raise serializers.ValidationError(
+                {'food': 'This food is not served at the selected spot.'}
+            )
+        return attrs
+
+    def create(self, validated_data):
+        rating, _ = FoodSpotFoodRating.objects.update_or_create(
+            food=validated_data['food'],
+            food_spot=validated_data['food_spot'],
+            added_by=self.context['request'].user,
+            defaults={'rating': validated_data['rating']},
+        )
+        return rating
 
 
 class FoodSpotWriteSerializer(serializers.ModelSerializer):

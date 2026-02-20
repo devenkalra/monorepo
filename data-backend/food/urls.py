@@ -11,6 +11,7 @@ router.register(r'spot-lists', views.FoodSpotListViewSet, basename='foodspotlist
 router.register(r'food-lists', views.FoodListViewSet, basename='foodlist')
 router.register(r'media', views.MediaViewSet, basename='media')
 router.register(r'reviews', views.ReviewViewSet, basename='review')
+router.register(r'food-spot-ratings', views.FoodSpotFoodRatingViewSet, basename='foodspotfoodrating')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -1,7 +1,7 @@
 """Food app admin."""
 
 from django.contrib import admin
-from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review
+from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review, FoodSpotFoodRating
 
 
 @admin.register(FoodSpot)
@@ -45,3 +45,8 @@ class MediaAdmin(admin.ModelAdmin):
 @admin.register(Review)
 class ReviewAdmin(admin.ModelAdmin):
     list_display = ['id', 'rating', 'added_by', 'food_spot', 'food', 'created_at']
+
+
+@admin.register(FoodSpotFoodRating)
+class FoodSpotFoodRatingAdmin(admin.ModelAdmin):
+    list_display = ['id', 'food', 'food_spot', 'rating', 'added_by', 'created_at']

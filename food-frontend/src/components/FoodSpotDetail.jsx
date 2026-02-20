@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import MediaSection from './MediaSection';
 import YouTubeSection from './YouTubeSection';
+import RatingStars from './RatingStars';
 
 export default function FoodSpotDetail({ apiBase, user }) {
   const { id } = useParams();
@@ -13,27 +14,67 @@ export default function FoodSpotDetail({ apiBase, user }) {
   const [selectedFoodId, setSelectedFoodId] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
+  const loadSpot = useCallback(async () => {
     if (!id) return;
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await api.fetch(`${apiBase}/spots/${id}/`);
-        const data = await res.json();
-        setSpot(data);
-      } catch (err) {
-        console.error('Failed to load food spot', err);
-        setSpot(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    setLoading(true);
+    try {
+      const res = await api.fetch(`${apiBase}/spots/${id}/`);
+      const data = await res.json();
+      setSpot(data);
+    } catch (err) {
+      console.error('Failed to load food spot', err);
+      setSpot(null);
+    } finally {
+      setLoading(false);
+    }
   }, [apiBase, id]);
+
+  useEffect(() => {
+    loadSpot();
+  }, [loadSpot]);
 
   if (loading) return <p className="text-center text-gray-500 py-8">Loading…</p>;
   if (!spot) return <p className="text-center text-gray-500 py-8">Not found.</p>;
 
   const canEdit = user && spot.added_by === (user.id ?? user.pk);
+
+  const rateSpot = async (rating) => {
+    if (!user) return;
+    try {
+      const existing = spot.reviews?.find((r) => r.added_by === (user.id ?? user.pk));
+      const body = { food_spot: id, rating, note: existing?.note || '' };
+      if (existing) {
+        await api.fetch(`${apiBase}/reviews/${existing.id}/`, {
+          method: 'PATCH',
+          body: JSON.stringify({ rating }),
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } else {
+        await api.fetch(`${apiBase}/reviews/`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      loadSpot();
+    } catch (err) {
+      console.error('Failed to rate spot', err);
+    }
+  };
+
+  const rateFoodAtSpot = async (foodId, rating) => {
+    if (!user) return;
+    try {
+      await api.fetch(`${apiBase}/food-spot-ratings/`, {
+        method: 'POST',
+        body: JSON.stringify({ food: foodId, food_spot: id, rating }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      loadSpot();
+    } catch (err) {
+      console.error('Failed to rate food', err);
+    }
+  };
 
   const handleDelete = async () => {
     if (!window.confirm(`Delete "${spot.name}"? This cannot be undone.`)) return;
@@ -62,9 +103,23 @@ export default function FoodSpotDetail({ apiBase, user }) {
       <div className="flex justify-between items-start mb-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{spot.name}</h1>
-          {spot.added_by_username && (
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">added by {spot.added_by_username}</p>
-          )}
+          <div className="flex items-center gap-3 mt-1">
+            {(spot.rating_avg != null || user) && (
+              <span className="flex items-center gap-1">
+                <RatingStars
+                  value={spot.my_rating ?? spot.rating_avg}
+                  count={spot.rating_count}
+                  interactive={!!user}
+                  onRate={rateSpot}
+                  size="lg"
+                />
+                {user && <span className="text-xs text-gray-500 dark:text-gray-400">Rate</span>}
+              </span>
+            )}
+            {spot.added_by_username && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">added by {spot.added_by_username}</span>
+            )}
+          </div>
         </div>
         {canEdit && (
           <div className="flex gap-2">
@@ -151,18 +206,40 @@ export default function FoodSpotDetail({ apiBase, user }) {
           <>
             <div className="flex flex-wrap gap-2">
               {spot.foods.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  onClick={() => setSelectedFoodId(selectedFoodId === f.id ? null : f.id)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
-                    selectedFoodId === f.id
-                      ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 ring-1 ring-amber-300 dark:ring-amber-700'
-                      : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {f.name}
-                </button>
+                <div key={f.id} className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFoodId(selectedFoodId === f.id ? null : f.id)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                      selectedFoodId === f.id
+                        ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 ring-1 ring-amber-300 dark:ring-amber-700'
+                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                  >
+                    {f.name}
+                  </button>
+                  {(f.rating_avg != null || f.my_rating != null || user) && (
+                    <div className="flex flex-col gap-0.5 text-sm">
+                      {f.rating_avg != null && (
+                        <div className="flex items-center gap-2">
+                          <span className="w-8 text-gray-500 dark:text-gray-400">Avg</span>
+                          <RatingStars value={f.rating_avg} count={f.rating_count} size="sm" />
+                        </div>
+                      )}
+                      {user && (
+                        <div className="flex items-center gap-2">
+                          <span className="w-8 text-gray-500 dark:text-gray-400">My</span>
+                          <RatingStars
+                            value={f.my_rating}
+                            interactive
+                            onRate={(r) => rateFoodAtSpot(f.id, r)}
+                            size="sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               ))}
             </div>
             {selectedFoodId && (() => {
@@ -170,6 +247,27 @@ export default function FoodSpotDetail({ apiBase, user }) {
               if (!food) return null;
               return (
                 <div className="mt-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
+                  {(food.rating_avg != null || food.my_rating != null || user) && (
+                    <div className="mb-2 flex flex-col gap-0.5">
+                      {food.rating_avg != null && (
+                        <div className="flex items-center gap-2">
+                          <span className="w-16 text-xs font-semibold text-gray-500 dark:text-gray-400">Avg</span>
+                          <RatingStars value={food.rating_avg} count={food.rating_count} size="sm" />
+                        </div>
+                      )}
+                      {user && (
+                        <div className="flex items-center gap-2">
+                          <span className="w-8 text-xs font-semibold text-gray-500 dark:text-gray-400">My</span>
+                          <RatingStars
+                            value={food.my_rating}
+                            interactive
+                            onRate={(r) => rateFoodAtSpot(food.id, r)}
+                            size="sm"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {food.added_by_username && (
                     <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">added by {food.added_by_username}</p>
                   )}

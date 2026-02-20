@@ -125,11 +125,11 @@ class FoodList(models.Model):
 
 
 class Review(models.Model):
-    """Review for a FoodSpot or Food."""
+    """Review/rating for a FoodSpot (spot-level rating)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_reviews')
-    rating = models.PositiveSmallIntegerField()
+    rating = models.PositiveSmallIntegerField()  # 1-5
     note = models.TextField(blank=True)
     food_spot = models.ForeignKey(FoodSpot, null=True, blank=True, on_delete=models.CASCADE, related_name='reviews')
     food = models.ForeignKey(Food, null=True, blank=True, on_delete=models.CASCADE, related_name='reviews')
@@ -138,3 +138,29 @@ class Review(models.Model):
 
     def __str__(self):
         return f"Review {self.rating}/5"
+
+
+class FoodSpotFoodRating(models.Model):
+    """Rating for a Food as served at a specific FoodSpot (1-5)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    food = models.ForeignKey(Food, on_delete=models.CASCADE, related_name='ratings_at_spots')
+    food_spot = models.ForeignKey(FoodSpot, on_delete=models.CASCADE, related_name='food_ratings')
+    added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_spot_food_ratings')
+    rating = models.PositiveSmallIntegerField()  # 1-5
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['food', 'food_spot', 'added_by'],
+                name='unique_food_spot_rating_per_user',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['food_spot', 'food']),
+        ]
+
+    def __str__(self):
+        return f"{self.food.name} @ {self.food_spot.name}: {self.rating}/5"
