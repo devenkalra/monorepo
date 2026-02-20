@@ -4,6 +4,7 @@ import api from '../services/api';
 import MediaSection from './MediaSection';
 import YouTubeSection from './YouTubeSection';
 import TagInput from './TagInput';
+import SearchableCheckboxList from './SearchableCheckboxList';
 
 export default function FoodSpotEdit({ apiBase }) {
   const { id: idParam } = useParams();
@@ -15,8 +16,36 @@ export default function FoodSpotEdit({ apiBase }) {
   const [tags, setTags] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [urls, setUrls] = useState([]);
+  const [selectedFoodIds, setSelectedFoodIds] = useState([]);
+  const [foods, setFoods] = useState([]);
+  const [foodsLoading, setFoodsLoading] = useState(true);
+  const [foodsError, setFoodsError] = useState(null);
+  const [isPrivate, setIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!id);
+
+  useEffect(() => {
+    (async () => {
+      setFoodsLoading(true);
+      setFoodsError(null);
+      try {
+        const res = await api.fetch(`${apiBase}/foods/`);
+        const data = await res.json();
+        if (!res.ok) {
+          setFoodsError(res.status === 401 ? 'Log in to manage foods' : 'Failed to load foods');
+          setFoods([]);
+        } else {
+          setFoods(Array.isArray(data) ? data : data.results || []);
+        }
+      } catch (err) {
+        console.error('Failed to load foods', err);
+        setFoodsError('Failed to load foods');
+        setFoods([]);
+      } finally {
+        setFoodsLoading(false);
+      }
+    })();
+  }, [apiBase]);
 
   useEffect(() => {
     if (!id) return;
@@ -39,6 +68,8 @@ export default function FoodSpotEdit({ apiBase }) {
         setTags(data.tags || []);
         setPhotos(data.photos || []);
         setUrls(data.urls || []);
+        setSelectedFoodIds((data.foods || []).map((f) => f.id));
+        setIsPrivate(data.private ?? false);
       } catch (err) {
         console.error('Failed to load food spot', err);
       } finally {
@@ -52,7 +83,7 @@ export default function FoodSpotEdit({ apiBase }) {
     setSaving(true);
     try {
       const cleaned = locations.filter((l) => l.street || l.city || l.state || l.country || l.postal_code || l.phone);
-      const body = { name, locations: cleaned, description, tags, photos, urls };
+      const body = { name, locations: cleaned, description, tags, photos, urls, foods: selectedFoodIds, private: isPrivate };
       if (id) {
         await api.fetch(`${apiBase}/spots/${id}/`, {
           method: 'PATCH',
@@ -98,6 +129,18 @@ export default function FoodSpotEdit({ apiBase }) {
             onChange={(e) => setName(e.target.value)}
             required
             className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">Foods served here</label>
+          <SearchableCheckboxList
+            items={foods}
+            selectedIds={selectedFoodIds}
+            onChange={setSelectedFoodIds}
+            loading={foodsLoading}
+            error={foodsError}
+            emptyMessage="No foods yet. Create foods first, then add them here."
+            placeholder="Search foods…"
           />
         </div>
         <div>
@@ -211,6 +254,17 @@ export default function FoodSpotEdit({ apiBase }) {
         </div>
         <MediaSection photos={photos} onChange={setPhotos} />
         <YouTubeSection urls={urls} onChange={setUrls} />
+        <div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-600"
+            />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Private (only visible to you)</span>
+          </label>
+        </div>
         <div className="flex gap-2">
           <button
             type="submit"

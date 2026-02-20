@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 
-export default function FoodSpotsList({ apiBase }) {
+export default function FoodSpotsList({ apiBase, user }) {
   const [spots, setSpots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -41,12 +41,14 @@ export default function FoodSpotsList({ apiBase }) {
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
         />
-        <Link
-          to="/spot/create"
-          className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium"
-        >
-          + Add Spot
-        </Link>
+        {user && (
+          <Link
+            to="/spot/create"
+            className="px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 font-medium"
+          >
+            + Add Spot
+          </Link>
+        )}
       </div>
       {loading ? (
         <p className="text-center text-gray-500 py-8">Loading…</p>
@@ -60,60 +62,55 @@ export default function FoodSpotsList({ apiBase }) {
               className="p-3 rounded-lg bg-white dark:bg-gray-800 shadow hover:shadow-md transition"
             >
               <div
-                className="flex justify-between items-start cursor-pointer"
+                className="flex justify-between items-center gap-2 cursor-pointer"
                 onClick={() => toggleExpand(spot.id)}
               >
-                <div>
-                  <h2 className="text-lg font-medium text-gray-900 dark:text-gray-100">{spot.name}</h2>
-                  {spot.locations && spot.locations.length > 0 && (
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {spot.locations.map((loc) => {
-                        const parts = [loc.street, loc.city, loc.state].filter(Boolean);
-                        return parts.join(', ');
-                      }).filter(Boolean).join(' • ')}
-                    </p>
-                  )}
-                  {spot.tags && spot.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {spot.tags.slice(0, 5).map((tag, idx) => (
-                        <span key={idx} className="text-xs px-2 py-0.5 bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 rounded">
-                          {tag}
-                        </span>
-                      ))}
-                      {spot.tags.length > 5 && (
-                        <span className="text-xs text-gray-500">+{spot.tags.length - 5}</span>
-                      )}
-                    </div>
-                  )}
-                </div>
-                <span className="text-gray-400">
-                  {expandedId === spot.id ? '▼' : '▶'}
-                </span>
-              </div>
-              {expandedId === spot.id && (
-                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                  {spot.description && (
-                    <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">{spot.description}</p>
+                <div className="min-w-0 flex-1">
+                  <span className="font-medium text-gray-900 dark:text-gray-100">{spot.name}</span>
+                  {spot.added_by_username && (
+                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">added by {spot.added_by_username}</span>
                   )}
                   {spot.foods && spot.foods.length > 0 && (
-                    <div className="mb-3">
-                      <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Foods served:</p>
-                      <ul className="space-y-1">
-                        {spot.foods.map((f) => (
-                          <li key={f.id} className="text-sm text-gray-700 dark:text-gray-300">
-                            {f.name}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                    <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
+                      {spot.foods.map((f) => f.name).join(', ')}
+                    </span>
                   )}
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
                   <Link
                     to={`/spot/${spot.id}`}
                     onClick={(e) => e.stopPropagation()}
-                    className="text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
+                    className="p-1 rounded text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                    title="Show detail"
                   >
-                    Show Detail
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
+                    </svg>
                   </Link>
+                  <span className="text-gray-400">{expandedId === spot.id ? '▼' : '▶'}</span>
+                </div>
+              </div>
+              {expandedId === spot.id && (
+                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                  <div className="max-h-40 overflow-y-auto space-y-2 text-sm">
+                    {spot.locations && spot.locations.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Location</p>
+                        <p className="text-gray-700 dark:text-gray-300">
+                          {spot.locations.map((loc) => {
+                            const parts = [loc.street, loc.city, loc.state, loc.country].filter(Boolean);
+                            return parts.join(', ');
+                          }).filter(Boolean).join(' • ')}
+                        </p>
+                      </div>
+                    )}
+                    {spot.description && (
+                      <div>
+                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Description</p>
+                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{spot.description}</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </li>

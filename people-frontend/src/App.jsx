@@ -8,6 +8,7 @@ import EntityDetail from './components/EntityDetail';
 import UserMenu from './components/UserMenu';
 import ConversationImport from './components/ConversationImport';
 import HelpModal from './components/HelpModal';
+import ProfileEdit from './components/ProfileEdit';
 import { useAuth } from './contexts/AuthContext';
 import api from './services/api';
 
@@ -57,7 +58,10 @@ function App() {
       viewMode = 'edit';
     }
     
-    if (path === '/import') {
+    if (path === '/profile') {
+      setShowDetail(false);
+      setShowImport(false);
+    } else if (path === '/import') {
       setShowImport(true);
       setShowDetail(false);
     } else if (entityIdMatch) {
@@ -461,6 +465,22 @@ function App() {
     ),
     []
   );
+
+  if (location.pathname === '/profile') {
+    return (
+      <>
+        <ThemeSync />
+        <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
+        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+          <header className="flex items-center justify-between gap-3 mb-4 p-4">
+            <h1 className="text-xl font-semibold">Entity Browser</h1>
+            <UserMenu />
+          </header>
+          <ProfileEdit />
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

@@ -111,6 +111,28 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
+  const updateUser = async (updates) => {
+    const token = accessToken || (typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null);
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (!token && !user) throw new Error('Not authenticated');
+    const response = await fetch(`${getApiBaseUrl()}/api/auth/user/`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(updates),
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.displayname?.[0] || error.username?.[0] || error.detail || 'Update failed');
+    }
+    const data = await response.json();
+    const updatedUser = { ...user, ...data };
+    localStorage.setItem('current_user', JSON.stringify(updatedUser));
+    setUser(updatedUser);
+    return updatedUser;
+  };
+
   const refreshToken = async () => {
     const refresh = localStorage.getItem('refresh_token');
 
@@ -149,6 +171,7 @@ export const AuthProvider = ({ children }) => {
     login,
     register,
     logout,
+    updateUser,
     refreshToken,
     isAuthenticated: !!user
   };

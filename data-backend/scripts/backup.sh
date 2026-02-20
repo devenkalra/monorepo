@@ -220,14 +220,26 @@ echo -e "${GREEN}✓ Manifest created${NC}"
 echo ""
 
 # 6. Rsync to Dreamhost (optional - set DREAMHOST_RSYNC_DEST to enable)
+# Backup → db/ subdirectory, media → media/ subdirectory
 if [ -n "${DREAMHOST_RSYNC_DEST}" ]; then
-    echo -e "${YELLOW}Syncing backup to Dreamhost...${NC}"
     RSYNC_SSH_KEY="${DREAMHOST_SSH_KEY:-$HOME/.ssh/dreamhost.pem}"
     KEY_PATH="${RSYNC_SSH_KEY/#\~/$HOME}"
+    BASE_DEST="${DREAMHOST_RSYNC_DEST%/}"
     if [ -f "$KEY_PATH" ]; then
-        rsync -avP -e "ssh -i $KEY_PATH" "$BACKUP_DIR"/ "$DREAMHOST_RSYNC_DEST$BACKUP_NAME/" && \
-            echo -e "${GREEN}✓ Rsync to Dreamhost complete${NC}" || \
-            echo -e "${YELLOW}⚠ Rsync failed (check DREAMHOST_RSYNC_DEST and SSH key)${NC}"
+        echo -e "${YELLOW}Syncing backup to Dreamhost db/...${NC}"
+        rsync -avP -e "ssh -i $KEY_PATH" "$BACKUP_DIR"/ "$BASE_DEST/db/$BACKUP_NAME/" && \
+            echo -e "${GREEN}✓ Backup rsync to db/ complete${NC}" || \
+            echo -e "${YELLOW}⚠ Backup rsync failed${NC}"
+        echo ""
+        MEDIA_SOURCE="${DREAMHOST_MEDIA_SOURCE:-/var/lib/bldrdojo/media}"
+        if [ -d "$MEDIA_SOURCE" ]; then
+            echo -e "${YELLOW}Syncing media to Dreamhost media/...${NC}"
+            rsync -avP -e "ssh -i $KEY_PATH" "$MEDIA_SOURCE/" "$BASE_DEST/media/" && \
+                echo -e "${GREEN}✓ Media rsync to media/ complete${NC}" || \
+                echo -e "${YELLOW}⚠ Media rsync failed${NC}"
+        else
+            echo -e "${YELLOW}⚠ Media rsync skipped: Media directory not found at $MEDIA_SOURCE${NC}"
+        fi
     else
         echo -e "${YELLOW}⚠ Rsync skipped: SSH key not found at $KEY_PATH${NC}"
     fi

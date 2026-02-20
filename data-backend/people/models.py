@@ -4,6 +4,29 @@ from django.contrib.auth.models import User
 from .constants import RELATION_SCHEMA, RELATION_MAP, ALL_RELATION_KEYS, RELATION_CHOICES
 import uuid
 
+
+class UserProfile(models.Model):
+    """Extended user profile with displayname (any characters, for display only)."""
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='userprofile')
+    displayname = models.CharField(max_length=255, blank=True, null=True)
+
+    def __str__(self):
+        return f"{self.user.username} profile"
+
+
+def get_user_display_name(user):
+    """Return displayname if set, otherwise username. Handles None user."""
+    if not user:
+        return ''
+    try:
+        profile = user.userprofile
+        if profile.displayname and profile.displayname.strip():
+            return profile.displayname.strip()
+    except UserProfile.DoesNotExist:
+        pass
+    return user.username or ''
+
+
 class Entity(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     type = models.CharField(max_length=50) # e.g. "Person"

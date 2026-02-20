@@ -9,6 +9,7 @@ export default function FoodDetail({ apiBase, user }) {
   const navigate = useNavigate();
   const [food, setFood] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [selectedSpotId, setSelectedSpotId] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
@@ -58,7 +59,12 @@ export default function FoodDetail({ apiBase, user }) {
         </button>
       </div>
       <div className="flex justify-between items-start mb-4">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{food.name}</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{food.name}</h1>
+          {food.added_by_username && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">added by {food.added_by_username}</p>
+          )}
+        </div>
         {canEdit && (
           <div className="flex gap-2">
             <Link
@@ -111,19 +117,66 @@ export default function FoodDetail({ apiBase, user }) {
       )}
       {food.served_at && food.served_at.length > 0 && (
         <div className="mb-4">
-          <p className="text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">Served at</p>
-          <ul className="space-y-1">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Served at</h2>
+          <div className="flex flex-wrap gap-2">
             {food.served_at.map((s) => (
-              <li key={s.id}>
-                <Link
-                  to={`/spot/${s.id}`}
-                  className="text-amber-600 dark:text-amber-400 hover:underline"
-                >
-                  {s.name}
-                </Link>
-              </li>
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => setSelectedSpotId(selectedSpotId === s.id ? null : s.id)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${
+                  selectedSpotId === s.id
+                    ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 ring-1 ring-amber-300 dark:ring-amber-700'
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                {s.name}
+              </button>
             ))}
-          </ul>
+          </div>
+          {selectedSpotId && (() => {
+            const spot = food.served_at.find((s) => s.id === selectedSpotId);
+            if (!spot) return null;
+            return (
+              <div className="mt-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
+                {spot.added_by_username && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">added by {spot.added_by_username}</p>
+                )}
+                {spot.locations && spot.locations.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Location</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      {spot.locations.map((loc) => {
+                        const parts = [loc.street, loc.city, loc.state, loc.country].filter(Boolean);
+                        return parts.join(', ');
+                      }).filter(Boolean).join(' • ')}
+                    </p>
+                  </div>
+                )}
+                {spot.description && (
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Description</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{spot.description}</p>
+                  </div>
+                )}
+                {spot.foods && spot.foods.length > 0 && (
+                  <div className="mb-2">
+                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Foods</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300">{spot.foods.map((f) => f.name).join(', ')}</p>
+                  </div>
+                )}
+                <Link
+                  to={`/spot/${spot.id}`}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
+                  </svg>
+                  Show detail
+                </Link>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

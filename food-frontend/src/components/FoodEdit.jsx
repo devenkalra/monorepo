@@ -4,6 +4,7 @@ import api from '../services/api';
 import MediaSection from './MediaSection';
 import YouTubeSection from './YouTubeSection';
 import TagInput from './TagInput';
+import SearchableCheckboxList from './SearchableCheckboxList';
 
 export default function FoodEdit({ apiBase }) {
   const { id: idParam } = useParams();
@@ -19,6 +20,7 @@ export default function FoodEdit({ apiBase }) {
   const [urls, setUrls] = useState([]);
   const [selectedSpotIds, setSelectedSpotIds] = useState([]);
   const [spots, setSpots] = useState([]);
+  const [isPrivate, setIsPrivate] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!id);
 
@@ -48,6 +50,7 @@ export default function FoodEdit({ apiBase }) {
         setPhotos(data.photos || []);
         setUrls(data.urls || []);
         setSelectedSpotIds((data.served_at || []).map((s) => s.id));
+        setIsPrivate(data.private ?? false);
       } catch (err) {
         console.error('Failed to load food', err);
       } finally {
@@ -56,17 +59,11 @@ export default function FoodEdit({ apiBase }) {
     })();
   }, [apiBase, id]);
 
-  const toggleSpot = (spotId) => {
-    setSelectedSpotIds((prev) =>
-      prev.includes(spotId) ? prev.filter((x) => x !== spotId) : [...prev, spotId]
-    );
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const body = { name, description, alsocalled, tags, photos, urls, served_at: selectedSpotIds };
+      const body = { name, description, alsocalled, tags, photos, urls, served_at: selectedSpotIds, private: isPrivate };
       if (id) {
         await api.fetch(`${apiBase}/foods/${id}/`, {
           method: 'PATCH',
@@ -115,6 +112,16 @@ export default function FoodEdit({ apiBase }) {
           />
         </div>
         <div>
+          <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">Served at (spots)</label>
+          <SearchableCheckboxList
+            items={spots}
+            selectedIds={selectedSpotIds}
+            onChange={setSelectedSpotIds}
+            emptyMessage="No spots yet. Create spots first, then add them here."
+            placeholder="Search spots…"
+          />
+        </div>
+        <div>
           <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-1">Description</label>
           <textarea
             value={description}
@@ -139,19 +146,15 @@ export default function FoodEdit({ apiBase }) {
         <MediaSection photos={photos} onChange={setPhotos} />
         <YouTubeSection urls={urls} onChange={setUrls} />
         <div>
-          <label className="block text-sm font-semibold text-gray-600 dark:text-gray-400 mb-2">Served at</label>
-          <div className="space-y-2">
-            {spots.map((s) => (
-              <label key={s.id} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selectedSpotIds.includes(s.id)}
-                  onChange={() => toggleSpot(s.id)}
-                />
-                <span className="text-gray-700 dark:text-gray-300">{s.name}</span>
-              </label>
-            ))}
-          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isPrivate}
+              onChange={(e) => setIsPrivate(e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-600"
+            />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Private (only visible to you)</span>
+          </label>
         </div>
         <div className="flex gap-2">
           <button

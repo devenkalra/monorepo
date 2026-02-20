@@ -17,7 +17,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
   };
 
-  useEffect(() => {
+  const loadAuth = () => {
     const token = localStorage.getItem('access_token');
     const userStr = localStorage.getItem('current_user');
     if (token && userStr) {
@@ -46,6 +46,25 @@ export const AuthProvider = ({ children }) => {
       .then((userData) => { if (userData) setUser(userData); })
       .catch(() => {})
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadAuth();
+    const onTokenReceived = () => {
+      const token = localStorage.getItem('access_token');
+      const userStr = localStorage.getItem('current_user');
+      if (token && userStr) {
+        try {
+          const decoded = jwtDecode(token);
+          if (decoded.exp * 1000 > Date.now()) {
+            setAccessToken(token);
+            setUser(JSON.parse(userStr));
+          }
+        } catch (_) {}
+      }
+    };
+    window.addEventListener('bldrdojo-auth-token-received', onTokenReceived);
+    return () => window.removeEventListener('bldrdojo-auth-token-received', onTokenReceived);
   }, []);
 
   const logout = async () => {
@@ -66,6 +85,28 @@ export const AuthProvider = ({ children }) => {
       const next = encodeURIComponent(window.location.pathname || '/food-app/');
       window.location.href = window.location.origin + '/login/?next=' + next;
     }
+  };
+
+  const updateUser = async (updates) => {
+    const token = accessToken || localStorage.getItem('access_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (!token && !user) throw new Error('Not authenticated');
+    const response = await fetch(`${getApiBaseUrl()}/api/auth/user/`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(updates),
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.displayname?.[0] || error.username?.[0] || error.detail || 'Update failed');
+    }
+    const data = await response.json();
+    const updatedUser = { ...user, ...data };
+    localStorage.setItem('current_user', JSON.stringify(updatedUser));
+    setUser(updatedUser);
+    return updatedUser;
   };
 
   const refreshToken = async () => {
@@ -90,7 +131,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, loading, logout, refreshToken, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, accessToken, loading, logout, updateUser, refreshToken, isAuthenticated: !!user }}>
       {children}
     </AuthContext.Provider>
   );

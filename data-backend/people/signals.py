@@ -1,7 +1,15 @@
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
-from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag
+from django.contrib.auth.models import User
+from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag, UserProfile
 from .sync import neo4j_sync, meili_sync
+
+
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    """Create UserProfile when a new User is created."""
+    if created:
+        UserProfile.objects.get_or_create(user=instance, defaults={'displayname': None})
 
 print("=" * 80)
 print("SIGNALS MODULE LOADED - Entity sync signals are registered")

@@ -34,7 +34,7 @@ export default function UserMenu() {
           />
           <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg z-20 border border-gray-200 dark:border-gray-700">
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <p className="text-sm font-semibold">{user?.username || 'User'}</p>
+              <p className="text-sm font-semibold">{user?.displayname || user?.username || 'User'}</p>
               <p className="text-xs text-gray-500">{user?.email}</p>
             </div>
             <button

@@ -2,14 +2,34 @@ from django.db.models import Q
 from django.contrib.auth.models import User
 from rest_framework import serializers
 from dj_rest_auth.registration.serializers import RegisterSerializer
-from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag
+from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag, UserProfile
+from .models import get_user_display_name
+
 
 class UserSerializer(serializers.ModelSerializer):
-    """Serializer for User model"""
+    """Serializer for User model. displayname is from UserProfile (any characters)."""
+    displayname = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name']
-        read_only_fields = ['id']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'displayname']
+        read_only_fields = ['id', 'username']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['displayname'] = get_user_display_name(instance)
+        return data
+
+    def update(self, instance, validated_data):
+        displayname = validated_data.pop('displayname', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        profile, _ = UserProfile.objects.get_or_create(user=instance, defaults={'displayname': displayname or ''})
+        if displayname is not None:
+            profile.displayname = (displayname or '').strip() or None
+            profile.save()
+        return instance
 
 
 class CustomRegisterSerializer(serializers.Serializer):

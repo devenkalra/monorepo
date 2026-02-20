@@ -18,6 +18,7 @@ class FoodSpot(models.Model):
     photos = models.JSONField(default=list, blank=True, null=True)  # Same scheme as people: list of {url, thumbnail_url} or url strings
     attachments = models.JSONField(default=list, blank=True, null=True)
     urls = models.JSONField(default=list, blank=True, null=True)  # External links e.g. YouTube
+    private = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
 
@@ -25,6 +26,7 @@ class FoodSpot(models.Model):
         ordering = ['-modified_at']
         indexes = [
             models.Index(fields=['added_by']),
+            models.Index(fields=['private']),
         ]
 
     def __str__(self):
@@ -44,6 +46,7 @@ class Food(models.Model):
     photos = models.JSONField(default=list, blank=True, null=True)
     attachments = models.JSONField(default=list, blank=True, null=True)
     urls = models.JSONField(default=list, blank=True, null=True)
+    private = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
 
@@ -51,6 +54,7 @@ class Food(models.Model):
         ordering = ['-modified_at']
         indexes = [
             models.Index(fields=['added_by']),
+            models.Index(fields=['private']),
         ]
 
     def __str__(self):

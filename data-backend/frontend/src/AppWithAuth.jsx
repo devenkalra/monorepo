@@ -7,6 +7,7 @@ import GoogleCallback from './components/GoogleCallback';
 import PrivateRoute from './components/PrivateRoute';
 import App from './App';
 import CadApp from './components/CadApp';
+import ProfileEdit from './components/ProfileEdit';
 
 export default function AppWithAuth() {
   return (
@@ -16,6 +17,14 @@ export default function AppWithAuth() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/auth/google/callback" element={<GoogleCallback />} />
+          <Route
+            path="/profile"
+            element={
+              <PrivateRoute>
+                <ProfileEdit />
+              </PrivateRoute>
+            }
+          />
           <Route
             path="/cad/*"
             element={

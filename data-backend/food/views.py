@@ -2,7 +2,7 @@
 
 from django.db.models import Q
 from rest_framework import viewsets, filters
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from django_filters.rest_framework import DjangoFilterBackend
 
 from .models import FoodSpot, Food, FoodSpotList, FoodList, Media, Review
@@ -17,14 +17,17 @@ from .permissions import IsFoodSpotOwner, IsFoodOwner, IsFoodSpotListOwner, IsFo
 
 
 class FoodSpotViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, IsFoodSpotOwner]
+    permission_classes = [IsAuthenticatedOrReadOnly, IsFoodSpotOwner]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'tags']
     ordering_fields = ['name', 'created_at', 'modified_at']
     ordering = ['-modified_at']
 
     def get_queryset(self):
-        return FoodSpot.objects.filter(added_by=self.request.user)
+        user = self.request.user
+        if user.is_authenticated:
+            return FoodSpot.objects.filter(Q(private=False) | Q(added_by=user))
+        return FoodSpot.objects.filter(private=False)
 
     def get_serializer_class(self):
         if self.action in ('list',):
@@ -43,7 +46,7 @@ class FoodSpotViewSet(viewsets.ModelViewSet):
 
 
 class FoodViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, IsFoodOwner]
+    permission_classes = [IsAuthenticatedOrReadOnly, IsFoodOwner]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'alsocalled', 'tags']
     filterset_fields = []
@@ -51,7 +54,10 @@ class FoodViewSet(viewsets.ModelViewSet):
     ordering = ['-modified_at']
 
     def get_queryset(self):
-        return Food.objects.filter(added_by=self.request.user)
+        user = self.request.user
+        if user.is_authenticated:
+            return Food.objects.filter(Q(private=False) | Q(added_by=user))
+        return Food.objects.filter(private=False)
 
     def get_serializer_class(self):
         if self.action in ('list',):
@@ -71,7 +77,9 @@ class MediaViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return Media.objects.filter(
-            Q(food_spot__added_by=user) | Q(food__added_by=user)
+            Q(food_spot__isnull=True) | Q(food_spot__private=False) | Q(food_spot__added_by=user)
+        ).filter(
+            Q(food__isnull=True) | Q(food__private=False) | Q(food__added_by=user)
         )
 
 
@@ -82,7 +90,9 @@ class ReviewViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
         return Review.objects.filter(
-            Q(food_spot__added_by=user) | Q(food__added_by=user)
+            Q(food_spot__isnull=True) | Q(food_spot__private=False) | Q(food_spot__added_by=user)
+        ).filter(
+            Q(food__isnull=True) | Q(food__private=False) | Q(food__added_by=user)
         )
 
 
