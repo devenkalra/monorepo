@@ -49,4 +49,4 @@ class ReviewAdmin(admin.ModelAdmin):
 
 @admin.register(FoodSpotFoodRating)
 class FoodSpotFoodRatingAdmin(admin.ModelAdmin):
-    list_display = ['id', 'food', 'food_spot', 'rating', 'added_by', 'created_at']
+    list_display = ['id', 'food', 'food_spot', 'rating', 'note', 'added_by', 'created_at']

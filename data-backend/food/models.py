@@ -141,13 +141,14 @@ class Review(models.Model):
 
 
 class FoodSpotFoodRating(models.Model):
-    """Rating for a Food as served at a specific FoodSpot (1-5)."""
+    """Rating and review for a Food as served at a specific FoodSpot (1-5 + optional note)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     food = models.ForeignKey(Food, on_delete=models.CASCADE, related_name='ratings_at_spots')
     food_spot = models.ForeignKey(FoodSpot, on_delete=models.CASCADE, related_name='food_ratings')
     added_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='food_spot_food_ratings')
     rating = models.PositiveSmallIntegerField()  # 1-5
+    note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     modified_at = models.DateTimeField(auto_now=True)
 

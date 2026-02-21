@@ -7,7 +7,6 @@ export default function FoodSpotsList({ apiBase, user }) {
   const [spots, setSpots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [expandedId, setExpandedId] = useState(null);
 
   const loadSpots = useCallback(async () => {
     setLoading(true);
@@ -27,10 +26,6 @@ export default function FoodSpotsList({ apiBase, user }) {
   useEffect(() => {
     loadSpots();
   }, [loadSpots]);
-
-  const toggleExpand = (id) => {
-    setExpandedId((prev) => (prev === id ? null : id));
-  };
 
   return (
     <div>
@@ -58,67 +53,54 @@ export default function FoodSpotsList({ apiBase, user }) {
       ) : (
         <ul className="space-y-2">
           {spots.map((spot) => (
-            <li
-              key={spot.id}
-              className="p-3 rounded-lg bg-white dark:bg-gray-800 shadow hover:shadow-md transition"
-            >
-              <div
-                className="flex justify-between items-center gap-2 cursor-pointer"
-                onClick={() => toggleExpand(spot.id)}
+            <li key={spot.id}>
+              <Link
+                to={`/spot/${spot.id}`}
+                className="flex gap-3 p-3 rounded-lg bg-white dark:bg-gray-800 shadow hover:shadow-md transition"
               >
-                <div className="min-w-0 flex-1">
-                  <span className="font-medium text-gray-900 dark:text-gray-100">{spot.name}</span>
-                  {spot.rating_avg != null && (
-                    <span className="ml-2 inline-flex items-center">
-                      <RatingStars value={spot.rating_avg} count={spot.rating_count} size="sm" />
-                    </span>
-                  )}
-                  {spot.added_by_username && (
-                    <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">added by {spot.added_by_username}</span>
-                  )}
-                  {spot.foods && spot.foods.length > 0 && (
-                    <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">
-                      {spot.foods.map((f) => f.name).join(', ')}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <Link
-                    to={`/spot/${spot.id}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="p-1 rounded text-gray-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                    title="Show detail"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
-                    </svg>
-                  </Link>
-                  <span className="text-gray-400">{expandedId === spot.id ? '▼' : '▶'}</span>
-                </div>
-              </div>
-              {expandedId === spot.id && (
-                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
-                  <div className="max-h-40 overflow-y-auto space-y-2 text-sm">
-                    {spot.locations && spot.locations.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Location</p>
-                        <p className="text-gray-700 dark:text-gray-300">
-                          {spot.locations.map((loc) => {
-                            const parts = [loc.street, loc.city, loc.state, loc.country].filter(Boolean);
-                            return parts.join(', ');
-                          }).filter(Boolean).join(' • ')}
-                        </p>
-                      </div>
+                {spot.photos && spot.photos.length > 0 && (
+                  <div className="flex-shrink-0 w-10 h-10 rounded overflow-hidden bg-gray-100 dark:bg-gray-700">
+                    <img
+                      src={spot.photos[0]?.thumbnail_url || spot.photos[0]?.url || spot.photos[0]}
+                      alt=""
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+                <div className="flex justify-between items-center gap-2 min-w-0 flex-1">
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium text-gray-900 dark:text-gray-100">{spot.name}</span>
+                    {(spot.food_rating_avg != null || spot.rating_avg != null) && (
+                      <span className="ml-2 inline-flex items-center">
+                        <RatingStars
+                          value={spot.food_rating_avg ?? spot.rating_avg}
+                          count={spot.food_rating_avg != null ? spot.food_rating_count : spot.rating_count}
+                          size="sm"
+                        />
+                      </span>
                     )}
-                    {spot.description && (
-                      <div>
-                        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-0.5">Description</p>
-                        <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{spot.description}</p>
-                      </div>
+                    {spot.added_by_username && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">added by {spot.added_by_username}</span>
+                    )}
+                    {spot.foods && spot.foods.length > 0 && (
+                      <span className="text-sm text-gray-600 dark:text-gray-400 ml-2 flex flex-wrap gap-1">
+                        {spot.foods.map((f) => (
+                          <span
+                            key={f.id}
+                            className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+                          >
+                            {f.name}
+                            {f.rating_avg != null && (
+                              <span className="text-amber-500 dark:text-amber-400 font-medium">★{f.rating_avg}</span>
+                            )}
+                          </span>
+                        ))}
+                      </span>
                     )}
                   </div>
+                  <span className="text-gray-400 flex-shrink-0">→</span>
                 </div>
-              )}
+              </Link>
             </li>
           ))}
         </ul>
