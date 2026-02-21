@@ -1,6 +1,7 @@
 """Food app API views."""
 
-from django.db.models import Q
+from django.db.models import Q, Avg, Value, FloatField
+from django.db.models.functions import Coalesce
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from django_filters.rest_framework import DjangoFilterBackend
@@ -21,14 +22,20 @@ class FoodSpotViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly, IsFoodSpotOwner]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'tags']
-    ordering_fields = ['name', 'created_at', 'modified_at']
-    ordering = ['-modified_at']
+    ordering_fields = ['name', 'created_at', 'modified_at', 'food_rating_avg']
+    ordering = ['-food_rating_avg', '-modified_at']
 
     def get_queryset(self):
         user = self.request.user
         if user.is_authenticated:
-            return FoodSpot.objects.filter(Q(private=False) | Q(added_by=user))
-        return FoodSpot.objects.filter(private=False)
+            qs = FoodSpot.objects.filter(Q(private=False) | Q(added_by=user))
+        else:
+            qs = FoodSpot.objects.filter(private=False)
+        if self.action == 'list':
+            qs = qs.annotate(
+                food_rating_avg=Coalesce(Avg('food_ratings__rating'), Value(0), output_field=FloatField())
+            ).order_by('-food_rating_avg', '-modified_at')
+        return qs
 
     def get_serializer_class(self):
         if self.action in ('list',):
@@ -51,14 +58,20 @@ class FoodViewSet(viewsets.ModelViewSet):
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name', 'description', 'alsocalled', 'tags']
     filterset_fields = []
-    ordering_fields = ['name', 'created_at', 'modified_at']
-    ordering = ['-modified_at']
+    ordering_fields = ['name', 'created_at', 'modified_at', 'rating_avg']
+    ordering = ['-rating_avg', '-modified_at']
 
     def get_queryset(self):
         user = self.request.user
         if user.is_authenticated:
-            return Food.objects.filter(Q(private=False) | Q(added_by=user))
-        return Food.objects.filter(private=False)
+            qs = Food.objects.filter(Q(private=False) | Q(added_by=user))
+        else:
+            qs = Food.objects.filter(private=False)
+        if self.action == 'list':
+            qs = qs.annotate(
+                rating_avg=Coalesce(Avg('ratings_at_spots__rating'), Value(0), output_field=FloatField())
+            ).order_by('-rating_avg', '-modified_at')
+        return qs
 
     def get_serializer_class(self):
         if self.action in ('list',):
