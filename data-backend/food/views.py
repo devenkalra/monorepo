@@ -31,10 +31,10 @@ class FoodSpotViewSet(viewsets.ModelViewSet):
             qs = FoodSpot.objects.filter(Q(private=False) | Q(added_by=user))
         else:
             qs = FoodSpot.objects.filter(private=False)
-        if self.action == 'list':
-            qs = qs.annotate(
-                food_rating_avg=Coalesce(Avg('food_ratings__rating'), Value(0), output_field=FloatField())
-            ).order_by('-food_rating_avg', '-modified_at')
+        # Annotate for all actions so ordering by food_rating_avg works (OrderingFilter uses default ordering)
+        qs = qs.annotate(
+            food_rating_avg=Coalesce(Avg('food_ratings__rating'), Value(0), output_field=FloatField())
+        ).order_by('-food_rating_avg', '-modified_at')
         return qs
 
     def get_serializer_class(self):
@@ -67,10 +67,10 @@ class FoodViewSet(viewsets.ModelViewSet):
             qs = Food.objects.filter(Q(private=False) | Q(added_by=user))
         else:
             qs = Food.objects.filter(private=False)
-        if self.action == 'list':
-            qs = qs.annotate(
-                rating_avg=Coalesce(Avg('ratings_at_spots__rating'), Value(0), output_field=FloatField())
-            ).order_by('-rating_avg', '-modified_at')
+        # Annotate for all actions so ordering by rating_avg works (OrderingFilter uses default ordering)
+        qs = qs.annotate(
+            rating_avg=Coalesce(Avg('ratings_at_spots__rating'), Value(0), output_field=FloatField())
+        ).order_by('-rating_avg', '-modified_at')
         return qs
 
     def get_serializer_class(self):

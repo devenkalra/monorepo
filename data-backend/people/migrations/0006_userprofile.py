@@ -1,0 +1,36 @@
+# Idempotent: table already created by 0003/0004/0005. Skip if exists.
+
+from django.db import migrations, connection
+
+
+def noop(apps, schema_editor):
+    pass
+
+
+def ensure_userprofile_table(apps, schema_editor):
+    """Create people_userprofile table if it doesn't exist (idempotent)."""
+    with connection.cursor() as cursor:
+        cursor.execute("""
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'people_userprofile'
+        """)
+        if cursor.fetchone():
+            return
+        cursor.execute("""
+            CREATE TABLE people_userprofile (
+                id BIGSERIAL PRIMARY KEY,
+                displayname VARCHAR(255) NULL,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES auth_user(id) ON DELETE CASCADE
+            )
+        """)
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('people', '0005_userprofile'),
+    ]
+
+    operations = [
+        migrations.RunPython(ensure_userprofile_table, noop),
+    ]
