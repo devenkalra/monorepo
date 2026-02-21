@@ -9,7 +9,13 @@ def create_userprofile_if_not_exists(apps, schema_editor):
     from django.db import connection
     with connection.cursor() as cursor:
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS people_userprofile (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'people_userprofile'
+        """)
+        if cursor.fetchone():
+            return
+        cursor.execute("""
+            CREATE TABLE people_userprofile (
                 id BIGSERIAL PRIMARY KEY,
                 displayname VARCHAR(255) NULL,
                 user_id INTEGER NOT NULL UNIQUE REFERENCES auth_user(id) ON DELETE CASCADE

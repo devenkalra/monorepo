@@ -11,7 +11,13 @@ def noop(apps, schema_editor):
 def create_foodspotfoodrating_if_not_exists(apps, schema_editor):
     with connection.cursor() as cursor:
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS food_foodspotfoodrating (
+            SELECT 1 FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_name = 'food_foodspotfoodrating'
+        """)
+        if cursor.fetchone():
+            return
+        cursor.execute("""
+            CREATE TABLE food_foodspotfoodrating (
                 id UUID PRIMARY KEY,
                 rating SMALLINT NOT NULL,
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
@@ -22,11 +28,11 @@ def create_foodspotfoodrating_if_not_exists(apps, schema_editor):
             )
         """)
         cursor.execute("""
-            CREATE UNIQUE INDEX IF NOT EXISTS unique_food_spot_rating_per_user
+            CREATE UNIQUE INDEX unique_food_spot_rating_per_user
             ON food_foodspotfoodrating (food_id, food_spot_id, added_by_id)
         """)
         cursor.execute("""
-            CREATE INDEX IF NOT EXISTS food_foodsp_food_sp_3a8b2a_idx
+            CREATE INDEX food_foodsp_food_sp_3a8b2a_idx
             ON food_foodspotfoodrating (food_spot_id, food_id)
         """)
 
