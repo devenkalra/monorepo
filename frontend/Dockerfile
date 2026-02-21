@@ -28,10 +28,13 @@ RUN cd food-frontend && npm run build
 RUN mkdir -p /out/people-app /out/cad-app /out/food-app && \
     cp people-frontend/dist/index.html /out/people-app/ && \
     cp -r people-frontend/dist/assets /out/people-app/ 2>/dev/null || true && \
+    cp people-frontend/dist/favicon.svg /out/people-app/ 2>/dev/null || true && \
     cp cad-frontend/dist/index.html /out/cad-app/ && \
     cp -r cad-frontend/dist/assets /out/cad-app/ 2>/dev/null || true && \
+    cp cad-frontend/dist/favicon.svg /out/cad-app/ 2>/dev/null || true && \
     cp food-frontend/dist/index.html /out/food-app/ && \
-    cp -r food-frontend/dist/assets /out/food-app/ 2>/dev/null || true
+    cp -r food-frontend/dist/assets /out/food-app/ 2>/dev/null || true && \
+    cp food-frontend/dist/favicon.svg /out/food-app/ 2>/dev/null || true
 
 # Final nginx image
 FROM nginx:alpine
