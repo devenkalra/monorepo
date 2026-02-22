@@ -471,7 +471,13 @@ class SpotListWriteSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         request = self.context.get('request')
         if request and request.user.is_authenticated:
-            self.fields['spots'].queryset = FoodSpot.objects.filter(Q(private=False) | Q(added_by=request.user))
+            qs = FoodSpot.objects.filter(Q(private=False) | Q(added_by=request.user))
+            # Include spots already on the list so update doesn't fail when re-sending same IDs
+            if self.instance:
+                existing_ids = list(self.instance.spots.values_list('id', flat=True))
+                if existing_ids:
+                    qs = qs | FoodSpot.objects.filter(id__in=existing_ids)
+            self.fields['spots'].queryset = qs
 
     class Meta:
         model = FoodSpotList
