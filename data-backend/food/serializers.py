@@ -465,24 +465,54 @@ class SpotListSerializer(serializers.ModelSerializer):
 
 
 class SpotListWriteSerializer(serializers.ModelSerializer):
-    spots = serializers.PrimaryKeyRelatedField(many=True, queryset=FoodSpot.objects.none(), required=False)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            qs = FoodSpot.objects.filter(Q(private=False) | Q(added_by=request.user))
-            # Include spots already on the list so update doesn't fail when re-sending same IDs
-            if self.instance:
-                existing_ids = list(self.instance.spots.values_list('id', flat=True))
-                if existing_ids:
-                    qs = qs | FoodSpot.objects.filter(id__in=existing_ids)
-            self.fields['spots'].queryset = qs
+    spots = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        write_only=True,
+    )
 
     class Meta:
         model = FoodSpotList
         fields = ['id', 'name', 'spots', 'created_at', 'modified_at']
         read_only_fields = ['id', 'created_at', 'modified_at']
+
+    def _get_allowed_spot_ids(self, instance=None):
+        """Return set of spot IDs the user may assign: visible spots + spots already on this list."""
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return set()
+        allowed = set(
+            FoodSpot.objects.filter(Q(private=False) | Q(added_by=request.user)).values_list('id', flat=True)
+        )
+        if instance:
+            allowed |= set(instance.spots.values_list('id', flat=True))
+        return allowed
+
+    def validate_spots(self, value):
+        allowed = self._get_allowed_spot_ids(self.instance)
+        invalid = [str(sid) for sid in value if sid not in allowed]
+        if invalid:
+            raise serializers.ValidationError(
+                f"Spot(s) not found or not allowed: {', '.join(invalid)}"
+            )
+        return value
+
+    def create(self, validated_data):
+        spots_ids = validated_data.pop('spots', [])
+        instance = super().create(validated_data)
+        if spots_ids:
+            instance.spots.set(FoodSpot.objects.filter(id__in=spots_ids))
+        return instance
+
+    def update(self, instance, validated_data):
+        spots_ids = validated_data.pop('spots', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if spots_ids is not None:
+            instance.spots.set(FoodSpot.objects.filter(id__in=spots_ids))
+        return instance
 
 
 class FoodItemListSerializer(serializers.ModelSerializer):
@@ -504,15 +534,51 @@ class FoodItemListSerializer(serializers.ModelSerializer):
 
 
 class FoodItemListWriteSerializer(serializers.ModelSerializer):
-    foods = serializers.PrimaryKeyRelatedField(many=True, queryset=Food.objects.none(), required=False)
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        request = self.context.get('request')
-        if request and request.user.is_authenticated:
-            self.fields['foods'].queryset = Food.objects.filter(Q(private=False) | Q(added_by=request.user))
+    foods = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=True,
+        write_only=True,
+    )
 
     class Meta:
         model = FoodList
         fields = ['id', 'name', 'foods', 'created_at', 'modified_at']
         read_only_fields = ['id', 'created_at', 'modified_at']
+
+    def _get_allowed_food_ids(self, instance=None):
+        """Return set of food IDs the user may assign: visible foods + foods already on this list."""
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return set()
+        allowed = set(
+            Food.objects.filter(Q(private=False) | Q(added_by=request.user)).values_list('id', flat=True)
+        )
+        if instance:
+            allowed |= set(instance.foods.values_list('id', flat=True))
+        return allowed
+
+    def validate_foods(self, value):
+        allowed = self._get_allowed_food_ids(self.instance)
+        invalid = [str(fid) for fid in value if fid not in allowed]
+        if invalid:
+            raise serializers.ValidationError(
+                f"Food(s) not found or not allowed: {', '.join(invalid)}"
+            )
+        return value
+
+    def create(self, validated_data):
+        foods_ids = validated_data.pop('foods', [])
+        instance = super().create(validated_data)
+        if foods_ids:
+            instance.foods.set(Food.objects.filter(id__in=foods_ids))
+        return instance
+
+    def update(self, instance, validated_data):
+        foods_ids = validated_data.pop('foods', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        if foods_ids is not None:
+            instance.foods.set(Food.objects.filter(id__in=foods_ids))
+        return instance
