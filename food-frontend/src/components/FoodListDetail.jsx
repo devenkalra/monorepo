@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import FoodCard from './FoodCard';
 
 export default function FoodListDetail({ apiBase }) {
   const { id } = useParams();
@@ -49,12 +50,7 @@ export default function FoodListDetail({ apiBase }) {
         <ul className="space-y-2">
           {list.foods.map((food) => (
             <li key={food.id}>
-              <Link
-                to={`/food/${food.id}`}
-                className="block p-3 rounded-lg bg-white dark:bg-gray-800 shadow hover:shadow-md"
-              >
-                {food.name}
-              </Link>
+              <FoodCard food={food} />
             </li>
           ))}
         </ul>

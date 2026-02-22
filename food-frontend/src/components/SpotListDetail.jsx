@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import SpotCard from './SpotCard';
 
 export default function SpotListDetail({ apiBase }) {
   const { id } = useParams();
@@ -49,12 +50,7 @@ export default function SpotListDetail({ apiBase }) {
         <ul className="space-y-2">
           {list.spots.map((spot) => (
             <li key={spot.id}>
-              <Link
-                to={`/spot/${spot.id}`}
-                className="block p-3 rounded-lg bg-white dark:bg-gray-800 shadow hover:shadow-md"
-              >
-                {spot.name}
-              </Link>
+              <SpotCard spot={spot} />
             </li>
           ))}
         </ul>

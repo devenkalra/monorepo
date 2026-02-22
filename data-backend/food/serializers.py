@@ -461,7 +461,27 @@ class SpotListSerializer(serializers.ModelSerializer):
             spots = obj.spots.filter(Q(private=False) | Q(added_by=request.user)).order_by('name')
         else:
             spots = obj.spots.filter(private=False).order_by('name')
-        return [{'id': s.id, 'name': s.name} for s in spots]
+        result = []
+        for s in spots:
+            data = {'id': s.id, 'name': s.name, 'photos': s.photos, 'added_by_username': get_user_display_name(s.added_by)}
+            r_spot = Review.objects.filter(food_spot=s, food__isnull=True).aggregate(avg=Avg('rating'))
+            data['rating_avg'] = round(r_spot['avg'], 1) if r_spot['avg'] is not None else None
+            data['food_rating_avg'] = None
+            avgs = []
+            foods_data = []
+            foods_qs = s.foods.filter(Q(private=False) | Q(added_by=request.user)) if request and request.user.is_authenticated else s.foods.filter(private=False)
+            for f in foods_qs:
+                r_f = FoodSpotFoodRating.objects.filter(food=f, food_spot=s).aggregate(avg=Avg('rating'))
+                avg_val = r_f['avg']
+                foods_data.append({'id': f.id, 'name': f.name, 'rating_avg': round(avg_val, 1) if avg_val is not None else None})
+                if avg_val is not None and avg_val > 0:
+                    avgs.append(float(avg_val))
+            data['foods'] = sorted(foods_data, key=lambda x: (x['rating_avg'] is None, -(x['rating_avg'] or 0)))
+            data['food_rating_avg'] = round(sum(avgs) / len(avgs), 1) if avgs else None
+            data['food_rating_count'] = FoodSpotFoodRating.objects.filter(food_spot=s).count()
+            data['rating_count'] = Review.objects.filter(food_spot=s, food__isnull=True).count()
+            result.append(data)
+        return result
 
 
 class SpotListWriteSerializer(serializers.ModelSerializer):
@@ -530,7 +550,19 @@ class FoodItemListSerializer(serializers.ModelSerializer):
             foods = obj.foods.filter(Q(private=False) | Q(added_by=request.user)).order_by('name')
         else:
             foods = obj.foods.filter(private=False).order_by('name')
-        return [{'id': f.id, 'name': f.name} for f in foods]
+        result = []
+        for f in foods:
+            r = FoodSpotFoodRating.objects.filter(food=f).aggregate(avg=Avg('rating'))
+            spots = f.served_at.filter(Q(private=False) | Q(added_by=request.user)) if request and request.user.is_authenticated else f.served_at.filter(private=False)
+            result.append({
+                'id': f.id, 'name': f.name, 'photos': f.photos,
+                'rating_avg': round(r['avg'], 1) if r['avg'] is not None else None,
+                'rating_count': FoodSpotFoodRating.objects.filter(food=f).count(),
+                'added_by_username': get_user_display_name(f.added_by),
+                'served_at_names': [s.name for s in spots],
+            })
+        result.sort(key=lambda x: (x['rating_avg'] is None, -(x['rating_avg'] or 0)))
+        return result
 
 
 class FoodItemListWriteSerializer(serializers.ModelSerializer):

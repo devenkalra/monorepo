@@ -5,6 +5,7 @@ import MediaSection from './MediaSection';
 import YouTubeSection from './YouTubeSection';
 import RatingStars from './RatingStars';
 import FoodReviewForm from './FoodReviewForm';
+import FoodCard from './FoodCard';
 
 export default function FoodSpotDetail({ apiBase, user }) {
   const { id } = useParams();
@@ -208,113 +209,82 @@ export default function FoodSpotDetail({ apiBase, user }) {
         )}
         {spot.foods && spot.foods.length > 0 ? (
           <>
-            <div className="flex flex-wrap gap-2">
+            <ul className="space-y-2">
               {spot.foods.map((f) => (
-                <div key={f.id} className="flex items-center gap-2">
-                  <button
-                    type="button"
+                <li key={f.id}>
+                  <FoodCard
+                    food={f}
+                    as="button"
                     onClick={() => setSelectedFoodId(selectedFoodId === f.id ? null : f.id)}
-                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition flex items-center gap-1 ${
-                      selectedFoodId === f.id
-                        ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 ring-1 ring-amber-300 dark:ring-amber-700'
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-                    }`}
-                  >
-                    {f.name}
-                    <span className="text-xs opacity-70">{selectedFoodId === f.id ? '▲' : '▼'}</span>
-                  </button>
-                  {(f.rating_avg != null || f.my_rating != null || user) && (
-                    <div className="flex flex-col gap-0.5 text-sm">
-                      {f.rating_avg != null && (
-                        <div className="flex items-center gap-2">
-                          <span className="w-8 text-gray-500 dark:text-gray-400">Avg</span>
-                          <RatingStars value={f.rating_avg} count={f.rating_count} size="sm" />
-                        </div>
-                      )}
-                      {user && (
-                        <div className="flex items-center gap-2">
-                          <span className="w-8 text-gray-500 dark:text-gray-400">My</span>
-                          <RatingStars
-                            value={f.my_rating}
-                            interactive
-                            onRate={(r) => rateFoodAtSpot(f.id, r, f.my_review || '')}
-                            size="sm"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            {selectedFoodId && (() => {
-              const food = spot.foods.find((f) => f.id === selectedFoodId);
-              if (!food) return null;
-              return (
-                <div className="mt-3 p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
-                  {(food.rating_avg != null || food.my_rating != null || user) && (
-                    <div className="mb-2 flex flex-col gap-0.5">
-                      {food.rating_avg != null && (
-                        <div className="flex items-center gap-2">
-                          <span className="w-16 text-xs font-semibold text-gray-500 dark:text-gray-400">Avg</span>
-                          <RatingStars value={food.rating_avg} count={food.rating_count} size="sm" />
-                        </div>
-                      )}
-                      {user && (
-                        <div className="flex items-center gap-2">
-                          <span className="w-8 text-xs font-semibold text-gray-500 dark:text-gray-400">My</span>
-                          <RatingStars
-                            value={food.my_rating}
-                            interactive
-                            onRate={(r) => rateFoodAtSpot(food.id, r, food.my_review || '')}
-                            size="sm"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                    <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Reviews</p>
-                    {user && (
-                      <FoodReviewForm
-                        food={food}
-                        onSave={(note) => rateFoodAtSpot(food.id, food.my_rating ?? 3, note)}
-                      />
-                    )}
-                    {!user && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Log in to add a review.</p>
-                    )}
-                    {food.reviews && food.reviews.length > 0 ? (
-                      <ul className="mt-3 space-y-2 max-h-40 overflow-y-auto">
-                        {food.reviews.map((r) => (
-                          <li key={r.id} className="text-sm p-2 rounded bg-white dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700">
-                            <div className="flex items-center gap-2 mb-0.5">
-                              <RatingStars value={r.rating} size="sm" />
-                              <span className="text-xs text-gray-500 dark:text-gray-400">{r.added_by_username}</span>
+                    isExpanded={selectedFoodId === f.id}
+                  />
+                  {selectedFoodId === f.id && (
+                    <div className="mt-2 p-3 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50">
+                      {(f.rating_avg != null || f.my_rating != null || user) && (
+                        <div className="mb-2 flex flex-col gap-0.5">
+                          {f.rating_avg != null && (
+                            <div className="flex items-center gap-2">
+                              <span className="w-16 text-xs font-semibold text-gray-500 dark:text-gray-400">Avg</span>
+                              <RatingStars value={f.rating_avg} count={f.rating_count} size="sm" />
                             </div>
-                            {r.note && <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{r.note}</p>}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">No reviews yet.</p>
-                    )}
-                  </div>
-                  {food.added_by_username && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">added by {food.added_by_username}</p>
+                          )}
+                          {user && (
+                            <div className="flex items-center gap-2">
+                              <span className="w-8 text-xs font-semibold text-gray-500 dark:text-gray-400">My</span>
+                              <RatingStars
+                                value={f.my_rating}
+                                interactive
+                                onRate={(r) => rateFoodAtSpot(f.id, r, f.my_review || '')}
+                                size="sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                        <p className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Reviews</p>
+                        {user && (
+                          <FoodReviewForm
+                            food={f}
+                            onSave={(note) => rateFoodAtSpot(f.id, f.my_rating ?? 3, note)}
+                          />
+                        )}
+                        {!user && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Log in to add a review.</p>
+                        )}
+                        {f.reviews && f.reviews.length > 0 ? (
+                          <ul className="mt-3 space-y-2 max-h-40 overflow-y-auto">
+                            {f.reviews.map((r) => (
+                              <li key={r.id} className="text-sm p-2 rounded bg-white dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <RatingStars value={r.rating} size="sm" />
+                                  <span className="text-xs text-gray-500 dark:text-gray-400">{r.added_by_username}</span>
+                                </div>
+                                {r.note && <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{r.note}</p>}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">No reviews yet.</p>
+                        )}
+                      </div>
+                      {f.added_by_username && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">added by {f.added_by_username}</p>
+                      )}
+                      <Link
+                        to={`/food/${f.id}`}
+                        className="inline-flex items-center gap-1 text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline mt-2"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
+                        </svg>
+                        Show food detail
+                      </Link>
+                    </div>
                   )}
-                  <Link
-                    to={`/food/${food.id}`}
-                    className="inline-flex items-center gap-1 text-sm font-medium text-amber-600 dark:text-amber-400 hover:underline mt-2"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                      <path fillRule="evenodd" d="M3 10a.75.75 0 0 1 .75-.75h10.638L10.23 5.29a.75.75 0 1 1 1.04-1.08l5.5 5.25a.75.75 0 0 1 0 1.08l-5.5 5.25a.75.75 0 1 1-1.04-1.08l4.158-3.96H3.75A.75.75 0 0 1 3 10Z" clipRule="evenodd" />
-                    </svg>
-                    Show food detail
-                  </Link>
-                </div>
-              );
-            })()}
+                </li>
+              ))}
+            </ul>
           </>
         ) : (
           <p className="text-gray-500">No foods listed.</p>
