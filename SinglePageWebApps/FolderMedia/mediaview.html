@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Media Gallery</title>
+  <style>
+    :root {
+      --bg-0: #081524;
+      --bg-1: #132740;
+      --bg-2: #1f3f64;
+      --surface: rgba(10, 24, 42, 0.78);
+      --surface-strong: rgba(8, 19, 33, 0.95);
+      --text: #f3f8ff;
+      --muted: #a6bfdc;
+      --line: rgba(169, 206, 245, 0.24);
+      --accent: #7fe1ff;
+      --accent-2: #ffd382;
+      --danger: #ff9eab;
+      --ok: #b9ffd6;
+      --shadow: 0 22px 64px rgba(0, 0, 0, 0.44);
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 11px;
+      --ease: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+      --font: "Avenir Next", "Segoe UI Variable", "Trebuchet MS", sans-serif;
+      --font-display: "Rockwell", "Palatino Linotype", "Book Antiqua", serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      font-family: var(--font);
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 8%, rgba(127, 225, 255, 0.2), transparent 35%),
+        radial-gradient(circle at 88% 14%, rgba(255, 211, 130, 0.2), transparent 40%),
+        linear-gradient(140deg, var(--bg-0), var(--bg-1) 42%, var(--bg-2));
+      overflow-x: hidden;
+    }
+
+    body::before,
+    body::after {
+      content: "";
+      position: fixed;
+      z-index: -1;
+      pointer-events: none;
+      border-radius: 999px;
+      filter: blur(54px);
+      opacity: 0.4;
+    }
+
+    body::before {
+      width: 320px;
+      height: 320px;
+      top: -90px;
+      right: -100px;
+      background: rgba(123, 212, 255, 0.44);
+    }
+
+    body::after {
+      width: 400px;
+      height: 400px;
+      left: -120px;
+      bottom: -150px;
+      background: rgba(255, 201, 96, 0.31);
+    }
+
+    .app {
+      width: min(1260px, 100% - 1.4rem);
+      margin: 1rem auto 1.5rem;
+      display: grid;
+      gap: 0.8rem;
+    }
+
+    .topbar {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: rgba(7, 19, 34, 0.74);
+      backdrop-filter: blur(12px);
+      box-shadow: var(--shadow);
+      padding: 0.8rem 0.9rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.8rem;
+      position: relative;
+      overflow: visible;
+      z-index: 30;
+    }
+
+    .brand {
+      display: grid;
+      gap: 0.25rem;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: clamp(1.1rem, 2vw, 1.5rem);
+      line-height: 1.1;
+    }
+
+    .brand p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.84rem;
+    }
+
+    .hamburger-wrap {
+      position: relative;
+    }
+
+    .icon-btn {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(15, 45, 71, 0.74);
+      color: #e8f4ff;
+      cursor: pointer;
+      transition: transform var(--ease), border-color var(--ease), background var(--ease);
+    }
+
+    .icon-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(163, 223, 255, 0.92);
+      background: rgba(23, 62, 95, 0.9);
+    }
+
+    .burger {
+      width: 18px;
+      height: 14px;
+      position: relative;
+    }
+
+    .burger span {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .burger span:nth-child(1) {
+      top: 0;
+    }
+
+    .burger span:nth-child(2) {
+      top: 6px;
+    }
+
+    .burger span:nth-child(3) {
+      top: 12px;
+    }
+
+    .menu {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 0.45rem);
+      min-width: 210px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(8, 19, 35, 0.96);
+      box-shadow: var(--shadow);
+      padding: 0.4rem;
+      display: none;
+      z-index: 120;
+    }
+
+    .menu.open {
+      display: grid;
+      animation: rise 170ms ease;
+    }
+
+    .menu button {
+      width: 100%;
+      text-align: left;
+      padding: 0.55rem 0.65rem;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: transparent;
+      color: #ebf6ff;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .menu button:hover {
+      background: rgba(28, 74, 112, 0.66);
+      border-color: rgba(155, 214, 255, 0.5);
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      background: var(--surface);
+      backdrop-filter: blur(15px);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      min-height: 68vh;
+      position: relative;
+    }
+
+    .gallery-wrap {
+      padding: 0.9rem;
+      height: 100%;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 0.78rem;
+      align-content: start;
+      overflow: auto;
+      padding-right: 0.2rem;
+      min-height: 48vh;
+    }
+
+    .card {
+      border: 1px solid rgba(148, 202, 240, 0.3);
+      border-radius: 13px;
+      background: rgba(8, 20, 37, 0.84);
+      overflow: hidden;
+      cursor: pointer;
+      display: grid;
+      grid-template-rows: 1fr auto;
+      min-height: 190px;
+      transition: transform var(--ease), border-color var(--ease), box-shadow var(--ease);
+    }
+
+    .card:hover {
+      transform: translateY(-3px);
+      border-color: rgba(180, 229, 255, 0.9);
+      box-shadow: 0 12px 20px rgba(0, 0, 0, 0.34);
+    }
+
+    .thumb {
+      position: relative;
+      min-height: 138px;
+      overflow: hidden;
+      background: linear-gradient(140deg, rgba(18, 52, 82, 0.8), rgba(12, 25, 43, 0.84));
+    }
+
+    .thumb img,
+    .thumb video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .badge {
+      position: absolute;
+      top: 0.4rem;
+      right: 0.4rem;
+      font-size: 0.68rem;
+      border: 1px solid rgba(153, 214, 255, 0.5);
+      border-radius: 999px;
+      padding: 0.18rem 0.42rem;
+      background: rgba(5, 12, 22, 0.78);
+      color: #edf7ff;
+    }
+
+    .meta {
+      padding: 0.5rem 0.6rem 0.62rem;
+      display: grid;
+      gap: 0.25rem;
+    }
+
+    .name {
+      font-size: 0.82rem;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    .sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+      word-break: break-word;
+    }
+
+    .center-cta {
+      position: absolute;
+      inset: 0;
+      display: none;
+      place-items: center;
+      background: rgba(7, 17, 30, 0.55);
+      backdrop-filter: blur(2px);
+    }
+
+    .center-cta.show {
+      display: grid;
+    }
+
+    .cta-card {
+      width: min(480px, calc(100% - 1.5rem));
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 1rem;
+      background: rgba(8, 20, 36, 0.94);
+      display: grid;
+      gap: 0.7rem;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .cta-card h2 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-family: var(--font-display);
+    }
+
+    .cta-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.35;
+    }
+
+    .button {
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      padding: 0.54rem 0.74rem;
+      background: rgba(16, 51, 80, 0.84);
+      color: #e4f3ff;
+      font: inherit;
+      cursor: pointer;
+      transition: transform var(--ease), border-color var(--ease), background var(--ease);
+    }
+
+    .button:hover {
+      transform: translateY(-1px);
+      border-color: rgba(170, 224, 255, 0.86);
+      background: rgba(23, 66, 100, 0.95);
+    }
+
+    .button.primary {
+      background: linear-gradient(120deg, rgba(28, 87, 128, 0.94), rgba(29, 67, 98, 0.94));
+      border-color: rgba(127, 225, 255, 0.72);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .viewer {
+      min-height: 82vh;
+      display: grid;
+      grid-template-rows: auto 1fr;
+      background: var(--surface-strong);
+    }
+
+    .viewer-top {
+      padding: 0.65rem 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .stage {
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at 50% 10%, rgba(45, 98, 143, 0.31), rgba(2, 8, 15, 0.85));
+      padding: 1rem;
+      overflow: auto;
+      touch-action: pan-y;
+    }
+
+    .stage img,
+    .stage video {
+      max-width: 100%;
+      max-height: 70vh;
+      border: 1px solid rgba(167, 223, 255, 0.42);
+      border-radius: 12px;
+      box-shadow: 0 11px 24px rgba(0, 0, 0, 0.44);
+      background: #040d17;
+    }
+
+    .viewer-nav {
+      display: flex;
+      gap: 0.45rem;
+      align-items: center;
+    }
+
+    .viewer-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      line-height: 1.2;
+      word-break: break-word;
+    }
+
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 760px) {
+      .app {
+        width: calc(100% - 0.8rem);
+        margin-top: 0.5rem;
+      }
+
+      .topbar {
+        padding: 0.7rem;
+      }
+
+      .grid {
+        grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      }
+
+      .viewer {
+        min-height: 88vh;
+      }
+
+      .stage img,
+      .stage video {
+        max-height: 64vh;
+      }
+
+      .viewer-top,
+      .viewer-bottom {
+        padding: 0.56rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <h1>Local Media Gallery</h1>
+        <p>file protocol friendly gallery with JSON-defined order and selection</p>
+      </div>
+
+      <div class="hamburger-wrap">
+        <button id="menuToggleBtn" class="icon-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Open menu">
+          <span class="burger" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+          </span>
+        </button>
+
+        <div id="menu" class="menu" role="menu" aria-label="Main menu">
+          <button id="menuLoadBtn" type="button" role="menuitem">Load Config JSON</button>
+        </div>
+      </div>
+    </header>
+
+    <section id="galleryView" class="panel gallery-wrap">
+      <div id="gallery" class="grid"></div>
+
+      <div id="centerCta" class="center-cta">
+        <div class="cta-card">
+          <h2>Load Your Media Config</h2>
+          <p>
+            default.json was not loaded. Choose a config file to build your gallery.
+          </p>
+          <div>
+            <button id="centerLoadBtn" class="button primary" type="button">Load Config JSON</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="viewerView" class="panel viewer hidden">
+      <div class="viewer-top">
+        <button id="backBtn" class="button" type="button">Back</button>
+        <div id="viewerTitle" class="viewer-title">Preview</div>
+        <div class="viewer-nav">
+          <button id="prevBtn" class="button" type="button">Prev</button>
+          <button id="nextBtn" class="button" type="button">Next</button>
+        </div>
+      </div>
+
+      <div id="stage" class="stage"></div>
+    </section>
+
+    <input id="configFileInput" type="file" accept="application/json" class="hidden" />
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      const IMAGE_EXT = new Set(["jpg", "jpeg", "png", "gif", "webp", "bmp", "svg", "avif"]);
+      const VIDEO_EXT = new Set(["mp4", "webm", "mov", "m4v", "ogg", "ogv", "mkv"]);
+
+      const state = {
+        items: [],
+        loadedConfigName: "",
+        currentIndex: -1,
+        swipeStartX: 0,
+        swipeStartY: 0,
+        swiping: false
+      };
+
+      const ui = {
+        gallery: document.getElementById("gallery"),
+        galleryView: document.getElementById("galleryView"),
+        viewerView: document.getElementById("viewerView"),
+        centerCta: document.getElementById("centerCta"),
+        centerLoadBtn: document.getElementById("centerLoadBtn"),
+        menuToggleBtn: document.getElementById("menuToggleBtn"),
+        menu: document.getElementById("menu"),
+        menuLoadBtn: document.getElementById("menuLoadBtn"),
+        configFileInput: document.getElementById("configFileInput"),
+        backBtn: document.getElementById("backBtn"),
+        prevBtn: document.getElementById("prevBtn"),
+        nextBtn: document.getElementById("nextBtn"),
+        stage: document.getElementById("stage"),
+        viewerTitle: document.getElementById("viewerTitle")
+      };
+
+      function closeMenu() {
+        ui.menu.classList.remove("open");
+        ui.menuToggleBtn.setAttribute("aria-expanded", "false");
+      }
+
+      function toggleMenu() {
+        const next = !ui.menu.classList.contains("open");
+        ui.menu.classList.toggle("open", next);
+        ui.menuToggleBtn.setAttribute("aria-expanded", next ? "true" : "false");
+      }
+
+      function inferType(path, explicitType) {
+        if (explicitType === "image" || explicitType === "video") {
+          return explicitType;
+        }
+        const clean = String(path || "").toLowerCase().split("?")[0].split("#")[0];
+        const dot = clean.lastIndexOf(".");
+        const ext = dot >= 0 ? clean.slice(dot + 1) : "";
+        if (IMAGE_EXT.has(ext)) {
+          return "image";
+        }
+        if (VIDEO_EXT.has(ext)) {
+          return "video";
+        }
+        return "unknown";
+      }
+
+      function fileNameFromPath(path) {
+        const normalized = String(path || "").replaceAll("\\", "/");
+        const chunks = normalized.split("/").filter(Boolean);
+        return chunks.length ? chunks[chunks.length - 1] : "untitled";
+      }
+
+      function joinPath(basePath, itemPath) {
+        if (!basePath) {
+          return String(itemPath || "");
+        }
+        if (!itemPath) {
+          return String(basePath);
+        }
+        if (/^(?:[a-z]+:)?\/\//i.test(itemPath) || /^[a-zA-Z]:[\\/]/.test(itemPath)) {
+          return String(itemPath);
+        }
+        const left = String(basePath).replace(/[\\/]+$/, "");
+        const right = String(itemPath).replace(/^[\\/]+/, "");
+        return `${left}/${right}`;
+      }
+
+      function parseConfig(raw) {
+        const basePath = raw && typeof raw.basePath === "string" ? raw.basePath : "";
+        const sourceItems = Array.isArray(raw) ? raw : (Array.isArray(raw.items) ? raw.items : []);
+
+        const items = sourceItems
+          .map((entry, i) => {
+            if (typeof entry === "string") {
+              const src = joinPath(basePath, entry);
+              const type = inferType(src);
+              return {
+                id: `item-${i + 1}`,
+                src,
+                type,
+                title: fileNameFromPath(src),
+                selected: true
+              };
+            }
+
+            if (!entry || typeof entry !== "object") {
+              return null;
+            }
+
+            const path = typeof entry.path === "string" ? entry.path : (typeof entry.src === "string" ? entry.src : "");
+            if (!path) {
+              return null;
+            }
+
+            const src = joinPath(basePath, path);
+            const type = inferType(src, entry.type);
+            return {
+              id: String(entry.id || `item-${i + 1}`),
+              src,
+              type,
+              title: String(entry.title || fileNameFromPath(src)),
+              selected: entry.selected !== false && entry.enabled !== false
+            };
+          })
+          .filter(Boolean)
+          .filter((item) => item.selected)
+          .filter((item) => item.type === "image" || item.type === "video");
+
+        return items;
+      }
+
+      function showEmptyCta(show) {
+        ui.centerCta.classList.toggle("show", show);
+      }
+
+      function renderGallery() {
+        ui.gallery.innerHTML = "";
+
+        if (!state.items.length) {
+          showEmptyCta(true);
+          return;
+        }
+
+        showEmptyCta(false);
+
+        state.items.forEach((item, index) => {
+          const card = document.createElement("article");
+          card.className = "card";
+          card.addEventListener("click", () => openViewer(index));
+
+          const thumb = document.createElement("div");
+          thumb.className = "thumb";
+
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = item.type === "video" ? "Video" : "Image";
+          thumb.appendChild(badge);
+
+          if (item.type === "image") {
+            const img = document.createElement("img");
+            img.loading = "lazy";
+            img.alt = item.title;
+            img.src = item.src;
+            img.addEventListener("error", () => {
+              img.remove();
+            });
+            thumb.appendChild(img);
+          } else {
+            const video = document.createElement("video");
+            video.preload = "metadata";
+            video.muted = true;
+            video.playsInline = true;
+            video.src = item.src;
+            video.addEventListener("error", () => {
+              video.remove();
+            });
+            thumb.appendChild(video);
+          }
+
+          const meta = document.createElement("div");
+          meta.className = "meta";
+
+          const name = document.createElement("div");
+          name.className = "name";
+          name.textContent = item.title;
+
+          const sub = document.createElement("div");
+          sub.className = "sub";
+          sub.textContent = item.src;
+
+          meta.append(name, sub);
+          card.append(thumb, meta);
+          ui.gallery.appendChild(card);
+        });
+      }
+
+      function renderViewerItem(index) {
+        if (index < 0 || index >= state.items.length) {
+          return;
+        }
+
+        state.currentIndex = index;
+        const item = state.items[index];
+
+        ui.stage.innerHTML = "";
+        if (item.type === "video") {
+          const video = document.createElement("video");
+          video.controls = true;
+          video.playsInline = true;
+          video.src = item.src;
+          ui.stage.appendChild(video);
+        } else {
+          const img = document.createElement("img");
+          img.alt = item.title;
+          img.src = item.src;
+          ui.stage.appendChild(img);
+        }
+
+        ui.viewerTitle.textContent = item.title;
+      }
+
+      function openViewer(index) {
+        if (!state.items.length) {
+          return;
+        }
+        ui.galleryView.classList.add("hidden");
+        ui.viewerView.classList.remove("hidden");
+        renderViewerItem(index);
+      }
+
+      function backToGallery() {
+        ui.viewerView.classList.add("hidden");
+        ui.galleryView.classList.remove("hidden");
+        ui.stage.innerHTML = "";
+        state.currentIndex = -1;
+      }
+
+      function nextItem() {
+        if (!state.items.length || state.currentIndex < 0) {
+          return;
+        }
+        const next = (state.currentIndex + 1) % state.items.length;
+        renderViewerItem(next);
+      }
+
+      function prevItem() {
+        if (!state.items.length || state.currentIndex < 0) {
+          return;
+        }
+        const prev = (state.currentIndex - 1 + state.items.length) % state.items.length;
+        renderViewerItem(prev);
+      }
+
+      async function loadConfigFromText(text, label) {
+        try {
+          const raw = JSON.parse(text);
+          const items = parseConfig(raw);
+          state.items = items;
+          state.loadedConfigName = label;
+          renderGallery();
+
+          if (!items.length) {
+            showEmptyCta(true);
+          }
+        } catch (error) {
+          showEmptyCta(true);
+        }
+      }
+
+      function loadDefaultConfigViaXhr() {
+        return new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("GET", "default.json", true);
+          xhr.overrideMimeType("application/json");
+          xhr.onreadystatechange = function () {
+            if (xhr.readyState !== 4) {
+              return;
+            }
+
+            // file:// often reports status 0 on successful local reads.
+            if (xhr.status === 0 || (xhr.status >= 200 && xhr.status < 300)) {
+              resolve(xhr.responseText || "");
+            } else {
+              reject(new Error(`XHR ${xhr.status}`));
+            }
+          };
+          xhr.onerror = function () {
+            reject(new Error("XHR network error"));
+          };
+          xhr.send();
+        });
+      }
+
+      async function tryLoadDefaultConfig() {
+        if (window.location.protocol === "file:") {
+          // Browsers commonly block local JSON reads on file:// due to CORS/security policy.
+          showEmptyCta(true);
+          return;
+        }
+
+        try {
+          const response = await fetch("default.json", { cache: "no-store" });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+          const text = await response.text();
+          await loadConfigFromText(text, "default.json");
+        } catch (_) {
+          try {
+            const xhrText = await loadDefaultConfigViaXhr();
+            await loadConfigFromText(xhrText, "default.json");
+          } catch (_) {
+            showEmptyCta(true);
+          }
+        }
+      }
+
+      async function onConfigFileSelected(event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file) {
+          return;
+        }
+        const text = await file.text();
+        await loadConfigFromText(text, file.name);
+      }
+
+      function bindEvents() {
+        ui.menuToggleBtn.addEventListener("click", (event) => {
+          event.stopPropagation();
+          toggleMenu();
+        });
+
+        ui.menuLoadBtn.addEventListener("click", () => {
+          closeMenu();
+          ui.configFileInput.click();
+        });
+
+        ui.centerLoadBtn.addEventListener("click", () => {
+          ui.configFileInput.click();
+        });
+
+        ui.configFileInput.addEventListener("change", onConfigFileSelected);
+
+        document.addEventListener("click", (event) => {
+          if (!ui.menu.contains(event.target) && event.target !== ui.menuToggleBtn && !ui.menuToggleBtn.contains(event.target)) {
+            closeMenu();
+          }
+        });
+
+        ui.backBtn.addEventListener("click", backToGallery);
+        ui.nextBtn.addEventListener("click", nextItem);
+        ui.prevBtn.addEventListener("click", prevItem);
+
+        document.addEventListener("keydown", (event) => {
+          if (!ui.viewerView.classList.contains("hidden")) {
+            if (event.key === "ArrowRight") {
+              nextItem();
+            } else if (event.key === "ArrowLeft") {
+              prevItem();
+            } else if (event.key === "Escape") {
+              backToGallery();
+            }
+          }
+        });
+
+        ui.stage.addEventListener("touchstart", (event) => {
+          if (!event.touches || event.touches.length !== 1) {
+            return;
+          }
+          const t = event.touches[0];
+          state.swipeStartX = t.clientX;
+          state.swipeStartY = t.clientY;
+          state.swiping = true;
+        }, { passive: true });
+
+        ui.stage.addEventListener("touchend", (event) => {
+          if (!state.swiping || !event.changedTouches || event.changedTouches.length !== 1) {
+            return;
+          }
+          const t = event.changedTouches[0];
+          const dx = t.clientX - state.swipeStartX;
+          const dy = t.clientY - state.swipeStartY;
+          state.swiping = false;
+
+          if (Math.abs(dx) < 48 || Math.abs(dx) < Math.abs(dy) * 1.2) {
+            return;
+          }
+
+          if (dx < 0) {
+            nextItem();
+          } else {
+            prevItem();
+          }
+        }, { passive: true });
+      }
+
+      function bootstrap() {
+        bindEvents();
+        renderGallery();
+        tryLoadDefaultConfig();
+      }
+
+      bootstrap();
+    })();
+  </script>
+</body>
+</html>

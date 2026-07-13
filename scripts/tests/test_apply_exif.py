@@ -7,6 +7,7 @@ Tests all functions, parameter combinations, and edge cases for 100% code covera
 
 import os
 import sys
+import io
 import sqlite3
 import tempfile
 import shutil
@@ -16,10 +17,12 @@ from unittest.mock import patch, MagicMock, call, mock_open
 import subprocess
 
 # Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_scripts = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(_scripts, 'media_process'))
+sys.path.insert(0, _scripts)
 
 import apply_exif
-from media_utils import create_database_schema
+from media_utils import create_database_schema, calculate_file_hash, set_volume, lookup_file_by_abs_path
 
 
 class TestApplyExifHelpers(unittest.TestCase):
@@ -287,17 +290,19 @@ class TestApplyExifDatabase(unittest.TestCase):
         shutil.rmtree(self.temp_dir)
     
     def test_check_file_in_database_exists(self):
-        """Test checking if file exists in database"""
-        # Insert test file
+        test_file = os.path.join(self.temp_dir, 'photo.jpg')
+        with open(test_file, 'wb') as f:
+            f.write(b'photo')
+        set_volume(self.conn, 'testvol', '/volume1/test', self.temp_dir)
         cursor = self.conn.cursor()
         cursor.execute("""
-            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            INSERT INTO files (relpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        """, ('photo.jpg', 'testvol', 'photo.jpg', 1000, 'abc123', 'image/jpeg', '.jpg', '2024-01-01T12:00:00', '2024-01-01T12:00:00'))
         self.conn.commit()
         self.conn.close()
-        
-        result = apply_exif.check_file_in_database(self.db_path, "/path/to/photo.jpg")
+
+        result = apply_exif.check_file_in_database(self.db_path, test_file)
         self.assertTrue(result)
     
     def test_check_file_in_database_not_exists(self):
@@ -314,20 +319,24 @@ class TestApplyExifDatabase(unittest.TestCase):
     
     @patch('subprocess.run')
     def test_reprocess_file_in_database_success(self, mock_run):
-        """Test successful file reprocessing"""
-        # Insert test file
+        test_file = os.path.join(self.temp_dir, 'photo.jpg')
+        with open(test_file, 'wb') as f:
+            f.write(b'photo')
+        set_volume(self.conn, 'testvol', '/volume1/test', self.temp_dir)
         cursor = self.conn.cursor()
         cursor.execute("""
-            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            INSERT INTO files (relpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        """, ('photo.jpg', 'testvol', 'photo.jpg', 1000, 'abc123', 'image/jpeg', '.jpg', '2024-01-01T12:00:00', '2024-01-01T12:00:00'))
         self.conn.commit()
         self.conn.close()
-        
+
         mock_run.return_value = MagicMock(returncode=0, stdout='Files updated: 1\n', stderr='')
-        
-        result = apply_exif.reprocess_file_in_database(self.db_path, "/path/to/photo.jpg", verbose=0)
+        result = apply_exif.reprocess_file_in_database(self.db_path, test_file, verbose=0)
         self.assertTrue(result)
+        called_cmd = mock_run.call_args[0][0]
+        self.assertIn('--volume', called_cmd)
+        self.assertIn('testvol', called_cmd)
     
     def test_reprocess_file_in_database_not_found(self):
         """Test reprocessing file not in database"""
@@ -338,36 +347,38 @@ class TestApplyExifDatabase(unittest.TestCase):
     
     @patch('subprocess.run')
     def test_reprocess_file_in_database_failure(self, mock_run):
-        """Test failed file reprocessing"""
-        # Insert test file
+        test_file = os.path.join(self.temp_dir, 'photo.jpg')
+        with open(test_file, 'wb') as f:
+            f.write(b'photo')
+        set_volume(self.conn, 'testvol', '/volume1/test', self.temp_dir)
         cursor = self.conn.cursor()
         cursor.execute("""
-            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            INSERT INTO files (relpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        """, ('photo.jpg', 'testvol', 'photo.jpg', 1000, 'abc123', 'image/jpeg', '.jpg', '2024-01-01T12:00:00', '2024-01-01T12:00:00'))
         self.conn.commit()
         self.conn.close()
-        
+
         mock_run.return_value = MagicMock(returncode=1, stdout='', stderr='Error')
-        
-        result = apply_exif.reprocess_file_in_database(self.db_path, "/path/to/photo.jpg", verbose=0)
+        result = apply_exif.reprocess_file_in_database(self.db_path, test_file, verbose=0)
         self.assertFalse(result)
-    
+
     @patch('subprocess.run')
     def test_reprocess_file_in_database_timeout(self, mock_run):
-        """Test reprocessing timeout"""
-        # Insert test file
+        test_file = os.path.join(self.temp_dir, 'photo.jpg')
+        with open(test_file, 'wb') as f:
+            f.write(b'photo')
+        set_volume(self.conn, 'testvol', '/volume1/test', self.temp_dir)
         cursor = self.conn.cursor()
         cursor.execute("""
-            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            INSERT INTO files (relpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, ("/path/to/photo.jpg", "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        """, ('photo.jpg', 'testvol', 'photo.jpg', 1000, 'abc123', 'image/jpeg', '.jpg', '2024-01-01T12:00:00', '2024-01-01T12:00:00'))
         self.conn.commit()
         self.conn.close()
-        
+
         mock_run.side_effect = subprocess.TimeoutExpired('cmd', 60)
-        
-        result = apply_exif.reprocess_file_in_database(self.db_path, "/path/to/photo.jpg", verbose=0)
+        result = apply_exif.reprocess_file_in_database(self.db_path, test_file, verbose=0)
         self.assertFalse(result)
 
 
@@ -583,24 +594,25 @@ class TestApplyExifCommandLine(unittest.TestCase):
         db_path = os.path.join(self.temp_dir, "test.db")
         conn = sqlite3.connect(db_path)
         create_database_schema(conn)
-        
-        # Insert test file
+        set_volume(conn, 'testvol', '/volume1/test', self.temp_dir)
+
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO files (fullpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
+            INSERT INTO files (relpath, volume, name, size, file_hash, mime_type, extension, modified_date, indexed_date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (self.test_file, "TestVol", "photo.jpg", 1000, "abc123", "image/jpeg", ".jpg", "2024-01-01T12:00:00", "2024-01-01T12:00:00"))
+        """, ('photo.jpg', 'testvol', 'photo.jpg', 1000, 'abc123', 'image/jpeg', '.jpg', '2024-01-01T12:00:00', '2024-01-01T12:00:00'))
         conn.commit()
         conn.close()
         
-        with patch('sys.argv', [
-            'apply_exif.py',
-            '--files', self.test_file,
-            '--city', 'Fort Worth',
-            '--db-path', db_path,
-            '--reprocess-db'
-        ]):
-            apply_exif.main()
+        with patch('sys.stdout', new=io.StringIO()):
+            with patch('sys.argv', [
+                'apply_exif.py',
+                '--files', self.test_file,
+                '--city', 'Fort Worth',
+                '--db-path', db_path,
+                '--reprocess-db'
+            ]):
+                apply_exif.main()
         
         mock_reprocess.assert_called_once()
     

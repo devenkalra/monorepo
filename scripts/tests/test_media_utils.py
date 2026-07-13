@@ -24,8 +24,22 @@ from media_utils import (
     create_database_schema,
     calculate_file_hash,
     get_mime_type,
+    get_indexable_file_type,
+    insert_thumbnail,
     is_image_file,
-    is_video_file
+    is_video_file,
+    is_audio_file,
+    is_document_file,
+    is_email_file,
+    classify_file_type,
+    catalog_mime_type,
+    UNKNOWN_MIME_TYPE,
+    normalize_date_filter,
+    normalize_volume_name,
+    set_volume,
+    to_storage_relpath,
+    clean_mount_path,
+    normalize_path,
 )
 
 
@@ -63,11 +77,15 @@ class TestMediaUtils(unittest.TestCase):
         tables = [row[0] for row in cursor.fetchall()]
         
         expected_tables = [
+            'volumes',
             'files',
             'image_metadata',
             'video_metadata',
+            'audio_metadata',
+            'document_metadata',
+            'email_metadata',
             'thumbnails',
-            'skipped_files'
+            'skipped_files',
         ]
         
         for table in expected_tables:
@@ -94,6 +112,43 @@ class TestMediaUtils(unittest.TestCase):
         self.assertGreater(len(indexes), 0)
         
         conn.close()
+
+    def test_clean_mount_path_strips_shell_quotes(self):
+        self.assertEqual(clean_mount_path('d:\\"'), 'd:\\')
+        self.assertEqual(clean_mount_path('"d:\\"'), 'd:\\')
+        self.assertEqual(clean_mount_path('d:'), f'd:{os.sep}')
+
+    def test_thumbnails_created_at_column(self):
+        """New and migrated databases include thumbnails.created_at."""
+        conn = sqlite3.connect(self.db_path)
+        create_database_schema(conn)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(thumbnails)")
+        columns = {row[1]: row[2] for row in cursor.fetchall()}
+        self.assertIn('created_at', columns)
+        conn.close()
+
+    def test_insert_thumbnail_sets_created_at(self):
+        """insert_thumbnail stores created_at as ISO timestamp."""
+        conn = sqlite3.connect(self.db_path)
+        try:
+            create_database_schema(conn)
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO files (volume, relpath, name, modified_date, size, indexed_date)
+                VALUES ('photo', 'test.jpg', 'test.jpg', '2024-01-01', 100, '2024-01-01')
+            """)
+            file_id = cursor.lastrowid
+            created_at = '2026-07-03T12:00:00'
+            insert_thumbnail(conn, file_id, b'jpeg-bytes', 200, 150, created_at=created_at)
+            conn.commit()
+            cursor.execute(
+                "SELECT created_at FROM thumbnails WHERE file_id = ?",
+                (file_id,),
+            )
+            self.assertEqual(cursor.fetchone()[0], created_at)
+        finally:
+            conn.close()
     
     def test_calculate_file_hash(self):
         """Test file hash calculation"""
@@ -254,6 +309,60 @@ class TestMediaUtils(unittest.TestCase):
                     is_image_file('application/octet-stream', ext),
                     f"Failed to detect {ext} as image"
                 )
+
+
+class TestVolumeHelpers(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.db_path = os.path.join(self.test_dir, 'test.db')
+        self.conn = sqlite3.connect(self.db_path)
+        create_database_schema(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        shutil.rmtree(self.test_dir)
+
+    def test_normalize_volume_name(self):
+        self.assertEqual(normalize_volume_name('Photo'), 'photo')
+        self.assertEqual(normalize_volume_name(' PHOTO '), 'photo')
+
+    def test_set_and_get_volume(self):
+        from media_utils import get_volume
+        set_volume(self.conn, 'Photo', '/volume1/photo', '/mnt/photo')
+        vol = get_volume(self.conn, 'PHOTO')
+        self.assertIsNotNone(vol)
+        self.assertEqual(vol['name'], 'photo')
+        self.assertEqual(vol['src_root'], '/volume1/photo')
+
+    def test_to_storage_relpath(self):
+        root = os.path.join(self.test_dir, 'mount')
+        os.makedirs(root, exist_ok=True)
+        filepath = os.path.join(root, '2024', 'a.jpg')
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        open(filepath, 'wb').close()
+        self.assertEqual(to_storage_relpath(filepath, root), '2024/a.jpg')
+
+
+class TestFileTypeDetection(unittest.TestCase):
+    def test_indexable_types(self):
+        self.assertEqual(get_indexable_file_type('image/jpeg', '.jpg'), 'image')
+        self.assertEqual(get_indexable_file_type('video/mp4', '.mp4'), 'video')
+        self.assertEqual(get_indexable_file_type('audio/mpeg', '.mp3'), 'audio')
+        self.assertEqual(get_indexable_file_type('application/pdf', '.pdf'), 'document')
+        self.assertEqual(get_indexable_file_type('message/rfc822', '.eml'), 'email')
+        self.assertIsNone(get_indexable_file_type('application/zip', '.zip'))
+
+    def test_classify_and_catalog_unknown_types(self):
+        self.assertEqual(classify_file_type('application/zip', '.zip'), 'unknown')
+        self.assertIn('zip', catalog_mime_type('application/zip', '.zip'))
+        self.assertEqual(catalog_mime_type('application/octet-stream', '.xyz'), UNKNOWN_MIME_TYPE)
+        self.assertEqual(catalog_mime_type('image/jpeg', '.jpg'), 'image/jpeg')
+        self.assertEqual(classify_file_type('image/jpeg', '.jpg'), 'image')
+
+    def test_audio_document_email_helpers(self):
+        self.assertTrue(is_audio_file('audio/mpeg', '.mp3'))
+        self.assertTrue(is_document_file('application/pdf', '.pdf'))
+        self.assertTrue(is_email_file('message/rfc822', '.eml'))
     
     def test_mime_type_case_insensitive(self):
         """Test that MIME type detection is case insensitive"""
@@ -261,6 +370,22 @@ class TestMediaUtils(unittest.TestCase):
         mime2 = get_mime_type('test.jpg')
         
         self.assertEqual(mime1, mime2)
+
+    def test_normalize_date_filter_formats(self):
+        cases = [
+            ('20260101', '20260101'),
+            ('2026-01-30', '20260130'),
+            ('2026/01/09', '20260109'),
+            ('2024-06-02T10:00:00', '20240602'),
+            ('2026:01:09 14:30:00', '20260109'),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                self.assertEqual(normalize_date_filter(raw), expected)
+
+    def test_normalize_date_filter_invalid(self):
+        with self.assertRaises(ValueError):
+            normalize_date_filter('2026')
 
 
 if __name__ == '__main__':

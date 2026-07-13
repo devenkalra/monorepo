@@ -19,12 +19,9 @@ from typing import List, Optional, Tuple
 # Import shared utilities
 from media_utils import (
     calculate_file_hash,
-    find_file_by_hash,
     find_files_by_hash,
-    get_file_info,
+    get_indexable_file_type,
     get_mime_type,
-    is_image_file,
-    is_video_file
 )
 
 
@@ -132,7 +129,8 @@ def process_file(filepath: str, source_root: str, dest_root: str, conn: sqlite3.
         if verbose >= 1:
             action_str = "[DRY RUN] Would move" if dry_run else ("Moving" if action == 'move' else "Copying")
             print(f"Duplicate: {filepath}")
-            print(f"  Original: {original['fullpath']}")
+            print(f"  Original: {original['volume']}:{original['relpath']}")
+            print(f"            {original['fullpath']}")
             print(f"  {action_str} to duplicate directory...")
         
         # Calculate relative path from source root
@@ -232,9 +230,9 @@ def scan_directory(source_dir: str, dest_dir: str, conn: sqlite3.Connection,
             if media_only:
                 mime_type = get_mime_type(filepath)
                 extension = os.path.splitext(filepath)[1].lower()
-                if not (is_image_file(mime_type, extension) or is_video_file(mime_type)):
+                if not get_indexable_file_type(mime_type, extension):
                     if verbose >= 2:
-                        print(f"Skipping non-media file: {filepath}")
+                        print(f"Skipping non-indexed file type: {filepath}")
                     skipped_files += 1
                     continue
             
@@ -293,7 +291,7 @@ Examples:
     parser.add_argument("--action", choices=['move', 'copy'], default='move',
                        help="Action to take with duplicates (default: move)")
     parser.add_argument("--media-only", action="store_true",
-                       help="Only process media files (images and videos)")
+                       help="Only process indexable file types")
     parser.add_argument("--include-pattern", action="append", default=[],
                        help="Pattern to include in paths (regex by default; can be repeated)")
     parser.add_argument("--skip-pattern", action="append", default=[],

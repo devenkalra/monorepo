@@ -456,170 +456,90 @@ def verify_exif_written(file_path: str, expected_tags: dict, verbose: int = 0) -
 
 
 def check_file_in_database(db_path: str, file_path: str) -> bool:
-    """Check if a file exists in the database.
-    
-    Args:
-        db_path: Path to the database file
-        file_path: Path to the file to check
-    
-    Returns:
-        True if file is in database, False otherwise
-    """
+    """Check if a file exists in the database."""
     if not os.path.exists(db_path):
         return False
-    
+
     try:
         import sqlite3
+        from media_utils import lookup_file_by_abs_path
+
         conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Check by absolute path
-        abs_path = os.path.abspath(file_path)
-        cursor.execute("SELECT id FROM files WHERE fullpath = ?", (abs_path,))
-        result = cursor.fetchone()
-        
+        result = lookup_file_by_abs_path(conn, file_path) is not None
         conn.close()
-        return result is not None
+        return result
     except Exception as e:
         print(f"Warning: Could not check database for {file_path}: {e}", file=sys.stderr)
         return False
 
 
 def reprocess_file_in_database(db_path: str, file_path: str, verbose: int = 0) -> bool:
-    """Reprocess a file in the database by calling index_media for just this file.
-    
-    Args:
-        db_path: Path to the database file
-        file_path: Path to the file to reprocess
-        verbose: Verbosity level (0=quiet, 1=normal, 2=debug, 3=trace)
-    
-    Returns:
-        True if successful, False otherwise
-    """
+    """Reprocess a file in the database by calling index_media for just this file."""
     try:
         import subprocess
-        import os
         import sqlite3
-        
+        from media_utils import lookup_file_by_abs_path
+
         if verbose >= 2:
             print(f"[DEBUG] Starting database reprocess for: {file_path}")
-        
-        # Get the volume for this file from the database
+
         abs_path = os.path.abspath(file_path)
-        try:
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            cursor.execute("SELECT volume FROM files WHERE fullpath = ? LIMIT 1", (abs_path,))
-            result = cursor.fetchone()
-            conn.close()
-            
-            if not result:
-                print(f"Warning: File not found in database: {file_path}", file=sys.stderr)
-                return False
-            
-            volume = result[0]
-            if verbose >= 2:
-                print(f"[DEBUG] File volume in database: {volume}")
-        except Exception as e:
-            print(f"Warning: Could not query database for volume: {e}", file=sys.stderr)
+        conn = sqlite3.connect(db_path)
+        record = lookup_file_by_abs_path(conn, abs_path)
+        conn.close()
+
+        if not record:
+            print(f"Warning: File not found in database: {file_path}", file=sys.stderr)
             return False
-        
-        # Find index_media.py in the same directory as this script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        index_media_script = os.path.join(script_dir, 'index_media.py')
-        
+
+        volume = record['volume']
         if verbose >= 2:
-            print(f"[DEBUG] Looking for index_media.py at: {index_media_script}")
-        
+            print(f"[DEBUG] File volume in database: {volume}")
+
+        scripts_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        index_media_script = os.path.join(scripts_dir, 'index_media.py')
+
         if not os.path.exists(index_media_script):
             print(f"Warning: index_media.py not found at {index_media_script}", file=sys.stderr)
             return False
-        
-        # Get the directory and file for index_media
-        file_dir = os.path.dirname(os.path.abspath(file_path))
+
         file_name = os.path.basename(file_path)
-        
-        if verbose >= 2:
-            print(f"[DEBUG] File directory: {file_dir}")
-            print(f"[DEBUG] File name: {file_name}")
-        
-        # Build command to reindex just this file
-        # Use regex to match exact filename (escape special regex chars)
-        # 
-        # Note: index_media.py matches patterns against the FULL PATH, not just the filename.
-        # To match a specific file, we need a pattern that matches the filename at the END
-        # of the path (after a path separator).
-        # 
-        # Pattern format: [/\]<escaped_filename>$
-        #   [/\\] - Matches either / (Unix) or \ (Windows) path separator
-        #   <escaped_filename> - The filename with regex special chars escaped
-        #   $ - Anchors to end of string (ensures exact filename match)
-        #
-        # This pattern is more specific than typical index_media.py patterns (like ".jpg" 
-        # or "2024") and won't interfere with normal usage.
+        start_dir = os.path.dirname(record['relpath']).replace('/', os.sep)
         import re
         escaped_filename = re.escape(file_name)
         pattern = f'[/\\\\]{escaped_filename}$'
-        
-        if verbose >= 2:
-            print(f"[DEBUG] Filename pattern: {pattern}")
-        
+
         cmd = [
-            'python3',
+            sys.executable,
             index_media_script,
-            '--path', file_dir,
-            '--volume', volume,  # Use the same volume as originally indexed
+            '--volume', volume,
             '--db-path', db_path,
-            '--include-pattern', pattern,  # Match filename at end of path
-            # Pass --check-existing with 'hash' to force re-computation
-            # Since we just updated EXIF, the file metadata changed, so we want to update the DB
-            # Using 'hash' as check criteria means it will compute hash, not find a match
-            # (because hash hasn't changed), and proceed to update logic
-            '--check-existing', 'hash'  # Check by hash - won't match, will update
+            '--include-pattern', pattern,
+            '--check-existing', 'hash',
         ]
-        
+        if start_dir:
+            cmd.extend(['--start-dir', start_dir])
+
         if verbose >= 1:
             print(f"  Reprocessing in database: {file_path}")
-        
-        if verbose >= 1:
-            cmd.append('--verbose')
-            cmd.append(str(min(verbose, 3)))  # Pass verbosity to index_media
-        
+            cmd.extend(['--verbose', str(min(verbose, 3))])
+
         if verbose >= 2:
             print(f"[DEBUG] Reprocess command: {' '.join(cmd)}")
-        
-        # Run index_media to update the file's metadata
-        if verbose >= 2:
-            print(f"[DEBUG] Executing index_media subprocess...")
-        
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        
-        if verbose >= 2:
-            print(f"[DEBUG] index_media completed with return code: {result.returncode}")
-        
-        if verbose >= 3:
-            print(f"[DEBUG] index_media stdout:")
-            print(result.stdout)
-            print(f"[DEBUG] index_media stderr:")
-            print(result.stderr)
-        
+
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
         if result.returncode != 0:
-            print(f"  ⚠ Database reprocess returned code {result.returncode}", file=sys.stderr)
+            print(f"  Database reprocess returned code {result.returncode}", file=sys.stderr)
             if verbose >= 1:
                 print(f"  [VERBOSE] Stdout: {result.stdout}")
                 print(f"  [VERBOSE] Stderr: {result.stderr}")
             return False
-        
+
         if verbose >= 1:
-            print(f"  ✓ Database updated")
-        
+            print("  Database updated")
         return True
-        
+
     except subprocess.TimeoutExpired:
         print(f"Warning: Reprocessing timed out for {file_path}", file=sys.stderr)
         return False
@@ -627,7 +547,6 @@ def reprocess_file_in_database(db_path: str, file_path: str, verbose: int = 0) -
         print(f"Warning: Could not reprocess {file_path}: {e}", file=sys.stderr)
         if verbose >= 2:
             import traceback
-            print(f"[DEBUG] Exception traceback:")
             traceback.print_exc()
         return False
 

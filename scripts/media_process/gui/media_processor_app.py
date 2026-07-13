@@ -39,7 +39,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 try:
     from media_utils import (
         get_mime_type, is_image_file, is_video_file, calculate_file_hash,
-        create_database_schema, log_audit
+        create_database_schema, log_audit, lookup_file_by_abs_path,
+        find_files_by_hash, relpath_for_abs_path, normalize_volume_name,
+        delete_file_metadata,
     )
 except ImportError:
     print("Warning: media_utils not found, some features may be limited")
@@ -834,33 +836,20 @@ class MediaProcessorApp:
             
         try:
             import sqlite3
-            
+
             conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            # Get absolute path for comparison
-            abs_path = os.path.abspath(file_path)
-            
-            # Query for file
-            cursor.execute("""
-                SELECT id, volume
-                FROM files
-                WHERE fullpath = ?
-            """, (abs_path,))
-            
-            result = cursor.fetchone()
+            record = lookup_file_by_abs_path(conn, file_path)
             conn.close()
-            
-            if result:
-                file_id, volume = result
-                in_volume = (volume == volume_filter) if volume_filter else True
+
+            if record:
+                in_volume = (record['volume'] == volume_filter) if volume_filter else True
                 return {
                     'exists': True,
-                    'volume': volume,
+                    'volume': record['volume'],
                     'in_volume': in_volume,
-                    'file_id': file_id
+                    'file_id': record['id'],
                 }
-            
+
             return {'exists': False, 'volume': None, 'in_volume': False, 'file_id': None}
             
         except Exception as e:
@@ -881,19 +870,16 @@ class MediaProcessorApp:
             import io
             
             conn = sqlite3.connect(db_path)
+            record = lookup_file_by_abs_path(conn, file_path)
+            if not record:
+                conn.close()
+                return None
+
             cursor = conn.cursor()
-            
-            # Get absolute path for comparison
-            abs_path = os.path.abspath(file_path)
-            
-            # Query for thumbnail
-            cursor.execute("""
-                SELECT t.thumbnail_data 
-                FROM thumbnails t
-                JOIN files f ON t.file_id = f.id
-                WHERE f.fullpath = ?
-            """, (abs_path,))
-            
+            cursor.execute(
+                "SELECT thumbnail_data FROM thumbnails WHERE file_id = ?",
+                (record['id'],),
+            )
             result = cursor.fetchone()
             conn.close()
             
@@ -1890,24 +1876,15 @@ class IndexMediaDialog(OperationDialogBase):
             messagebox.showerror("Error", f"index_media.py not found at {index_script}")
             return
             
-        # Get parent directory of files for --path
-        if self.files:
-            paths = list(set([os.path.dirname(f) for f in self.files]))
-            
-            # Build command
-            cmd = ['python3', index_script]
-            
-            for path in paths:
-                cmd.extend(['--path', path])
-                
-            cmd.extend(['--volume', self.volume_var.get()])
-            cmd.extend(['--db-path', self.db_path])
-            cmd.extend(['--verbose', '2'])
-            
-            if self.dry_run_var.get():
-                cmd.append('--dry-run')
-                
-            self.run_command_async(cmd)
+        cmd = ['python3', index_script]
+        cmd.extend(['--volume', self.volume_var.get()])
+        cmd.extend(['--db-path', self.db_path])
+        cmd.extend(['--verbose', '2'])
+
+        if self.dry_run_var.get():
+            cmd.append('--dry-run')
+
+        self.run_command_async(cmd)
 
 
 class MoveMediaDialog(OperationDialogBase):
@@ -2125,16 +2102,24 @@ class MoveMediaDialog(OperationDialogBase):
                 counter += 1
             self._append_output(f"  Destination exists, using: {os.path.basename(dest_path)}\n")
         
-        # Check if file exists in database at destination path
+        volume_name = normalize_volume_name(volume)
+        try:
+            dest_relpath = relpath_for_abs_path(conn, volume_name, dest_path)
+        except ValueError:
+            dest_relpath = None
+
         cursor = conn.cursor()
-        cursor.execute("SELECT id, file_hash FROM files WHERE fullpath = ?", (dest_path,))
-        result = cursor.fetchone()
-        
-        if result:
-            file_id, db_hash = result
-            if db_hash == source_hash:
-                self._append_output(f"  Skipping: File already in database at destination\n")
-                return 'skipped', 'db_exact_match'
+        if dest_relpath:
+            cursor.execute(
+                "SELECT id, file_hash FROM files WHERE volume = ? AND relpath = ?",
+                (volume_name, dest_relpath),
+            )
+            result = cursor.fetchone()
+            if result:
+                file_id, db_hash = result
+                if db_hash == source_hash:
+                    self._append_output("  Skipping: File already in database at destination\n")
+                    return 'skipped', 'db_exact_match'
         
         # Move the file
         if dry_run:
@@ -2188,77 +2173,67 @@ class MoveMediaDialog(OperationDialogBase):
     def _update_or_insert_file(self, conn: sqlite3.Connection, old_path: str,
                                new_path: str, volume: str, dry_run: bool) -> Tuple[str, int]:
         """Update existing file record or insert new one."""
-        cursor = conn.cursor()
-        
+        volume_name = normalize_volume_name(volume)
+
         try:
-            # Check if file exists in database by old path
-            cursor.execute("SELECT id FROM files WHERE fullpath = ?", (old_path,))
-            existing = cursor.fetchone()
-            
+            existing = lookup_file_by_abs_path(conn, old_path)
+            new_relpath = relpath_for_abs_path(conn, volume_name, new_path)
+            cursor = conn.cursor()
+
             if existing:
-                file_id = existing[0]
-                
-                # Update the record with new path
+                file_id = existing['id']
                 if not dry_run:
                     modified_date = datetime.fromtimestamp(os.path.getmtime(new_path)).isoformat()
-                    
                     cursor.execute("""
-                        UPDATE files 
-                        SET fullpath = ?, 
-                            volume = ?,
-                            name = ?,
-                            modified_date = ?,
-                            indexed_date = ?
+                        UPDATE files
+                        SET relpath = ?, volume = ?, name = ?, modified_date = ?, indexed_date = ?
                         WHERE id = ?
                     """, (
-                        new_path,
-                        volume,
+                        new_relpath,
+                        volume_name,
                         os.path.basename(new_path),
                         modified_date,
                         datetime.now().isoformat(),
-                        file_id
+                        file_id,
                     ))
-                
                 self._append_output(f"  Updated database record (ID: {file_id})\n")
                 return 'updated', file_id
+
+            stat = os.stat(new_path)
+            mime_type = get_mime_type(new_path)
+            extension = os.path.splitext(new_path)[1].lower()
+            file_hash = calculate_file_hash(new_path)
+            modified_date = datetime.fromtimestamp(stat.st_mtime).isoformat()
+            try:
+                created_date = datetime.fromtimestamp(stat.st_ctime).isoformat()
+            except Exception:
+                created_date = modified_date
+
+            if not dry_run:
+                cursor.execute("""
+                    INSERT INTO files (
+                        volume, relpath, name, created_date, modified_date,
+                        size, mime_type, extension, file_hash, indexed_date
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    volume_name,
+                    new_relpath,
+                    os.path.basename(new_path),
+                    created_date,
+                    modified_date,
+                    stat.st_size,
+                    mime_type,
+                    extension,
+                    file_hash,
+                    datetime.now().isoformat(),
+                ))
+                file_id = cursor.lastrowid
             else:
-                # File not in database, insert new record
-                stat = os.stat(new_path)
-                mime_type = get_mime_type(new_path)
-                extension = os.path.splitext(new_path)[1].lower()
-                file_hash = calculate_file_hash(new_path)
-                
-                modified_date = datetime.fromtimestamp(stat.st_mtime).isoformat()
-                try:
-                    created_date = datetime.fromtimestamp(stat.st_ctime).isoformat()
-                except Exception:
-                    created_date = modified_date
-                
-                if not dry_run:
-                    cursor.execute("""
-                        INSERT INTO files (
-                            volume, fullpath, name, created_date, modified_date,
-                            size, mime_type, extension, file_hash, indexed_date
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        volume,
-                        new_path,
-                        os.path.basename(new_path),
-                        created_date,
-                        modified_date,
-                        stat.st_size,
-                        mime_type,
-                        extension,
-                        file_hash,
-                        datetime.now().isoformat()
-                    ))
-                    file_id = cursor.lastrowid
-                else:
-                    file_id = -1
-                
-                self._append_output(f"  Inserted new database record (ID: {file_id})\n")
-                return 'inserted', file_id
-                
+                file_id = -1
+
+            self._append_output(f"  Inserted new database record (ID: {file_id})\n")
+            return 'inserted', file_id
+
         except Exception as e:
             self._append_output(f"  Error updating database: {e}\n")
             return 'error', -1
@@ -2508,34 +2483,11 @@ class LocateInDbDialog(OperationDialogBase):
     
     def _find_by_hash(self, conn, file_hash):
         """Find all files in database with matching hash."""
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, volume, fullpath, name, created_date, modified_date, 
-                   size, mime_type, extension, indexed_date
-            FROM files
-            WHERE file_hash = ?
-            ORDER BY indexed_date DESC
-        """, (file_hash,))
-        
-        results = []
-        for row in cursor.fetchall():
-            results.append({
-                'id': row[0],
-                'volume': row[1],
-                'fullpath': row[2],
-                'name': row[3],
-                'created_date': row[4],
-                'modified_date': row[5],
-                'size': row[6],
-                'mime_type': row[7],
-                'extension': row[8],
-                'indexed_date': row[9]
-            })
-        return results
+        return find_files_by_hash(conn, file_hash)
     
     def _print_match(self, conn, match):
         """Print a single match with details."""
-        self._append_output(f"      {match['fullpath']}\n")
+        self._append_output(f"      {match['volume']}:{match['relpath']} ({match['fullpath']})\n")
         
         if self.show_metadata_var.get():
             details = []
@@ -3134,15 +3086,12 @@ class DeleteFilesDialog(OperationDialogBase):
             file_id = None
             metadata_before = None
             if conn and delete_from_db:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM files WHERE fullpath = ?", (file_path,))
-                result = cursor.fetchone()
-                
-                if result:
-                    file_id = result[0]
+                record = lookup_file_by_abs_path(conn, file_path)
+                if record:
+                    file_id = record['id']
                     self._append_output(f"  Found in database (file_id: {file_id})\n")
-                    
-                    # Get metadata for audit log
+
+                    cursor = conn.cursor()
                     cursor.execute("""
                         SELECT f.*, im.*, vm.*
                         FROM files f
@@ -3171,8 +3120,8 @@ class DeleteFilesDialog(OperationDialogBase):
             # Delete from database
             if conn and delete_from_db and file_id:
                 if not dry_run:
+                    delete_file_metadata(conn, file_id)
                     cursor = conn.cursor()
-                    # Delete will cascade to related tables (metadata, thumbnails)
                     cursor.execute("DELETE FROM files WHERE id = ?", (file_id,))
                     self._append_output(f"  ✓ Database record deleted (cascaded to metadata/thumbnails)\n")
                     db_deleted = True

@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>mcp2 Prompt Frontend</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --panel: #fffdfa;
+      --ink: #1f2937;
+      --muted: #6b7280;
+      --brand: #0f766e;
+      --brand-2: #0ea5e9;
+      --line: #e5e7eb;
+      --error: #b91c1c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 20% 0%, rgba(14,165,233,0.08), transparent 35%),
+        radial-gradient(circle at 80% 0%, rgba(15,118,110,0.10), transparent 40%),
+        var(--bg);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.06);
+      overflow: hidden;
+    }
+
+    .header {
+      padding: 1rem 1.25rem;
+      background: linear-gradient(90deg, rgba(15,118,110,0.10), rgba(14,165,233,0.10));
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .sub {
+      margin-top: 0.25rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .content {
+      padding: 1rem 1.25rem 1.25rem;
+      display: grid;
+      gap: 0.9rem;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.8rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.65rem 0.75rem;
+      font: inherit;
+      background: #ffffff;
+      color: var(--ink);
+    }
+
+    textarea {
+      min-height: 130px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    .actions {
+      display: flex;
+      gap: 0.6rem;
+      align-items: center;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      color: #fff;
+      font-weight: 650;
+      padding: 0.62rem 0.95rem;
+      cursor: pointer;
+    }
+
+    button[disabled] {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .status {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .live-status {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fffeff;
+      padding: 0.85rem;
+      min-height: 80px;
+      white-space: pre-wrap;
+      line-height: 1.45;
+      font-size: 0.9rem;
+    }
+
+    .error {
+      color: var(--error);
+      font-size: 0.92rem;
+      white-space: pre-wrap;
+    }
+
+    .output {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 0.85rem;
+      min-height: 100px;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+
+    details {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      padding: 0.65rem 0.8rem;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    pre {
+      margin: 0.65rem 0 0;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 0.86rem;
+      color: #111827;
+      background: #f9fafb;
+      border: 1px solid #f3f4f6;
+      border-radius: 10px;
+      padding: 0.75rem;
+    }
+
+    @media (max-width: 760px) {
+      .row { grid-template-columns: 1fr; }
+      .wrap { margin: 1rem auto; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="header">
+        <h1>mcp2 Prompt Frontend</h1>
+        <div class="sub">Iterative KG QA UI for fetch + traverse + answer loops.</div>
+      </div>
+
+      <div class="content">
+        <div class="actions">
+          <button id="googleBtn" type="button">Sign in with Google</button>
+          <span id="authStatus" class="status">Not authenticated</span>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="apiKey">OpenAI API Key (optional, backend may use env)</label>
+            <input id="apiKey" type="password" autocomplete="off" placeholder="sk-..." />
+          </div>
+          <div>
+            <label for="model">Model</label>
+            <input id="model" type="text" value="gpt-4.1-mini" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="apiBase">API Base URL</label>
+            <input id="apiBase" type="text" value="" placeholder="http://127.0.0.1:8787" />
+          </div>
+          <div>
+            <label for="sessionId">Session ID (Google auth/JWT state)</label>
+            <input id="sessionId" type="text" value="web-default" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="endpoint">QA Endpoint Path</label>
+            <input id="endpoint" type="text" value="/api/qa" placeholder="/api/qa" />
+          </div>
+          <div>
+            <label for="versionEndpoint">Version Endpoint (read-only)</label>
+            <input id="versionEndpoint" type="text" value="/api/version" readonly />
+          </div>
+        </div>
+
+        <div>
+          <label for="question">Question</label>
+          <textarea id="question" placeholder="Ask a graph reasoning question, for example: Who is Riya's sister?"></textarea>
+        </div>
+
+        <div class="actions">
+          <button id="sendBtn" type="button">Send</button>
+        </div>
+
+        <div id="error" class="error"></div>
+
+        <div>
+          <label>Answer</label>
+          <div id="answer" class="output"></div>
+        </div>
+
+        <div>
+          <label>Status</label>
+          <span id="status" class="status">Idle</span>
+        </div>
+
+        <div>
+          <label>Live Status</label>
+          <div id="liveStatus" class="live-status">Idle. Waiting for query...</div>
+        </div>
+
+        <details>
+          <summary>Entities</summary>
+          <pre id="entities"></pre>
+        </details>
+
+        <details>
+          <summary>Facts</summary>
+          <pre id="facts"></pre>
+        </details>
+
+        <details>
+          <summary>Trace</summary>
+          <pre id="trace"></pre>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script>
+    const sendBtn = document.getElementById("sendBtn");
+    const googleBtn = document.getElementById("googleBtn");
+    const statusEl = document.getElementById("status");
+    const authStatusEl = document.getElementById("authStatus");
+    const errorEl = document.getElementById("error");
+    const answerEl = document.getElementById("answer");
+    const entitiesEl = document.getElementById("entities");
+    const factsEl = document.getElementById("facts");
+    const traceEl = document.getElementById("trace");
+    const liveStatusEl = document.getElementById("liveStatus");
+    let activeJobId = null;
+    let activePollTimer = null;
+
+    const defaultBase = window.location.protocol === "file:"
+      ? "http://127.0.0.1:8787"
+      : window.location.origin;
+
+    document.getElementById("apiBase").value = defaultBase;
+
+    let googleTokenClient = null;
+
+    async function refreshAuthStatus() {
+      const sessionId = document.getElementById("sessionId").value.trim() || "web-default";
+      const apiBase = document.getElementById("apiBase").value.trim() || defaultBase;
+      try {
+        const resp = await fetch(`${apiBase}/api/auth/status?session_id=${encodeURIComponent(sessionId)}`);
+        const data = await resp.json();
+        if (resp.ok && data.ok && data.data && data.data.authenticated) {
+          const count = Number.isInteger(data.data.entities_count) ? data.data.entities_count : "?";
+          authStatusEl.textContent = `Authenticated (entities: ${count})`;
+        } else {
+          authStatusEl.textContent = "Not authenticated";
+        }
+      } catch (_) {
+        authStatusEl.textContent = "Auth status unknown";
+      }
+    }
+
+    async function signInWithGoogle() {
+      errorEl.textContent = "";
+      const apiBase = document.getElementById("apiBase").value.trim() || defaultBase;
+      const sessionId = document.getElementById("sessionId").value.trim() || "web-default";
+
+      googleBtn.disabled = true;
+      authStatusEl.textContent = "Starting Google sign-in...";
+      try {
+        const cfgResp = await fetch(`${apiBase}/api/google/config`);
+        const cfg = await cfgResp.json();
+        if (!cfgResp.ok || !cfg.ok || !cfg.data || !cfg.data.client_id) {
+          throw new Error("Could not load Google OAuth config.");
+        }
+
+        googleTokenClient = google.accounts.oauth2.initTokenClient({
+          client_id: cfg.data.client_id,
+          scope: cfg.data.scope || "openid profile email",
+          callback: async (tokenResponse) => {
+            if (!tokenResponse || !tokenResponse.access_token) {
+              errorEl.textContent = "Google sign-in failed: no access token returned.";
+              authStatusEl.textContent = "Not authenticated";
+              googleBtn.disabled = false;
+              return;
+            }
+
+            try {
+              const exchangeResp = await fetch(`${apiBase}/api/google/exchange`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  access_token: tokenResponse.access_token,
+                  session_id: sessionId,
+                }),
+              });
+              const exchangeData = await exchangeResp.json();
+              if (!exchangeResp.ok || !exchangeData.ok) {
+                throw new Error(JSON.stringify(exchangeData.error || { message: "Exchange failed" }, null, 2));
+              }
+              await refreshAuthStatus();
+            } catch (err) {
+              errorEl.textContent = String(err.message || err);
+              authStatusEl.textContent = "Not authenticated";
+            } finally {
+              googleBtn.disabled = false;
+            }
+          },
+        });
+
+        googleTokenClient.requestAccessToken({ prompt: "consent" });
+      } catch (err) {
+        errorEl.textContent = String(err.message || err);
+        authStatusEl.textContent = "Not authenticated";
+        googleBtn.disabled = false;
+      }
+    }
+
+    function stopActivePoll() {
+      if (activePollTimer) {
+        clearInterval(activePollTimer);
+        activePollTimer = null;
+      }
+    }
+
+    function describeStatusEvent(event) {
+      if (!event || typeof event !== "object") {
+        return "Processing update received";
+      }
+
+      if (typeof event.message === "string" && event.message.trim()) {
+        return event.message;
+      }
+      return "Processing update received";
+    }
+
+    function renderLiveStatus(payload) {
+      const statusEvents = Array.isArray(payload.status_events) ? payload.status_events : [];
+      if (!statusEvents.length) {
+        liveStatusEl.textContent = payload.status === "running"
+          ? "Starting query execution..."
+          : "No trace events yet.";
+        return;
+      }
+
+      const recent = statusEvents.slice(-12);
+      const lines = recent.map((event) => `- ${describeStatusEvent(event)}`);
+      liveStatusEl.textContent = lines.join("\n");
+    }
+
+    async function pollJob(apiBase, endpoint, jobId) {
+      const statusUrl = `${apiBase}/api/qa/status?job_id=${encodeURIComponent(jobId)}`;
+      try {
+        const resp = await fetch(statusUrl);
+        const data = await resp.json();
+        if (!resp.ok || !data.ok) {
+          throw new Error(JSON.stringify(data, null, 2));
+        }
+
+        const payload = data.data || {};
+        answerEl.textContent = payload.answer || "";
+        entitiesEl.textContent = JSON.stringify(payload.entities || [], null, 2);
+        factsEl.textContent = JSON.stringify(payload.facts || [], null, 2);
+        traceEl.textContent = JSON.stringify(payload.trace || [], null, 2);
+        renderLiveStatus(payload);
+
+        if (payload.status === "completed") {
+          statusEl.textContent = "Done";
+          sendBtn.disabled = false;
+          stopActivePoll();
+          activeJobId = null;
+          return;
+        }
+        if (payload.status === "failed") {
+          statusEl.textContent = "Failed";
+          errorEl.textContent = payload.error || "Query failed.";
+          sendBtn.disabled = false;
+          stopActivePoll();
+          activeJobId = null;
+          return;
+        }
+
+        statusEl.textContent = `Running... (${(payload.status_events || []).length} status updates)`;
+      } catch (err) {
+        statusEl.textContent = "Failed";
+        errorEl.textContent = String(err.message || err);
+        liveStatusEl.textContent = "Failed while polling job status.";
+        sendBtn.disabled = false;
+        stopActivePoll();
+        activeJobId = null;
+      }
+    }
+
+    async function sendQuestion() {
+      const apiKey = document.getElementById("apiKey").value.trim();
+      const model = document.getElementById("model").value.trim() || "gpt-4.1-mini";
+      const apiBase = document.getElementById("apiBase").value.trim() || defaultBase;
+      const endpoint = document.getElementById("endpoint").value.trim() || "/api/qa";
+      const question = document.getElementById("question").value.trim();
+      const sessionId = document.getElementById("sessionId").value.trim() || "web-default";
+
+      stopActivePoll();
+      activeJobId = null;
+
+      errorEl.textContent = "";
+      answerEl.textContent = "";
+      entitiesEl.textContent = "";
+      factsEl.textContent = "";
+      traceEl.textContent = "";
+      liveStatusEl.textContent = "Preparing request...";
+
+      if (!question) {
+        errorEl.textContent = "Question is required.";
+        return;
+      }
+
+      sendBtn.disabled = true;
+      statusEl.textContent = "Running...";
+      liveStatusEl.textContent = "Submitting question and waiting for planner...";
+
+      try {
+        const response = await fetch(`${apiBase}${endpoint}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question,
+            model,
+            api_key: apiKey,
+            session_id: sessionId,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(JSON.stringify(data, null, 2));
+        }
+
+        const payload = data.data || data;
+        if (!payload.job_id) {
+          throw new Error("Missing job_id in /api/qa response.");
+        }
+
+        activeJobId = payload.job_id;
+        statusEl.textContent = "Running...";
+        await pollJob(apiBase, endpoint, activeJobId);
+        if (activeJobId) {
+          activePollTimer = setInterval(() => {
+            if (activeJobId) {
+              pollJob(apiBase, endpoint, activeJobId);
+            }
+          }, 800);
+        }
+      } catch (err) {
+        statusEl.textContent = "Failed";
+        errorEl.textContent = String(err.message || err);
+        liveStatusEl.textContent = "Failed before job started.";
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener("click", sendQuestion);
+    googleBtn.addEventListener("click", signInWithGoogle);
+    refreshAuthStatus();
+    document.getElementById("question").addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+        sendQuestion();
+      }
+    });
+  </script>
+</body>
+</html>

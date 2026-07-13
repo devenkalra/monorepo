@@ -1,0 +1,567 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bldrdojo.local/schemas/entity-import.schema.json",
+  "title": "Entity Import",
+  "description": "Schema for import payloads. Supports legacy snapshot imports and operation-based v2 imports.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/LegacySnapshotImport"
+    },
+    {
+      "$ref": "#/$defs/OperationImportV2"
+    }
+  ],
+  "$defs": {
+    "Uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "EntityType": {
+      "type": "string",
+      "enum": [
+        "Person",
+        "Note",
+        "Location",
+        "Movie",
+        "Book",
+        "Container",
+        "Asset",
+        "Org"
+      ]
+    },
+    "RelationType": {
+      "type": "string",
+      "enum": [
+        "IS_CHILD_OF",
+        "IS_PARENT_OF",
+        "IS_FRIEND_OF",
+        "IS_COLLEAGUE_OF",
+        "IS_SPOUSE_OF",
+        "IS_MANAGER_OF",
+        "WORKS_FOR_MGR",
+        "IS_STUDENT_OF",
+        "IS_TEACHER_OF",
+        "HAS_STUDENT",
+        "IS_RELATED_TO",
+        "LIVES_AT",
+        "HAS_RESIDENT",
+        "IS_LOCATED_IN",
+        "CONTAINS",
+        "HAS_ACTOR",
+        "ACTED_IN",
+        "HAS_DIRECTOR",
+        "DIRECTED",
+        "HAS_MUS_DIRECTOR",
+        "GAVE_MUSIC_TO",
+        "INSPIRED",
+        "IS_BASED_ON",
+        "HAS_AS_AUTHOR",
+        "IS_AUTHOR_OF",
+        "IS_LOCATION_OF",
+        "IS_CONTAINED_IN",
+        "IS_LOCATED_AT",
+        "HAS",
+        "HAS_EMPLOYEE",
+        "WORKS_AT",
+        "HAS_MEMBER",
+        "IS_MEMBER_OF",
+        "STUDIES_AT"
+      ]
+    },
+    "LegacySnapshotImport": {
+      "type": "object",
+      "additionalProperties": true,
+      "anyOf": [
+        {
+          "required": [
+            "export_version"
+          ]
+        },
+        {
+          "required": [
+            "import_version"
+          ]
+        }
+      ],
+      "properties": {
+        "export_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "import_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "export_date": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "user": {
+          "type": "object"
+        },
+        "entities": {
+          "type": "array"
+        },
+        "people": {
+          "type": "array"
+        },
+        "notes": {
+          "type": "array"
+        },
+        "locations": {
+          "type": "array"
+        },
+        "movies": {
+          "type": "array"
+        },
+        "books": {
+          "type": "array"
+        },
+        "containers": {
+          "type": "array"
+        },
+        "assets": {
+          "type": "array"
+        },
+        "orgs": {
+          "type": "array"
+        },
+        "relations": {
+          "type": "array"
+        },
+        "tags": {
+          "type": "array"
+        }
+      }
+    },
+    "OperationImportV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "import_version"
+      ],
+      "properties": {
+        "import_version": {
+          "type": "string",
+          "const": "2.0"
+        },
+        "export_date": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "export_type": {
+          "type": "string"
+        },
+        "import_date": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "user": {
+          "type": "object"
+        },
+        "allow_entity_delete_cascade": {
+          "type": "boolean",
+          "const": true
+        },
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityOperation"
+          }
+        },
+        "relations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelationOperation"
+          }
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TagOperation"
+          }
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "entities"
+          ]
+        },
+        {
+          "required": [
+            "relations"
+          ]
+        },
+        {
+          "required": [
+            "tags"
+          ]
+        }
+      ]
+    },
+    "EntityOperation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "import_op": {
+          "type": "string",
+          "enum": [
+            "create",
+            "update",
+            "replace",
+            "delete"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "import_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "$ref": "#/$defs/EntityType"
+        }
+      },
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "id",
+              "import_ref"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "import_op": {
+                "const": "delete"
+              }
+            },
+            "required": [
+              "import_op"
+            ]
+          },
+          "then": {
+            "required": [
+              "id"
+            ],
+            "not": {
+              "required": [
+                "import_ref"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "import_op": {
+                "const": "create"
+              }
+            },
+            "required": [
+              "import_op"
+            ]
+          },
+          "then": {
+            "required": [
+              "import_ref",
+              "type"
+            ],
+            "not": {
+              "required": [
+                "id"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "import_op": {
+                "enum": [
+                  "update",
+                  "replace"
+                ]
+              }
+            },
+            "required": [
+              "import_op"
+            ]
+          },
+          "then": {
+            "required": [
+              "id"
+            ],
+            "not": {
+              "required": [
+                "import_ref"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "required": [
+                "import_op"
+              ]
+            }
+          },
+          "then": {
+            "oneOf": [
+              {
+                "required": [
+                  "id"
+                ],
+                "not": {
+                  "required": [
+                    "import_ref"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "import_ref",
+                  "type"
+                ],
+                "not": {
+                  "required": [
+                    "id"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "RelationOperation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "import_op": {
+          "type": "string",
+          "enum": [
+            "create",
+            "update",
+            "replace",
+            "delete"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "import_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_entity": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "to_entity": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "from_import_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_import_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relation_type": {
+          "$ref": "#/$defs/RelationType"
+        }
+      },
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "id",
+              "import_ref"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "import_op": {
+                "const": "delete"
+              }
+            },
+            "required": [
+              "import_op"
+            ]
+          },
+          "then": {
+            "required": [
+              "id"
+            ],
+            "not": {
+              "required": [
+                "import_ref"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "import_op": {
+                "const": "create"
+              }
+            },
+            "required": [
+              "import_op"
+            ]
+          },
+          "then": {
+            "required": [
+              "import_ref",
+              "relation_type"
+            ],
+            "allOf": [
+              {
+                "oneOf": [
+                  {
+                    "required": [
+                      "from_entity"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "from_import_ref"
+                    ]
+                  }
+                ]
+              },
+              {
+                "oneOf": [
+                  {
+                    "required": [
+                      "to_entity"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "to_import_ref"
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "import_op": {
+                "enum": [
+                  "update",
+                  "replace"
+                ]
+              }
+            },
+            "required": [
+              "import_op"
+            ]
+          },
+          "then": {
+            "required": [
+              "id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "not": {
+              "required": [
+                "import_op"
+              ]
+            }
+          },
+          "then": {
+            "oneOf": [
+              {
+                "required": [
+                  "id"
+                ],
+                "not": {
+                  "required": [
+                    "import_ref"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "import_ref",
+                  "relation_type"
+                ],
+                "allOf": [
+                  {
+                    "oneOf": [
+                      {
+                        "required": [
+                          "from_entity"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "from_import_ref"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "oneOf": [
+                      {
+                        "required": [
+                          "to_entity"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "to_import_ref"
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "TagOperation": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "import_op": {
+          "type": "string",
+          "enum": [
+            "create",
+            "update",
+            "replace",
+            "delete"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "import_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

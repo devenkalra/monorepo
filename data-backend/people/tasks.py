@@ -4,12 +4,121 @@ Celery tasks for long-running operations with progress tracking
 from celery import shared_task
 from django.core.cache import cache
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from people.import_validation import validate_import_payload
+from people.import_v2_executor import execute_import_v2, ImportV2ExecutionError, normalize_legacy_snapshot_to_v2
 import logging
 import json
 import uuid
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
+
+
+def _prune_export_value(value):
+    """Recursively remove null/empty values from exported payloads."""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    if isinstance(value, list):
+        pruned_items = []
+        for item in value:
+            pruned_item = _prune_export_value(item)
+            if pruned_item is not None:
+                pruned_items.append(pruned_item)
+        return pruned_items or None
+    if isinstance(value, dict):
+        pruned_dict = {}
+        for key, item in value.items():
+            pruned_item = _prune_export_value(item)
+            if pruned_item is not None:
+                pruned_dict[key] = pruned_item
+        return pruned_dict or None
+    return value
+
+
+def _sanitize_entity_records(records):
+    """Remove internal ownership field and prune null/empty values."""
+    cleaned = []
+    for record in records or []:
+        if isinstance(record, dict):
+            record = dict(record)
+            record.pop('user', None)
+        pruned = _prune_export_value(record)
+        if pruned is not None:
+            cleaned.append(pruned)
+    return cleaned
+
+
+def _build_entity_export_records(people, notes, locations, movies, books, containers, assets, orgs):
+    """Return a unified entity list for export payloads."""
+    from people.serializers import (
+        PersonSerializer, NoteSerializer, LocationSerializer, MovieSerializer,
+        BookSerializer, ContainerSerializer, AssetSerializer, OrgSerializer,
+    )
+
+    return (
+        _sanitize_entity_records(PersonSerializer(people, many=True).data)
+        + _sanitize_entity_records(NoteSerializer(notes, many=True).data)
+        + _sanitize_entity_records(LocationSerializer(locations, many=True).data)
+        + _sanitize_entity_records(MovieSerializer(movies, many=True).data)
+        + _sanitize_entity_records(BookSerializer(books, many=True).data)
+        + _sanitize_entity_records(ContainerSerializer(containers, many=True).data)
+        + _sanitize_entity_records(AssetSerializer(assets, many=True).data)
+        + _sanitize_entity_records(OrgSerializer(orgs, many=True).data)
+    )
+
+
+def _group_entities_for_legacy_import(data):
+    """Support both old type-specific arrays and unified entities array."""
+    grouped = {
+        'people': list(data.get('people', []) or []),
+        'notes': list(data.get('notes', []) or []),
+        'locations': list(data.get('locations', []) or []),
+        'movies': list(data.get('movies', []) or []),
+        'books': list(data.get('books', []) or []),
+        'containers': list(data.get('containers', []) or []),
+        'assets': list(data.get('assets', []) or []),
+        'orgs': list(data.get('orgs', []) or []),
+    }
+
+    type_to_bucket = {
+        'Person': 'people',
+        'Note': 'notes',
+        'Location': 'locations',
+        'Movie': 'movies',
+        'Book': 'books',
+        'Container': 'containers',
+        'Asset': 'assets',
+        'Org': 'orgs',
+    }
+
+    for entity in data.get('entities', []) or []:
+        if not isinstance(entity, dict):
+            continue
+        bucket = type_to_bucket.get(entity.get('type'))
+        if bucket:
+            grouped[bucket].append(entity)
+
+    return grouped
+
+
+def _validate_payload_user_matches_user(payload, user):
+    """Validate optional payload user metadata against task user."""
+    payload_user = payload.get('user')
+    if not payload_user or not isinstance(payload_user, dict):
+        return True, None
+
+    payload_username = payload_user.get('username')
+    if payload_username and payload_username != user.username:
+        return False, 'Import user.username does not match authenticated user'
+
+    payload_email = payload_user.get('email')
+    if payload_email and payload_email != user.email:
+        return False, 'Import user.email does not match authenticated user'
+
+    return True, None
 
 
 def update_task_progress(task_id, current, total, status='processing', message='', errors=None):
@@ -101,13 +210,19 @@ def reindex_user_entities(self, user_id):
         raise
 
 
-def _import_entity_type_helper(model_class, entity_data_list, entity_id_map, stats, type_name, user, task_id=None, processed_ref=None, total_items=0):
+def _import_entity_type_helper(model_class, entity_data_list, entity_id_map, stats, type_name, user, task_id=None, processed_ref=None, total_items=0, force_create=False):
     """Helper to import entities of a specific type"""
     created_key = f'{type_name}_created'
     updated_key = f'{type_name}_updated'
     skipped_key = f'{type_name}_skipped'
     
     for i, entity_data in enumerate(entity_data_list, 1):
+        display_name = (
+            entity_data.get('display')
+            or entity_data.get('name')
+            or entity_data.get('first_name')
+            or 'N/A'
+        )
         # Check for cancellation
         if task_id and check_task_cancelled(task_id):
             update_task_progress(task_id, processed_ref[0] if processed_ref else 0, total_items, 
@@ -117,14 +232,13 @@ def _import_entity_type_helper(model_class, entity_data_list, entity_id_map, sta
         
         try:
             original_id = entity_data['id']
-            display_name = entity_data.get('display') or entity_data.get('name') or entity_data.get('first_name', 'N/A')
             
             # Clean data
             entity_data_clean = {k: v for k, v in entity_data.items()
                                if k not in ['id', 'user', 'created_at', 'updated_at']}
             
-            # Check if entity exists for this user
-            existing_entity = model_class.objects.filter(id=original_id, user=user).first()
+            # For snapshot restores based on a unified entities array, always create fresh rows.
+            existing_entity = None if force_create else model_class.objects.filter(id=original_id, user=user).first()
             
             if existing_entity:
                 # Check if update needed
@@ -143,7 +257,7 @@ def _import_entity_type_helper(model_class, entity_data_list, entity_id_map, sta
             else:
                 # Create new entity
                 new_id = original_id
-                if model_class.objects.filter(id=original_id).exists():
+                if force_create or model_class.objects.filter(id=original_id).exists():
                     new_id = uuid.uuid4()
                 
                 entity = model_class.objects.create(id=new_id, user=user, **entity_data_clean)
@@ -199,6 +313,11 @@ def import_entities_async(self, user_id, data_json):
     from people import signals as people_signals
     
     try:
+        import_mode = 'legacy'
+        stats = None
+        entity_id_map = {}
+        user = None
+
         # Disconnect all entity sync signals
         post_save.disconnect(people_signals.sync_entity_save, sender=Entity)
         post_save.disconnect(people_signals.sync_entity_save, sender=Person)
@@ -214,18 +333,103 @@ def import_entities_async(self, user_id, data_json):
             logger.info(f"Starting transaction for import task {task_id} (signals disabled)")
             user = User.objects.get(id=user_id)
             data = json.loads(data_json)
+
+            # First semantic gate: schema validation before any write operations.
+            is_valid, schema_error = validate_import_payload(data)
+            if not is_valid:
+                raise Exception(f"Import schema validation failed: {schema_error}")
+
+            user_ok, user_error = _validate_payload_user_matches_user(data, user)
+            if not user_ok:
+                raise Exception(user_error)
+
+            legacy_unified_snapshot = bool(data.get('entities')) and not any(
+                data.get(key) for key in ['people', 'notes', 'locations', 'movies', 'books', 'containers', 'assets', 'orgs']
+            ) and data.get('export_version') == '1.0'
+
+            logger.info(
+                "import_entities_async: user_id=%s import_version=%s export_version=%s unified_snapshot=%s entities=%s people=%s notes=%s relations=%s tags=%s",
+                user_id,
+                data.get('import_version'),
+                data.get('export_version'),
+                legacy_unified_snapshot,
+                len(data.get('entities', []) or []),
+                len(data.get('people', []) or []),
+                len(data.get('notes', []) or []),
+                len(data.get('relations', []) or []),
+                len(data.get('tags', []) or []),
+            )
+
+            if data.get('import_version') == '2.0' or legacy_unified_snapshot:
+                import_mode = 'v2'
+                total_items = (
+                    len(data.get('entities', [])) +
+                    len(data.get('relations', [])) +
+                    len(data.get('tags', []))
+                )
+                if total_items == 0:
+                    update_task_progress(task_id, 0, 0, 'completed', 'No data to import')
+                    return {'success': True, 'message': 'No data to import'}
+
+                update_task_progress(task_id, 0, total_items, 'processing', 'Importing operation-based payload...')
+                try:
+                    normalized_payload = normalize_legacy_snapshot_to_v2(data)
+                    logger.info(
+                        "import_entities_async: normalized payload entities=%s relations=%s tags=%s",
+                        len(normalized_payload.get('entities', []) or []),
+                        len(normalized_payload.get('relations', []) or []),
+                        len(normalized_payload.get('tags', []) or []),
+                    )
+                    stats = execute_import_v2(
+                        normalized_payload,
+                        user,
+                        check_cancelled=lambda: check_task_cancelled(task_id),
+                    )
+                except ImportV2ExecutionError as exc:
+                    raise Exception(f"{exc}. Details: {exc.stats.get('errors', [])}")
+                update_task_progress(
+                    task_id,
+                    total_items,
+                    total_items,
+                    'completed',
+                    f"Import v2 complete: {stats.get('summary', {}).get('total_created', 0)} created, "
+                    f"{stats.get('summary', {}).get('total_updated', 0)} updated, "
+                    f"{stats.get('summary', {}).get('total_deleted', 0)} deleted",
+                    stats.get('errors', [])[:10],
+                )
+                # Signals are disabled for import safety; schedule explicit sync after commit.
+                def _sync_v2_entities_after_commit():
+                    from people.sync import meili_sync
+
+                    entity_ids = list(Entity.objects.filter(user=user).values_list('id', flat=True))
+                    synced = 0
+                    for entity_id in entity_ids:
+                        try:
+                            entity = Entity.objects.get(id=entity_id)
+                            meili_sync.sync_entity(entity)
+                            synced += 1
+                        except Exception as sync_exc:
+                            logger.error(f"Failed to sync entity {entity_id} after v2 import: {sync_exc}")
+                    logger.info(f"Synced {synced}/{len(entity_ids)} user entities after v2 import")
+
+                transaction.on_commit(_sync_v2_entities_after_commit)
+                return {'success': True, 'stats': stats}
             
             # Count total items
+            grouped_entities = _group_entities_for_legacy_import(data)
+            force_create_snapshot = bool(data.get('entities')) and not any(
+                data.get(key) for key in ['people', 'notes', 'locations', 'movies', 'books', 'containers', 'assets', 'orgs']
+            )
             total_items = (
                 len(data.get('tags', [])) +
-                len(data.get('people', [])) +
-                len(data.get('notes', [])) +
-                len(data.get('locations', [])) +
-                len(data.get('movies', [])) +
-                len(data.get('books', [])) +
-                len(data.get('containers', [])) +
-                len(data.get('assets', [])) +
-                len(data.get('orgs', [])) +
+                len(grouped_entities['people']) +
+                len(grouped_entities['notes']) +
+                len(grouped_entities['locations']) +
+                len(grouped_entities['movies']) +
+                len(grouped_entities['books']) +
+                len(grouped_entities['containers']) +
+                len(grouped_entities['assets']) +
+                len(grouped_entities['orgs']) +
                 len(data.get('relations', []))
             )
             
@@ -269,8 +473,6 @@ def import_entities_async(self, user_id, data_json):
                     update_task_progress(task_id, processed, total_items, 'processing', 
                                        f'Importing... {processed}/{total_items}')
             
-            entity_id_map = {}
-            
             # Import entities
             entity_types = [
                 (Person, 'people'), (Note, 'notes'), (Location, 'locations'),
@@ -282,7 +484,7 @@ def import_entities_async(self, user_id, data_json):
             processed_ref = [processed]
             
             for model_class, type_name in entity_types:
-                entity_list = data.get(type_name, [])
+                entity_list = grouped_entities.get(type_name, [])
                 if entity_list:
                     update_task_progress(task_id, processed_ref[0], total_items, 'processing', 
                                        f'Starting {type_name} import...')
@@ -291,7 +493,8 @@ def import_entities_async(self, user_id, data_json):
                         stats, type_name, user,
                         task_id=task_id,
                         processed_ref=processed_ref,
-                        total_items=total_items
+                        total_items=total_items,
+                        force_create=force_create_snapshot,
                     )
             
             processed = processed_ref[0]
@@ -366,12 +569,24 @@ def import_entities_async(self, user_id, data_json):
         post_save.connect(people_signals.sync_entity_save, sender=Container)
         post_save.connect(people_signals.sync_entity_save, sender=Asset)
         post_save.connect(people_signals.sync_entity_save, sender=Org)
-        
-        # Sync all imported entities to MeiliSearch/Neo4j
-        logger.info(f"Syncing {total_created + total_updated} entities to MeiliSearch/Neo4j")
+
+        # Sync imported entities to MeiliSearch/Neo4j after commit.
+        if import_mode == 'v2':
+            entity_ids_to_sync = list(
+                Entity.objects.filter(user=user).values_list('id', flat=True)
+            )
+            logger.info(
+                f"Syncing all user entities after v2 import: {len(entity_ids_to_sync)} entities"
+            )
+        else:
+            entity_ids_to_sync = list(set(entity_id_map.values()))
+            logger.info(
+                f"Syncing imported legacy entities after import: {len(entity_ids_to_sync)} entities"
+            )
+
         from people.sync import meili_sync
         synced = 0
-        for entity_id in entity_id_map.values():
+        for entity_id in entity_ids_to_sync:
             try:
                 entity = Entity.objects.get(id=entity_id)
                 meili_sync.sync_entity(entity)
@@ -447,8 +662,6 @@ def export_entities_async(self, user_id):
     from people.models import (Entity, Person, Note, Location, Movie, Book, 
                                Container, Asset, Org, EntityRelation, Tag)
     from people.serializers import (
-        PersonSerializer, NoteSerializer, LocationSerializer, MovieSerializer,
-        BookSerializer, ContainerSerializer, AssetSerializer, OrgSerializer,
         EntityRelationSerializer, TagSerializer
     )
     from datetime import datetime
@@ -497,19 +710,20 @@ def export_entities_async(self, user_id):
         
         export_data = {
             'export_version': '1.0',
-            'export_date': datetime.now().isoformat(),
-            'user': {'username': user.username, 'email': user.email},
-            'people': PersonSerializer(people, many=True).data,
-            'notes': NoteSerializer(notes, many=True).data,
-            'locations': LocationSerializer(locations, many=True).data,
-            'movies': MovieSerializer(movies, many=True).data,
-            'books': BookSerializer(books, many=True).data,
-            'containers': ContainerSerializer(containers, many=True).data,
-            'assets': AssetSerializer(assets, many=True).data,
-            'orgs': OrgSerializer(orgs, many=True).data,
-            'relations': EntityRelationSerializer(relations, many=True).data,
-            'tags': TagSerializer(tags, many=True).data,
+            'export_date': timezone.now().isoformat(),
+            'user': _prune_export_value({'username': user.username, 'email': user.email}),
         }
+
+        entities_payload = _build_entity_export_records(
+            people, notes, locations, movies, books, containers, assets, orgs
+        )
+
+        collection_data = {
+            'entities': _prune_export_value(entities_payload),
+            'relations': _prune_export_value(EntityRelationSerializer(relations, many=True).data),
+            'tags': _prune_export_value(TagSerializer(tags, many=True).data),
+        }
+        export_data.update({key: value for key, value in collection_data.items() if value})
         
         # Store export data in cache temporarily
         export_json = json.dumps(export_data, indent=2, default=str)
@@ -535,8 +749,6 @@ def export_selected_entities_async(self, user_id, entity_ids, max_hops=1):
     from people.models import (Entity, Person, Note, Location, Movie, Book,
                                Container, Asset, Org, EntityRelation, Tag)
     from people.serializers import (
-        PersonSerializer, NoteSerializer, LocationSerializer, MovieSerializer,
-        BookSerializer, ContainerSerializer, AssetSerializer, OrgSerializer,
         EntityRelationSerializer, TagSerializer
     )
     from django.db.models import Q
@@ -613,20 +825,21 @@ def export_selected_entities_async(self, user_id, entity_ids, max_hops=1):
 
         export_data = {
             'export_version': '1.0',
-            'export_date': datetime.now().isoformat(),
+            'export_date': timezone.now().isoformat(),
             'export_type': 'selected',
-            'user': {'username': user.username, 'email': user.email},
-            'people': PersonSerializer(people, many=True).data,
-            'notes': NoteSerializer(notes, many=True).data,
-            'locations': LocationSerializer(locations, many=True).data,
-            'movies': MovieSerializer(movies, many=True).data,
-            'books': BookSerializer(books, many=True).data,
-            'containers': ContainerSerializer(containers, many=True).data,
-            'assets': AssetSerializer(assets, many=True).data,
-            'orgs': OrgSerializer(orgs, many=True).data,
-            'relations': EntityRelationSerializer(relations, many=True).data,
-            'tags': TagSerializer(tags, many=True).data,
+            'user': _prune_export_value({'username': user.username, 'email': user.email}),
         }
+
+        entities_payload = _build_entity_export_records(
+            people, notes, locations, movies, books, containers, assets, orgs
+        )
+
+        collection_data = {
+            'entities': _prune_export_value(entities_payload),
+            'relations': _prune_export_value(EntityRelationSerializer(relations, many=True).data),
+            'tags': _prune_export_value(TagSerializer(tags, many=True).data),
+        }
+        export_data.update({key: value for key, value in collection_data.items() if value})
 
         export_json = json.dumps(export_data, indent=2, default=str)
         cache.set(f'export_data_{task_id}', export_json, timeout=3600)

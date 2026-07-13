@@ -6,10 +6,13 @@ import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
 import TextAlign from '@tiptap/extension-text-align';
+import Youtube from '@tiptap/extension-youtube';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
+import TurndownService from 'turndown';
+import { marked } from 'marked';
 import './RichTextEditor.css';
 
 // Custom Image extension with resize support
@@ -45,10 +48,14 @@ const ResizableImage = Image.extend({
 
 function RichTextEditor({ value, onChange, placeholder = 'Enter description...' }) {
     const [showImageDialog, setShowImageDialog] = useState(false);
+    const [showYoutubeDialog, setShowYoutubeDialog] = useState(false);
     const [imageUrl, setImageUrl] = useState('');
+    const [youtubeUrl, setYoutubeUrl] = useState('');
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
     const [isImageSelected, setIsImageSelected] = useState(false);
+    const [editMode, setEditMode] = useState('wysiwyg'); // 'wysiwyg', 'html', 'markdown'
+    const [rawContent, setRawContent] = useState('');
 
     const editor = useEditor({
         extensions: [
@@ -65,6 +72,14 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                 allowBase64: true,
                 HTMLAttributes: {
                     class: 'tiptap-image',
+                },
+            }),
+            Youtube.configure({
+                controls: true,
+                nocookie: true,
+                modestBranding: true,
+                HTMLAttributes: {
+                    class: 'tiptap-youtube',
                 },
             }),
             Table.configure({
@@ -148,13 +163,113 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
         editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
     };
 
+    const addYoutube = () => {
+        if (youtubeUrl) {
+            editor.chain().focus().setYoutubeVideo({ src: youtubeUrl }).run();
+            setYoutubeUrl('');
+            setShowYoutubeDialog(false);
+        }
+    };
+
+    const handleModeChange = (newMode) => {
+        if (newMode === editMode) return;
+
+        if (editMode === 'wysiwyg') {
+            // Switching from WYSIWYG to HTML/Markdown
+            const html = editor.getHTML();
+            if (newMode === 'html') {
+                setRawContent(html);
+            } else if (newMode === 'markdown') {
+                const turndownService = new TurndownService({
+                    headingStyle: 'atx',
+                    codeBlockStyle: 'fenced',
+                });
+                const markdown = turndownService.turndown(html);
+                setRawContent(markdown);
+            }
+        } else if (newMode === 'wysiwyg') {
+            // Switching from HTML/Markdown to WYSIWYG
+            let html = rawContent;
+            if (editMode === 'markdown') {
+                html = marked.parse(rawContent);
+            }
+            editor.commands.setContent(html);
+            onChange(html);
+        } else {
+            // Switching between HTML and Markdown
+            if (editMode === 'html' && newMode === 'markdown') {
+                const turndownService = new TurndownService({
+                    headingStyle: 'atx',
+                    codeBlockStyle: 'fenced',
+                });
+                const markdown = turndownService.turndown(rawContent);
+                setRawContent(markdown);
+            } else if (editMode === 'markdown' && newMode === 'html') {
+                const html = marked.parse(rawContent);
+                setRawContent(html);
+            }
+        }
+
+        setEditMode(newMode);
+    };
+
+    const handleRawContentChange = (e) => {
+        const newContent = e.target.value;
+        setRawContent(newContent);
+        
+        // Update editor content in real-time for preview
+        let html = newContent;
+        if (editMode === 'markdown') {
+            html = marked.parse(newContent);
+        }
+        onChange(html);
+    };
+
     if (!editor) {
         return null;
     }
 
     return (
         <div className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white dark:bg-gray-800">
-            {/* Toolbar */}
+            {/* Mode Toggle */}
+            <div className="border-b border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-750 px-2 py-1 flex gap-1">
+                <button
+                    onClick={() => handleModeChange('wysiwyg')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition ${
+                        editMode === 'wysiwyg'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                    type="button"
+                >
+                    WYSIWYG
+                </button>
+                <button
+                    onClick={() => handleModeChange('html')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition ${
+                        editMode === 'html'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                    type="button"
+                >
+                    HTML
+                </button>
+                <button
+                    onClick={() => handleModeChange('markdown')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition ${
+                        editMode === 'markdown'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                    type="button"
+                >
+                    Markdown
+                </button>
+            </div>
+            
+            {/* Toolbar - only show in WYSIWYG mode */}
+            {editMode === 'wysiwyg' && (
             <div className="border-b border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-2 flex flex-wrap gap-1">
                 <button
                     onClick={() => editor.chain().focus().toggleBold().run()}
@@ -368,6 +483,14 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                     🖼️
                 </button>
                 <button
+                    onClick={() => setShowYoutubeDialog(true)}
+                    className="px-3 py-1 rounded text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
+                    type="button"
+                    title="Insert YouTube Video"
+                >
+                    ▶️
+                </button>
+                <button
                     onClick={addTable}
                     className="px-3 py-1 rounded text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
                     type="button"
@@ -518,12 +641,26 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                     ↷
                 </button>
             </div>
+            )}
             
-            {/* Editor Content */}
-            <EditorContent 
-                editor={editor} 
-                className="prose dark:prose-invert max-w-none p-4 min-h-[200px] focus:outline-none"
-            />
+            {/* Editor Content - WYSIWYG mode */}
+            {editMode === 'wysiwyg' && (
+                <EditorContent 
+                    editor={editor} 
+                    className="prose dark:prose-invert max-w-none p-4 min-h-[200px] focus:outline-none"
+                />
+            )}
+            
+            {/* Raw Content Editor - HTML/Markdown mode */}
+            {(editMode === 'html' || editMode === 'markdown') && (
+                <textarea
+                    value={rawContent}
+                    onChange={handleRawContentChange}
+                    placeholder={editMode === 'html' ? 'Paste or type HTML...' : 'Paste or type Markdown...'}
+                    className="w-full p-4 min-h-[200px] font-mono text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none resize-y"
+                    spellCheck="false"
+                />
+            )}
             
             {/* Image Dialog */}
             {showImageDialog && (
@@ -624,6 +761,62 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                                 type="button"
                             >
                                 Insert URL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* YouTube Dialog */}
+            {showYoutubeDialog && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                            Insert YouTube Video
+                        </h3>
+                        
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                YouTube URL
+                            </label>
+                            <input
+                                type="text"
+                                value={youtubeUrl}
+                                onChange={(e) => setYoutubeUrl(e.target.value)}
+                                placeholder="https://www.youtube.com/watch?v=..."
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && youtubeUrl) {
+                                        addYoutube();
+                                    } else if (e.key === 'Escape') {
+                                        setShowYoutubeDialog(false);
+                                        setYoutubeUrl('');
+                                    }
+                                }}
+                            />
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                Paste any YouTube URL (watch, embed, or short link)
+                            </p>
+                        </div>
+                        
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={() => {
+                                    setShowYoutubeDialog(false);
+                                    setYoutubeUrl('');
+                                }}
+                                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                                type="button"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={addYoutube}
+                                disabled={!youtubeUrl}
+                                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                type="button"
+                            >
+                                Insert
                             </button>
                         </div>
                     </div>

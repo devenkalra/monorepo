@@ -24,6 +24,27 @@ services:
     extends:
       file: data-backend/docker-compose.local.yml
       service: neo4j
+  vector-service:
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile.vector
+    container_name: bldrdojo-local-vector
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - vector_data_local:/app/data
+    environment:
+      - FLASK_ENV=development
+      - VECTOR_DB_PATH=/app/data/chroma
+      - CUDA_VISIBLE_DEVICES=
+    networks:
+      - backend-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
   backend:
     build:
       context: ./data-backend
@@ -70,6 +91,8 @@ services:
       meilisearch:
         condition: service_healthy
       neo4j:
+        condition: service_healthy
+      vector-service:
         condition: service_healthy
     networks:
       - backend-network
@@ -122,6 +145,23 @@ services:
     networks:
       - backend-network
     command: celery -A config worker --loglevel=info --concurrency=2
+  email-frontend-dev:
+    build:
+      context: ./email-frontend
+      dockerfile: Dockerfile
+    container_name: bldrdojo-local-email-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "5176:5176"
+    volumes:
+      - ./email-frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+    networks:
+      - backend-network
   frontend:
     build:
       context: .
@@ -151,6 +191,8 @@ volumes:
     name: bldrdojo-local-neo4j-data
   neo4j_logs_local:
     name: bldrdojo-local-neo4j-logs
+  vector_data_local:
+    name: bldrdojo-local-vector-data
   static_volume_local:
     name: bldrdojo-local-static
   media_volume_local:

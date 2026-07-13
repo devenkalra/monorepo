@@ -44,7 +44,7 @@ services:
 
   # MeiliSearch
   meilisearch:
-    image: getmeili/meilisearch:v1.5
+    image: getmeili/meilisearch:v1.12
     container_name: bldrdojo-local-meilisearch
     restart: unless-stopped
     ports:
@@ -75,9 +75,10 @@ services:
       - neo4j_logs_local:/logs
     environment:
       - NEO4J_AUTH=neo4j/localneo4jpass
-      - NEO4J_dbms_memory_pagecache_size=256M
-      - NEO4J_dbms_memory_heap_initial__size=256M
-      - NEO4J_dbms_memory_heap_max__size=512M
+      # Updated for Neo4j 5 naming and adjusted for stable local development limits
+      - NEO4J_server_memory_pagecache_size=512M
+      - NEO4J_server_memory_heap_initial__size=512M
+      - NEO4J_server_memory_heap_max__size=1G
     networks:
       - backend-network
     healthcheck:

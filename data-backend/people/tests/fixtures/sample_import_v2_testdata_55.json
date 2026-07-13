@@ -1,0 +1,468 @@
+{
+  "import_version": "2.0",
+  "allow_entity_delete_cascade": true,
+  "entities": [
+    {
+      "import_op": "create",
+      "import_ref": "william_shakespeare",
+      "type": "Person",
+      "display": "William Shakespeare",
+      "first_name": "William",
+      "last_name": "Shakespeare",
+      "description": "Playwright, poet, and occasional dramatic troublemaker.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "anne_hathaway",
+      "type": "Person",
+      "display": "Anne Hathaway (Shakespeare)",
+      "first_name": "Anne",
+      "last_name": "Hathaway",
+      "description": "Historically grounded anchor of Stratford life.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "susanna_shakespeare",
+      "type": "Person",
+      "display": "Susanna Shakespeare",
+      "first_name": "Susanna",
+      "last_name": "Shakespeare",
+      "description": "Eldest child in the Shakespeare household.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "judith_shakespeare",
+      "type": "Person",
+      "display": "Judith Shakespeare",
+      "first_name": "Judith",
+      "last_name": "Shakespeare",
+      "description": "Twin sibling in the family lore.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "hamnet_shakespeare",
+      "type": "Person",
+      "display": "Hamnet Shakespeare",
+      "first_name": "Hamnet",
+      "last_name": "Shakespeare",
+      "description": "A poignant influence behind later tragedies.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "christopher_marlowe",
+      "type": "Person",
+      "display": "Christopher Marlowe",
+      "first_name": "Christopher",
+      "last_name": "Marlowe",
+      "description": "Rival genius with a dangerous edge.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "ben_jonson",
+      "type": "Person",
+      "display": "Ben Jonson",
+      "first_name": "Ben",
+      "last_name": "Jonson",
+      "description": "Wit, critic, and tavern-table collaborator.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "jon_snow",
+      "type": "Person",
+      "display": "Jon Snow",
+      "first_name": "Jon",
+      "last_name": "Snow",
+      "description": "Knows nothing, yet leads everyone.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "daenerys_targaryen",
+      "type": "Person",
+      "display": "Daenerys Targaryen",
+      "first_name": "Daenerys",
+      "last_name": "Targaryen",
+      "description": "Breaker of chains and strategic wildcard.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "tyrion_lannister",
+      "type": "Person",
+      "display": "Tyrion Lannister",
+      "first_name": "Tyrion",
+      "last_name": "Lannister",
+      "description": "Political tactician with sharp one-liners.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "arya_stark",
+      "type": "Person",
+      "display": "Arya Stark",
+      "first_name": "Arya",
+      "last_name": "Stark",
+      "description": "Faceless apprentice with a very specific list.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "got_movie",
+      "type": "Movie",
+      "display": "Game of Thrones: The Iron Cut",
+      "year": 2019,
+      "language": "English",
+      "country": "Westeros",
+      "description": "An alternate-cut film where diplomacy almost works.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "shakespeare_in_love_movie",
+      "type": "Movie",
+      "display": "Shakespeare in Love",
+      "year": 1998,
+      "language": "English",
+      "country": "UK",
+      "description": "Meta-romance around playwright anxiety and deadlines.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "hamlet_book",
+      "type": "Book",
+      "display": "Hamlet",
+      "year": 1603,
+      "language": "English",
+      "country": "England",
+      "summary": "A prince untangles grief, ghosts, and politics.",
+      "description": "Classic tragedy source text.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "asoiaf_book",
+      "type": "Book",
+      "display": "A Song of Ice and Fire",
+      "year": 1996,
+      "language": "English",
+      "country": "USA",
+      "summary": "Noble houses play a very long game.",
+      "description": "Epic fantasy cycle used for adaptation links.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "stratford_upon_avon",
+      "type": "Location",
+      "display": "Stratford-upon-Avon",
+      "address1": "Henley Street",
+      "city": "Stratford-upon-Avon",
+      "state": "Warwickshire",
+      "country": "England",
+      "description": "Birthplace and grounding node for the family cluster.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "kings_landing",
+      "type": "Location",
+      "display": "King's Landing",
+      "address1": "Red Keep",
+      "city": "King's Landing",
+      "country": "Westeros",
+      "description": "Capital city where succession plans go sideways.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "globe_theatre_org",
+      "type": "Org",
+      "display": "Globe Theatre Company",
+      "name": "Globe Theatre Company",
+      "kind": "Company",
+      "description": "Performance troupe and social graph hotspot.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "winterfell_vault",
+      "type": "Container",
+      "display": "Winterfell Vault",
+      "description": "Secure storage for sensitive relics.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "valyrian_dagger_asset",
+      "type": "Asset",
+      "display": "Valyrian Steel Dagger",
+      "value": 125000,
+      "description": "Small artifact, outsized consequences.",
+      "tags": ["TestData"]
+    },
+    {
+      "import_op": "create",
+      "import_ref": "raven_note",
+      "type": "Note",
+      "display": "Raven Dispatch",
+      "description": "Winter is coming, and so is this test fixture.",
+      "date": "2026-07-11T10:15:00Z",
+      "tags": ["TestData"]
+    }
+  ],
+  "relations": [
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_child_of",
+      "from_import_ref": "susanna_shakespeare",
+      "to_import_ref": "william_shakespeare",
+      "relation_type": "IS_CHILD_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_parent_of",
+      "from_import_ref": "william_shakespeare",
+      "to_import_ref": "judith_shakespeare",
+      "relation_type": "IS_PARENT_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_friend_of",
+      "from_import_ref": "ben_jonson",
+      "to_import_ref": "christopher_marlowe",
+      "relation_type": "IS_FRIEND_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_colleague_of",
+      "from_import_ref": "william_shakespeare",
+      "to_import_ref": "ben_jonson",
+      "relation_type": "IS_COLLEAGUE_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_spouse_of",
+      "from_import_ref": "william_shakespeare",
+      "to_import_ref": "anne_hathaway",
+      "relation_type": "IS_SPOUSE_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_manager_of",
+      "from_import_ref": "tyrion_lannister",
+      "to_import_ref": "jon_snow",
+      "relation_type": "IS_MANAGER_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_works_for_mgr",
+      "from_import_ref": "ben_jonson",
+      "to_import_ref": "william_shakespeare",
+      "relation_type": "WORKS_FOR_MGR"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_student_of",
+      "from_import_ref": "arya_stark",
+      "to_import_ref": "christopher_marlowe",
+      "relation_type": "IS_STUDENT_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_teacher_of",
+      "from_import_ref": "tyrion_lannister",
+      "to_import_ref": "jon_snow",
+      "relation_type": "IS_TEACHER_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_student",
+      "from_import_ref": "globe_theatre_org",
+      "to_import_ref": "arya_stark",
+      "relation_type": "HAS_STUDENT"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_related_to",
+      "from_import_ref": "jon_snow",
+      "to_import_ref": "daenerys_targaryen",
+      "relation_type": "IS_RELATED_TO"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_lives_at",
+      "from_import_ref": "william_shakespeare",
+      "to_import_ref": "stratford_upon_avon",
+      "relation_type": "LIVES_AT"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_resident",
+      "from_import_ref": "stratford_upon_avon",
+      "to_import_ref": "ben_jonson",
+      "relation_type": "HAS_RESIDENT"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_located_in",
+      "from_import_ref": "kings_landing",
+      "to_import_ref": "stratford_upon_avon",
+      "relation_type": "IS_LOCATED_IN"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_contains",
+      "from_import_ref": "winterfell_vault",
+      "to_import_ref": "valyrian_dagger_asset",
+      "relation_type": "CONTAINS"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_actor",
+      "from_import_ref": "got_movie",
+      "to_import_ref": "jon_snow",
+      "relation_type": "HAS_ACTOR"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_acted_in",
+      "from_import_ref": "arya_stark",
+      "to_import_ref": "shakespeare_in_love_movie",
+      "relation_type": "ACTED_IN"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_director",
+      "from_import_ref": "got_movie",
+      "to_import_ref": "tyrion_lannister",
+      "relation_type": "HAS_DIRECTOR"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_directed",
+      "from_import_ref": "tyrion_lannister",
+      "to_import_ref": "shakespeare_in_love_movie",
+      "relation_type": "DIRECTED"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_mus_director",
+      "from_import_ref": "got_movie",
+      "to_import_ref": "daenerys_targaryen",
+      "relation_type": "HAS_MUS_DIRECTOR"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_gave_music_to",
+      "from_import_ref": "christopher_marlowe",
+      "to_import_ref": "shakespeare_in_love_movie",
+      "relation_type": "GAVE_MUSIC_TO"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_inspired",
+      "from_import_ref": "hamlet_book",
+      "to_import_ref": "got_movie",
+      "relation_type": "INSPIRED"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_based_on",
+      "from_import_ref": "got_movie",
+      "to_import_ref": "asoiaf_book",
+      "relation_type": "IS_BASED_ON"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_as_author",
+      "from_import_ref": "hamlet_book",
+      "to_import_ref": "william_shakespeare",
+      "relation_type": "HAS_AS_AUTHOR"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_author_of",
+      "from_import_ref": "christopher_marlowe",
+      "to_import_ref": "asoiaf_book",
+      "relation_type": "IS_AUTHOR_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_location_of",
+      "from_import_ref": "kings_landing",
+      "to_import_ref": "asoiaf_book",
+      "relation_type": "IS_LOCATION_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_contained_in",
+      "from_import_ref": "winterfell_vault",
+      "to_import_ref": "winterfell_vault",
+      "relation_type": "IS_CONTAINED_IN"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_located_at",
+      "from_import_ref": "globe_theatre_org",
+      "to_import_ref": "stratford_upon_avon",
+      "relation_type": "IS_LOCATED_AT"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has",
+      "from_import_ref": "kings_landing",
+      "to_import_ref": "globe_theatre_org",
+      "relation_type": "HAS"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_employee",
+      "from_import_ref": "globe_theatre_org",
+      "to_import_ref": "ben_jonson",
+      "relation_type": "HAS_EMPLOYEE"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_works_at",
+      "from_import_ref": "christopher_marlowe",
+      "to_import_ref": "globe_theatre_org",
+      "relation_type": "WORKS_AT"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_has_member",
+      "from_import_ref": "globe_theatre_org",
+      "to_import_ref": "william_shakespeare",
+      "relation_type": "HAS_MEMBER"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_is_member_of",
+      "from_import_ref": "susanna_shakespeare",
+      "to_import_ref": "globe_theatre_org",
+      "relation_type": "IS_MEMBER_OF"
+    },
+    {
+      "import_op": "create",
+      "import_ref": "rel_studies_at",
+      "from_import_ref": "jon_snow",
+      "to_import_ref": "globe_theatre_org",
+      "relation_type": "STUDIES_AT"
+    }
+  ],
+  "tags": [
+    {
+      "import_op": "create",
+      "name": "TestData",
+      "count": 55
+    }
+  ]
+}

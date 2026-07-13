@@ -1,1 +1,0 @@
-../../people/tests/test_integration_full_stack.py

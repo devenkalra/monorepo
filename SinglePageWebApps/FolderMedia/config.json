@@ -1,0 +1,63 @@
+{
+  "title": "My Local Media",
+  "folders": {
+    "tripPhotos": "./media/trips",
+    "familyVideos": "./media/family/videos"
+  },
+  "albums": [
+    {
+      "id": "favorites",
+      "name": "Favorites",
+      "tags": [
+        "best-of"
+      ]
+    },
+    {
+      "id": "summer-2026",
+      "name": "Summer 2026",
+      "tags": [
+        "summer",
+        "travel"
+      ]
+    }
+  ],
+  "items": [
+    {
+      "path": "VID_2001.mp4",
+      "folder": "familyVideos",
+      "album": "favorites",
+      "tags": [
+        "kids",
+        "best-of"
+      ]
+    },
+    {
+      "path": "./other-folder/mountains/photo-a.webp",
+      "album": "summer-2026",
+      "tags": [
+        "hiking",
+        "summer",
+        "travel"
+      ]
+    },
+    {
+      "path": "file:///C:/Media/highlights/highlight-01.mp4",
+      "album": "favorites",
+      "tags": [
+        "edited",
+        "best-of"
+      ]
+    },
+    {
+      "path": "IMG_1001.jpg",
+      "folder": "tripPhotos",
+      "album": "summer-2026",
+      "tags": [
+        "beach",
+        "sunset",
+        "summer",
+        "travel"
+      ]
+    }
+  ]
+}

@@ -242,7 +242,7 @@ NOTES:
     example2 = {
         'title': 'Index Media Files',
         'description': 'Index photos and videos into SQLite database',
-        'command': 'python3 ~/monorepo/scripts/index_media.py --path {path} --start-dir {start_dir} --volume {volume} --db-path {db_path} {verbose} {dry_run} {media_only} {skip_pattern} {max_depth}',
+        'command': 'python3 ~/monorepo/scripts/index_media.py --volume {volume} --start-dir {start_dir} --db-path {db_path} {verbose} {dry_run} {media_only} {skip_pattern} {max_depth}',
         'working_dir': '~',
         'window_size': '900x700',
         'help_text': '''Index Media Files - Help
@@ -252,23 +252,19 @@ into a SQLite database with metadata extraction.
 
 PARAMETERS:
 
-Base Path (required):
-  - Root directory containing your media files
-  - Example: /home/user/Photos
+Volume (required):
+  - Registered volume name (see manage_volumes.py)
+  - Mount path is resolved from the database
+  - Example: photo, mainlibrary
 
-Start Directory (required):
-  - Subdirectories to scan (relative to Base Path)
+Start Directory:
+  - Subdirectories to scan (relative to volume mount)
   - One directory per line
-  - Use "." for entire Base Path
+  - Omit to scan entire mount
   - Example:
     2020
     2021
     2024/vacation
-
-Volume Tag (required):
-  - Identifier for this collection
-  - Used to distinguish different sources
-  - Example: "MainLibrary", "Backup2024"
 
 Database Path (required):
   - Path to SQLite database file
@@ -325,18 +321,16 @@ Videos: MP4, MOV, AVI, MKV, MPG, WMV
 EXAMPLES:
 
 Index entire photo library:
-  Base Path: /home/user/Photos
-  Start Directory: .
-  Volume: MainLibrary
+  Volume: mainlibrary
+  Start Directory: (empty = full mount)
   Database: media.db
   Media Only: ☑
 
 Index specific years:
-  Base Path: /mnt/photos
+  Volume: photo
   Start Directory: 2020
                    2021
                    2022
-  Volume: Archive
   Skip Patterns: .DS_Store
                  @eaDir
 
@@ -348,29 +342,21 @@ NOTES:
 ''',
         'parameters': [
             {
-                'name': 'path',
-                'label': 'Base Path',
-                'type': 'directory',
+                'name': 'volume',
+                'label': 'Volume',
+                'type': 'text',
                 'required': True,
-                'help': 'Base directory containing media files',
-                'default': '/home/ubuntu/TestData/Images'
+                'help': 'Registered volume name (use manage_volumes.py to register)',
+                'default': 'photo'
             },
             {
                 'name': 'start_dir',
                 'label': 'Start Directory',
                 'type': 'text',
                 'multiple': True,
-                'required': True,
-                'help': 'Starting subdirectories (one per line, relative to path)',
-                'default': '.'
-            },
-            {
-                'name': 'volume',
-                'label': 'Volume Tag',
-                'type': 'text',
-                'required': True,
-                'help': 'Volume identifier',
-                'default': 'MainLibrary'
+                'required': False,
+                'help': 'Starting subdirectories (one per line, relative to volume mount)',
+                'default': ''
             },
             {
                 'name': 'db_path',

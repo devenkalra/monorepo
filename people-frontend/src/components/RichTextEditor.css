@@ -307,3 +307,29 @@
     background-color: #3b82f6;
     pointer-events: none;
 }
+
+/* YouTube Video Styles */
+.prose iframe.tiptap-youtube,
+.prose-invert iframe.tiptap-youtube,
+.ProseMirror iframe.tiptap-youtube {
+    max-width: 100%;
+    aspect-ratio: 16 / 9;
+    border-radius: 0.5em;
+    margin: 1em 0;
+    display: block;
+}
+
+.ProseMirror iframe.tiptap-youtube {
+    cursor: pointer;
+}
+
+.ProseMirror iframe.ProseMirror-selectednode {
+    outline: 3px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+/* Scroll margin for anchor targets to account for sticky header */
+.prose [id],
+.prose-invert [id] {
+    scroll-margin-top: 6rem;
+}

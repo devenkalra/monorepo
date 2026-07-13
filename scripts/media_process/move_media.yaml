@@ -77,7 +77,7 @@ help_text: |
     7. Generate thumbnail
   
   Database Updates:
-    - Updates fullpath to new location
+    - Updates relpath to new location
     - Updates volume tag
     - Updates modified date
     - Updates indexed date
@@ -120,7 +120,7 @@ help_text: |
   
   File Already in Database:
     - Updates existing record
-    - Changes fullpath to new location
+    - Changes relpath to new location
     - Updates volume tag
     - Re-extracts metadata
     - Regenerates thumbnail

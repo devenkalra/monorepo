@@ -20,71 +20,79 @@ class Neo4jSync:
 
     def sync_entity(self, entity):
         if not self._driver: return
+        
+        # Check if the entity is encrypted
+        is_encrypted = getattr(entity, 'is_encrypted', False)
+        
         # Base Entity Props
         params = {
             'id': str(entity.id),
-            'display': entity.display,
-            'description': entity.description,
-            'type': entity.type
+            'display': f"🔒 [Encrypted {entity.type}]" if is_encrypted else entity.display,
+            'description': '' if is_encrypted else entity.description,
+            'type': entity.type,
+            'is_encrypted': is_encrypted,
+            'encrypted_data': entity.encrypted_data if is_encrypted else None
         }
         
-        # If it's a Person, add person props
         labels = "Entity"
         if entity.type:
             labels += f":{entity.type}" # e.g., :Entity:Person
 
-        if entity.type == 'Person':
-            params.update({
-                'firstName': entity.first_name,
-                'lastName': entity.last_name,
-                'profession': entity.profession,
-                'gender': entity.gender
-            })
+        # If entity is encrypted, skip subclass props to prevent leaking data
+        if not is_encrypted:
+            if entity.type == 'Person':
+                params.update({
+                    'firstName': getattr(entity, 'first_name', None),
+                    'lastName': getattr(entity, 'last_name', None),
+                    'profession': getattr(entity, 'profession', None),
+                    'gender': getattr(entity, 'gender', None)
+                })
 
-        if entity.type == 'Note':
-            if entity.date:
-                # Handle both datetime objects and string dates
-                if hasattr(entity.date, 'isoformat'):
-                    params['date'] = entity.date.isoformat()
-                else:
-                    params['date'] = entity.date
-        
-        if entity.type == 'Location':
-            params.update({
-                'address1': entity.address1,
-                'address2': entity.address2,
-                'postalCode': entity.postal_code,
-                'city': entity.city,
-                'state': entity.state,
-                'country': entity.country
-            })
-        
-        if entity.type == 'Movie':
-            params.update({
-                'year': entity.year,
-                'language': entity.language,
-                'country': entity.country
-            })
-        
-        if entity.type == 'Book':
-            params.update({
-                'year': entity.year,
-                'language': entity.language,
-                'country': entity.country,
-                'summary': entity.summary
-            })
-        
-        if entity.type == 'Asset':
-            params.update({
-                'value': entity.value,
-                'acquiredOn': entity.acquired_on
-            })
-        
-        if entity.type == 'Org':
-            params.update({
-                'name': entity.name,
-                'kind': entity.kind
-            })
+            elif entity.type == 'Note':
+                note_date = getattr(entity, 'date', None)
+                if note_date:
+                    # Handle both datetime objects and string dates
+                    if hasattr(note_date, 'isoformat'):
+                        params['date'] = note_date.isoformat()
+                    else:
+                        params['date'] = note_date
+            
+            elif entity.type == 'Location':
+                params.update({
+                    'address1': getattr(entity, 'address1', None),
+                    'address2': getattr(entity, 'address2', None),
+                    'postalCode': getattr(entity, 'postal_code', None),
+                    'city': getattr(entity, 'city', None),
+                    'state': getattr(entity, 'state', None),
+                    'country': getattr(entity, 'country', None)
+                })
+            
+            elif entity.type == 'Movie':
+                params.update({
+                    'year': getattr(entity, 'year', None),
+                    'language': getattr(entity, 'language', None),
+                    'country': getattr(entity, 'country', None)
+                })
+            
+            elif entity.type == 'Book':
+                params.update({
+                    'year': getattr(entity, 'year', None),
+                    'language': getattr(entity, 'language', None),
+                    'country': getattr(entity, 'country', None),
+                    'summary': getattr(entity, 'summary', None)
+                })
+            
+            elif entity.type == 'Asset':
+                params.update({
+                    'value': getattr(entity, 'value', None),
+                    'acquiredOn': getattr(entity, 'acquired_on', None)
+                })
+            
+            elif entity.type == 'Org':
+                params.update({
+                    'name': getattr(entity, 'name', None),
+                    'kind': getattr(entity, 'kind', None)
+                })
 
         query = f"""
         MERGE (e:{labels} {{id: $id}})
@@ -172,7 +180,7 @@ class MeiliSync:
             
             # Define filterable attributes
             self.helper.client.index(self.index_name).update_filterable_attributes([
-                'type', 'tags', 'gender', 'first_name', 'last_name', 'user_id'
+                'type', 'tags', 'gender', 'first_name', 'last_name', 'user_id', 'is_encrypted'
             ])
             
             # Define searchable attributes
@@ -187,96 +195,126 @@ class MeiliSync:
                 'id', 'type', 'display', 'description', 'tags', 'urls', 'photos', 'attachments',
                 'locations', 'user_id', 'first_name', 'last_name', 'emails', 'phones',
                 'profession', 'gender', 'dob', 'date', 'address1', 'address2', 'postal_code',
-                'city', 'state', 'country', 'year', 'language', 'name', 'kind'
+                'city', 'state', 'country', 'year', 'language', 'name', 'kind', 'is_encrypted', 'encrypted_data'
             ])
         except Exception as e:
             logger.error(f"Failed to init MeiliSearch: {e}")
             self.helper = None
 
-    def sync_entity(self, entity):
+    def sync_entity(self, entity, wait_for_completion=False, timeout_in_ms=30000, interval_in_ms=50):
         if not self.helper: return
         
         # Debug: check what tags we're getting
         print(f"MeiliSync: Entity {entity.display} - tags from entity.tags: {entity.tags}, type: {type(entity.tags)}")
         
-        doc = {
-            'id': str(entity.id),
-            'type': entity.type,
-            'display': entity.display,
-            'description': entity.description,
-            'tags': entity.tags or [],  # Ensure tags is always a list, not None
-            'urls': entity.urls,
-            'photos': entity.photos,
-            'attachments': entity.attachments,
-            'locations': entity.locations,
-            'user_id': str(entity.user.id) if entity.user else None
-        }
+        is_encrypted = getattr(entity, 'is_encrypted', False)
+        
+        if is_encrypted:
+            doc = {
+                'id': str(entity.id),
+                'type': entity.type,
+                'display': f"🔒 [Encrypted {entity.type}]",
+                'description': '',
+                'tags': entity.tags or [],  # Ensure tags is always a list, not None
+                'is_encrypted': True,
+                'encrypted_data': entity.encrypted_data,
+                'user_id': str(entity.user.id) if entity.user else None,
+                'urls': [],
+                'photos': [],
+                'attachments': [],
+                'locations': []
+            }
+        else:
+            doc = {
+                'id': str(entity.id),
+                'type': entity.type,
+                'display': entity.display,
+                'description': entity.description,
+                'tags': entity.tags or [],  # Ensure tags is always a list, not None
+                'is_encrypted': False,
+                'encrypted_data': None,
+                'urls': entity.urls,
+                'photos': entity.photos,
+                'attachments': entity.attachments,
+                'locations': entity.locations,
+                'user_id': str(entity.user.id) if entity.user else None
+            }
         
         print(f"MeiliSync: Doc to index: id={doc['id']}, tags={doc['tags']}")
         
-        if entity.type == 'Person' and hasattr(entity, 'first_name'):
-            doc.update({
-                'first_name': entity.first_name,
-                'last_name': entity.last_name,
-                'emails': entity.emails,
-                'phones': entity.phones,
-                'profession': entity.profession,
-                'gender': entity.gender
-            })
+        if not is_encrypted:
+            if entity.type == 'Person' and hasattr(entity, 'first_name'):
+                doc.update({
+                    'first_name': entity.first_name,
+                    'last_name': entity.last_name,
+                    'emails': entity.emails,
+                    'phones': entity.phones,
+                    'profession': entity.profession,
+                    'gender': entity.gender
+                })
 
-        if entity.type == 'Note' and hasattr(entity, 'date'):
-            # Handle both datetime objects and string dates
-            date_value = None
-            if entity.date:
-                if hasattr(entity.date, 'isoformat'):
-                    date_value = entity.date.isoformat()
-                else:
-                    date_value = entity.date
-            doc.update({
-                'date': date_value
-            })
-        
-        if entity.type == 'Location' and hasattr(entity, 'city'):
-            doc.update({
-                'address1': entity.address1,
-                'address2': entity.address2,
-                'postal_code': entity.postal_code,
-                'city': entity.city,
-                'state': entity.state,
-                'country': entity.country
-            })
-        
-        if entity.type == 'Movie' and hasattr(entity, 'year'):
-            doc.update({
-                'year': entity.year,
-                'language': entity.language,
-                'country': entity.country
-            })
-        
-        if entity.type == 'Book' and hasattr(entity, 'year'):
-            doc.update({
-                'year': entity.year,
-                'language': entity.language,
-                'country': entity.country,
-                'summary': entity.summary
-            })
-        
-        if entity.type == 'Asset' and hasattr(entity, 'value'):
-            doc.update({
-                'value': entity.value,
-                'acquired_on': entity.acquired_on
-            })
-        
-        if entity.type == 'Org' and hasattr(entity, 'name'):
-            doc.update({
-                'name': entity.name,
-                'kind': entity.kind
-            })
+            if entity.type == 'Note' and hasattr(entity, 'date'):
+                # Handle both datetime objects and string dates
+                date_value = None
+                if entity.date:
+                    if hasattr(entity.date, 'isoformat'):
+                        date_value = entity.date.isoformat()
+                    else:
+                        date_value = entity.date
+                doc.update({
+                    'date': date_value
+                })
+            
+            if entity.type == 'Location' and hasattr(entity, 'city'):
+                doc.update({
+                    'address1': entity.address1,
+                    'address2': entity.address2,
+                    'postal_code': entity.postal_code,
+                    'city': entity.city,
+                    'state': entity.state,
+                    'country': entity.country
+                })
+            
+            if entity.type == 'Movie' and hasattr(entity, 'year'):
+                doc.update({
+                    'year': entity.year,
+                    'language': entity.language,
+                    'country': entity.country
+                })
+            
+            if entity.type == 'Book' and hasattr(entity, 'year'):
+                doc.update({
+                    'year': entity.year,
+                    'language': entity.language,
+                    'country': entity.country,
+                    'summary': entity.summary
+                })
+            
+            if entity.type == 'Asset' and hasattr(entity, 'value'):
+                doc.update({
+                    'value': entity.value,
+                    'acquired_on': entity.acquired_on
+                })
+            
+            if entity.type == 'Org' and hasattr(entity, 'name'):
+                doc.update({
+                    'name': entity.name,
+                    'kind': entity.kind
+                })
             
         try:
             # Use update_documents to ensure existing documents are updated
             result = self.helper.client.index(self.index_name).update_documents([doc])
             print(f"MeiliSearch: Queued indexing for {entity.display} (ID: {entity.id}), task_uid: {result.task_uid}, status: {result.status}")
+
+            if wait_for_completion and hasattr(result, 'task_uid'):
+                waited_task = self.helper.client.index(self.index_name).wait_for_task(
+                    result.task_uid,
+                    timeout_in_ms=timeout_in_ms,
+                    interval_in_ms=interval_in_ms,
+                )
+                if waited_task.status != 'succeeded':
+                    raise Exception(f"MeiliSearch indexing failed: {waited_task}")
             
             # Check if there's an error in the result
             if hasattr(result, 'status') and result.status == 'failed':
@@ -297,7 +335,16 @@ class MeiliSync:
             print(f"ERROR deleting from MeiliSearch entity {entity_id}: {e}")
             logger.error(f"Error deleting from MeiliSearch: {e}")
 
-    def search(self, query, filter_str=None, attributes_to_search_on=None):
+    def search(
+        self,
+        query,
+        filter_str=None,
+        attributes_to_search_on=None,
+        hybrid=None,
+        ranking_score_threshold=None,
+        show_ranking_score=None,
+        limit=None,
+    ):
         if not self.helper: return []
         try:
             # Basic search
@@ -306,6 +353,14 @@ class MeiliSync:
                 params['filter'] = filter_str
             if attributes_to_search_on:
                 params['attributesToSearchOn'] = attributes_to_search_on
+            if hybrid:
+                params['hybrid'] = hybrid
+            if ranking_score_threshold is not None:
+                params['rankingScoreThreshold'] = ranking_score_threshold
+            if show_ranking_score is not None:
+                params['showRankingScore'] = show_ranking_score
+            if limit is not None:
+                params['limit'] = limit
             
             # If query is empty and we have filters, use empty string to get all matching filter results
             search_query = query if query else ''

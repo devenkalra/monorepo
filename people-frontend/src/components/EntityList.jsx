@@ -1,5 +1,71 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { getMediaUrl } from '../utils/apiUrl';
+import { useEncryption } from '../contexts/EncryptionContext';
+
+function DecryptedImage({ src, alt, className, onClick, title, decryptionKey }) {
+    const { decryptBlob } = useEncryption();
+    const [decryptedSrc, setDecryptedSrc] = useState(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!src) return;
+        
+        let active = true;
+        const loadAndDecrypt = async () => {
+            try {
+                setLoading(true);
+                const response = await fetch(src);
+                if (!response.ok) throw new Error('Failed to fetch media');
+                const encryptedBlob = await response.blob();
+                
+                let mimeType = 'image/jpeg';
+                if (src.toLowerCase().includes('.png')) mimeType = 'image/png';
+                if (src.toLowerCase().includes('.gif')) mimeType = 'image/gif';
+                if (src.toLowerCase().includes('.webp')) mimeType = 'image/webp';
+                
+                const decryptedBlob = await decryptBlob(encryptedBlob, mimeType, decryptionKey);
+                
+                if (active) {
+                    const objectUrl = URL.createObjectURL(decryptedBlob);
+                    setDecryptedSrc(objectUrl);
+                }
+            } catch (err) {
+                console.error('Failed to decrypt image in list:', err);
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+
+        loadAndDecrypt();
+
+        return () => {
+            active = false;
+            if (decryptedSrc) {
+                URL.revokeObjectURL(decryptedSrc);
+            }
+        };
+    }, [src, decryptionKey]);
+
+    if (loading) {
+        return (
+            <div className={`flex items-center justify-center bg-gray-100 dark:bg-gray-800 animate-pulse ${className}`}>
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+            </div>
+        );
+    }
+
+    return (
+        <img
+            src={decryptedSrc || src}
+            alt={alt}
+            className={className}
+            onClick={onClick}
+            title={title}
+        />
+    );
+}
 
 /** Shorten each part of a hierarchical tag to first 3 chars (e.g. people/family → peo/fam) */
 function shortenTag(tag) {
@@ -132,14 +198,37 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
                     onMouseEnter={handleMouseEnter}
                     onMouseLeave={handleMouseLeave}
                 >
-                    {thumbnailUrl ? (
-                        <img src={thumbnailUrl} alt="" className="w-12 h-12 rounded object-cover" />
+                    {entity.is_encrypted ? (
+                        entity._decrypted ? (
+                            thumbnailUrl ? (
+                                <DecryptedImage
+                                    src={thumbnailUrl}
+                                    alt=""
+                                    className="w-12 h-12 rounded object-cover"
+                                    decryptionKey={entity._decryption_key}
+                                />
+                            ) : (
+                                <div className="w-12 h-12 rounded bg-gradient-to-br from-teal-500 to-emerald-600 flex items-center justify-center">
+                                    <span className="text-white text-xl font-bold">
+                                        {(entity.display || entity.label || '?')[0].toUpperCase()}
+                                    </span>
+                                </div>
+                            )
+                        ) : (
+                            <div className="w-12 h-12 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                                <span className="text-gray-500 dark:text-gray-400 text-xl">🔒</span>
+                            </div>
+                        )
                     ) : (
-                        <div className="w-12 h-12 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
-                            <span className="text-white text-xl font-bold">
-                                {(entity.display || entity.label || '?')[0].toUpperCase()}
-                            </span>
-                        </div>
+                        thumbnailUrl ? (
+                            <img src={thumbnailUrl} alt="" className="w-12 h-12 rounded object-cover" />
+                        ) : (
+                            <div className="w-12 h-12 rounded bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                                <span className="text-white text-xl font-bold">
+                                    {(entity.display || entity.label || '?')[0].toUpperCase()}
+                                </span>
+                            </div>
+                        )
                     )}
                     <span
                         className="absolute top-0 left-0 w-4 h-4 flex items-center justify-center rounded-bl rounded-tr bg-gray-900/80 text-white dark:bg-white/80 dark:text-gray-900 text-[9px] font-bold"

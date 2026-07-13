@@ -1,16 +1,108 @@
 import { getMediaUrl } from '../utils/apiUrl';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../services/api';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
+import { useEncryption } from '../contexts/EncryptionContext';
+import { Extension } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
+import Link from '@tiptap/extension-link';
 import TextAlign from '@tiptap/extension-text-align';
+import Youtube from '@tiptap/extension-youtube';
 import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
+import TurndownService from 'turndown';
+import { marked } from 'marked';
 import './RichTextEditor.css';
+
+// Custom Node View to render and decrypt inline images
+function DecryptedImageNodeView(props) {
+    const { node, updateAttributes } = props;
+    const src = node.attrs.src;
+    const alt = node.attrs.alt;
+    const width = node.attrs.width;
+    const height = node.attrs.height;
+    
+    const { decryptBlob } = useEncryption();
+    const [decryptedSrc, setDecryptedSrc] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    useEffect(() => {
+        if (!src) return;
+        if (!src.includes('.enc') || src.startsWith('blob:')) {
+            setDecryptedSrc(src);
+            return;
+        }
+
+        let active = true;
+        let localBlobUrl = null;
+        const loadAndDecrypt = async () => {
+            try {
+                setLoading(true);
+                const response = await fetch(getMediaUrl(src));
+                if (!response.ok) throw new Error('Failed to fetch media');
+                const encryptedBlob = await response.blob();
+                
+                let mimeType = 'image/jpeg';
+                if (src.toLowerCase().includes('.png')) mimeType = 'image/png';
+                if (src.toLowerCase().includes('.gif')) mimeType = 'image/gif';
+                if (src.toLowerCase().includes('.webp')) mimeType = 'image/webp';
+                
+                const decryptedBlob = await decryptBlob(encryptedBlob, mimeType);
+                
+                if (active) {
+                    const objectUrl = URL.createObjectURL(decryptedBlob);
+                    localBlobUrl = objectUrl;
+                    setDecryptedSrc(objectUrl);
+                }
+            } catch (err) {
+                console.error('Failed to decrypt inline image inside editor:', err);
+                if (active) setDecryptedSrc(src);
+            } finally {
+                if (active) setLoading(false);
+            }
+        };
+
+        loadAndDecrypt();
+
+        return () => {
+            active = false;
+            if (localBlobUrl) {
+                URL.revokeObjectURL(localBlobUrl);
+            }
+        };
+    }, [src]);
+
+    const style = {};
+    if (width) style.width = width;
+    if (height) style.height = height;
+
+    if (loading) {
+        return (
+            <NodeViewWrapper className="tiptap-image-wrapper inline-block">
+                <div className="w-32 h-32 bg-gray-100 dark:bg-gray-800 animate-pulse flex items-center justify-center rounded">
+                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                </div>
+            </NodeViewWrapper>
+        );
+    }
+
+    return (
+        <NodeViewWrapper className="tiptap-image-wrapper inline-block">
+            <img
+                src={decryptedSrc || src}
+                alt={alt}
+                style={style}
+                className="tiptap-image max-w-full rounded cursor-pointer"
+            />
+        </NodeViewWrapper>
+    );
+}
 
 // Custom Image extension with resize support
 const ResizableImage = Image.extend({
@@ -41,18 +133,113 @@ const ResizableImage = Image.extend({
             },
         };
     },
+    addNodeView() {
+        return ReactNodeViewRenderer(DecryptedImageNodeView);
+    },
 });
 
-function RichTextEditor({ value, onChange, placeholder = 'Enter description...' }) {
+// Custom Link extension that doesn't add target="_blank" to anchor links
+const CustomLink = Link.extend({
+    addAttributes() {
+        return {
+            ...this.parent?.(),
+            href: {
+                default: null,
+            },
+            target: {
+                default: null,
+                parseHTML: element => element.getAttribute('target'),
+                renderHTML: attributes => {
+                    // Don't add target="_blank" for anchor links (starting with #)
+                    if (attributes.href && attributes.href.startsWith('#')) {
+                        return {};
+                    }
+                    return { target: '_blank' };
+                },
+            },
+            rel: {
+                default: null,
+                parseHTML: element => element.getAttribute('rel'),
+                renderHTML: attributes => {
+                    // Don't add rel for anchor links
+                    if (attributes.href && attributes.href.startsWith('#')) {
+                        return {};
+                    }
+                    return { rel: 'noopener noreferrer nofollow' };
+                },
+            },
+        };
+    },
+});
+
+// Extension to preserve inline styles on all elements
+const PreserveStyles = Extension.create({
+    name: 'preserveStyles',
+    
+    addGlobalAttributes() {
+        return [
+            {
+                types: ['paragraph', 'heading', 'blockquote', 'codeBlock', 'listItem'],
+                attributes: {
+                    style: {
+                        default: null,
+                        parseHTML: element => {
+                            const style = element.getAttribute('style');
+                            // Ensure scroll-margin-top is included for anchor targets
+                            if (element.id && style && !style.includes('scroll-margin-top')) {
+                                return style + '; scroll-margin-top: 6rem;';
+                            }
+                            return style;
+                        },
+                        renderHTML: attributes => {
+                            if (!attributes.style) {
+                                return {};
+                            }
+                            return { style: attributes.style };
+                        },
+                    },
+                    id: {
+                        default: null,
+                        parseHTML: element => element.getAttribute('id'),
+                        renderHTML: attributes => {
+                            if (!attributes.id) {
+                                return {};
+                            }
+                            return { id: attributes.id };
+                        },
+                    },
+                },
+            },
+        ];
+    },
+});
+
+function RichTextEditor({ value, onChange, placeholder = 'Enter description...', isEncrypted, entityId }) {
+    const { hasKeys, encryptBlob } = useEncryption();
     const [showImageDialog, setShowImageDialog] = useState(false);
+    const [showYoutubeDialog, setShowYoutubeDialog] = useState(false);
     const [imageUrl, setImageUrl] = useState('');
+    const [youtubeUrl, setYoutubeUrl] = useState('');
     const [isUploading, setIsUploading] = useState(false);
     const [uploadError, setUploadError] = useState('');
     const [isImageSelected, setIsImageSelected] = useState(false);
+    const [editMode, setEditMode] = useState('wysiwyg'); // 'wysiwyg', 'html'
+    const [rawContent, setRawContent] = useState('');
+    const [originalHtml, setOriginalHtml] = useState(value || ''); // Store original HTML to preserve styles
 
     const editor = useEditor({
         extensions: [
-            StarterKit,
+            StarterKit.configure({
+                // Disable the default link extension so we can use our custom one
+                link: false,
+            }),
+            PreserveStyles, // Add extension to preserve inline styles and IDs
+            CustomLink.configure({
+                openOnClick: false,
+                HTMLAttributes: {
+                    class: 'text-blue-600 dark:text-blue-400 underline',
+                },
+            }),
             Placeholder.configure({
                 placeholder,
             }),
@@ -67,6 +254,14 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                     class: 'tiptap-image',
                 },
             }),
+            Youtube.configure({
+                controls: true,
+                nocookie: true,
+                modestBranding: true,
+                HTMLAttributes: {
+                    class: 'tiptap-youtube',
+                },
+            }),
             Table.configure({
                 resizable: true,
             }),
@@ -77,6 +272,7 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
         content: value || '',
         onUpdate: ({ editor }) => {
             const html = editor.getHTML();
+            setOriginalHtml(html); // Keep originalHtml in sync when editing in WYSIWYG
             onChange(html);
         },
         onSelectionUpdate: ({ editor }) => {
@@ -90,6 +286,7 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
     React.useEffect(() => {
         if (editor && value !== editor.getHTML()) {
             editor.commands.setContent(value || '');
+            setOriginalHtml(value || ''); // Store original HTML
         }
     }, [value, editor]);
 
@@ -116,13 +313,28 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
         setUploadError('');
 
         try {
+            let fileToUpload = file;
+            if (isEncrypted) {
+                if (!hasKeys) {
+                    setUploadError('Vault is locked. Unlock vault first to upload encrypted image.');
+                    setIsUploading(false);
+                    return;
+                }
+                const encryptedBlob = await encryptBlob(file);
+                fileToUpload = new File([encryptedBlob], file.name + '.enc', { type: 'application/octet-stream' });
+            }
+
             const formData = new FormData();
-            formData.append('file', file);
+            formData.append('file', fileToUpload);
+            if (entityId) {
+                formData.append('entity_id', entityId);
+            }
 
             const response = await api.fetch('/api/upload/', {
                 method: 'POST',
                 body: formData,
             });
+
 
             if (response.ok) {
                 const result = await response.json();
@@ -148,13 +360,92 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
         editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
     };
 
+    const addYoutube = () => {
+        if (youtubeUrl) {
+            editor.chain().focus().setYoutubeVideo({ src: youtubeUrl }).run();
+            setYoutubeUrl('');
+            setShowYoutubeDialog(false);
+        }
+    };
+
+    const cleanAnchorLinks = (html) => {
+        // Remove target="_blank" and rel attributes from anchor links (href starting with #)
+        return html.replace(
+            /<a\s+([^>]*?)href="(#[^"]*)"([^>]*?)>/g,
+            (match, before, href, after) => {
+                // Keep only href attribute for anchor links
+                return `<a href="${href}">`;
+            }
+        );
+    };
+
+    const handleModeChange = (newMode) => {
+        if (newMode === editMode) return;
+
+        if (editMode === 'wysiwyg') {
+            // Switching from WYSIWYG to HTML
+            // Use originalHtml to preserve all styles and attributes that TipTap might not support
+            let html = originalHtml;
+            // Clean anchor links before showing in HTML mode
+            html = cleanAnchorLinks(html);
+            setRawContent(html);
+        } else if (newMode === 'wysiwyg') {
+            // Switching from HTML to WYSIWYG
+            let html = rawContent;
+            // Clean anchor links before loading into editor
+            html = cleanAnchorLinks(html);
+            editor.commands.setContent(html);
+            setOriginalHtml(html); // Update original HTML
+            onChange(html);
+        }
+
+        setEditMode(newMode);
+    };
+
+    const handleRawContentChange = (e) => {
+        const newContent = e.target.value;
+        setRawContent(newContent);
+        
+        // Clean anchor links before saving
+        const html = cleanAnchorLinks(newContent);
+        setOriginalHtml(html); // Update original HTML when editing raw content
+        onChange(html);
+    };
+
     if (!editor) {
         return null;
     }
 
     return (
         <div className="border border-gray-300 dark:border-gray-600 rounded-lg overflow-hidden bg-white dark:bg-gray-800">
-            {/* Toolbar */}
+            {/* Mode Toggle */}
+            <div className="border-b border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-750 px-2 py-1 flex gap-1">
+                <button
+                    onClick={() => handleModeChange('wysiwyg')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition ${
+                        editMode === 'wysiwyg'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                    type="button"
+                >
+                    WYSIWYG
+                </button>
+                <button
+                    onClick={() => handleModeChange('html')}
+                    className={`px-3 py-1 rounded text-xs font-medium transition ${
+                        editMode === 'html'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+                    }`}
+                    type="button"
+                >
+                    HTML
+                </button>
+            </div>
+            
+            {/* Toolbar - only show in WYSIWYG mode */}
+            {editMode === 'wysiwyg' && (
             <div className="border-b border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 p-2 flex flex-wrap gap-1">
                 <button
                     onClick={() => editor.chain().focus().toggleBold().run()}
@@ -368,6 +659,14 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                     🖼️
                 </button>
                 <button
+                    onClick={() => setShowYoutubeDialog(true)}
+                    className="px-3 py-1 rounded text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
+                    type="button"
+                    title="Insert YouTube Video"
+                >
+                    ▶️
+                </button>
+                <button
                     onClick={addTable}
                     className="px-3 py-1 rounded text-sm bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
                     type="button"
@@ -518,12 +817,26 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                     ↷
                 </button>
             </div>
+            )}
             
-            {/* Editor Content */}
-            <EditorContent 
-                editor={editor} 
-                className="prose dark:prose-invert max-w-none p-4 min-h-[200px] focus:outline-none"
-            />
+            {/* Editor Content - WYSIWYG mode */}
+            {editMode === 'wysiwyg' && (
+                <EditorContent 
+                    editor={editor} 
+                    className="prose dark:prose-invert max-w-none p-4 min-h-[200px] focus:outline-none"
+                />
+            )}
+            
+            {/* Raw Content Editor - HTML mode */}
+            {editMode === 'html' && (
+                <textarea
+                    value={rawContent}
+                    onChange={handleRawContentChange}
+                    placeholder="Paste or type HTML..."
+                    className="w-full p-4 min-h-[200px] font-mono text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none resize-y"
+                    spellCheck="false"
+                />
+            )}
             
             {/* Image Dialog */}
             {showImageDialog && (
@@ -624,6 +937,62 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...' 
                                 type="button"
                             >
                                 Insert URL
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* YouTube Dialog */}
+            {showYoutubeDialog && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                            Insert YouTube Video
+                        </h3>
+                        
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                YouTube URL
+                            </label>
+                            <input
+                                type="text"
+                                value={youtubeUrl}
+                                onChange={(e) => setYoutubeUrl(e.target.value)}
+                                placeholder="https://www.youtube.com/watch?v=..."
+                                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && youtubeUrl) {
+                                        addYoutube();
+                                    } else if (e.key === 'Escape') {
+                                        setShowYoutubeDialog(false);
+                                        setYoutubeUrl('');
+                                    }
+                                }}
+                            />
+                            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                Paste any YouTube URL (watch, embed, or short link)
+                            </p>
+                        </div>
+                        
+                        <div className="flex gap-2 justify-end">
+                            <button
+                                onClick={() => {
+                                    setShowYoutubeDialog(false);
+                                    setYoutubeUrl('');
+                                }}
+                                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                                type="button"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={addYoutube}
+                                disabled={!youtubeUrl}
+                                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                                type="button"
+                            >
+                                Insert
                             </button>
                         </div>
                     </div>

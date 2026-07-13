@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Media thumbnails</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 1.5rem;
+      background: #1a1a1a;
+      color: #eee;
+    }
+    h1 { margin-top: 0; font-size: 1.25rem; font-weight: 600; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(1, max-content);
+      gap: 16px;
+      align-items: start;
+      justify-content: start;
+    }
+    .card {
+      margin: 0;
+      background: #2a2a2a;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,.35);
+      width: max-content;
+      max-width: 100%;
+    }
+    .card img {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: none;
+      background: #111;
+    }
+    figcaption {
+      padding: 8px 10px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .relpath { color: #aaa; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <h1>Media thumbnails (1)</h1>
+  <div class="grid">
+<figure class='card'><img src='data:image/jpeg;base64,dGh1bWI=' alt='beach.jpg' width="10" height="10"><figcaption><strong>#1</strong> beach.jpg<br><span class='relpath'>vacation/beach.jpg</span></figcaption></figure>
+  </div>
+</body>
+</html>

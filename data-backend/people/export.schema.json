@@ -1,0 +1,604 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bldrdojo.local/schemas/entity-export.schema.json",
+  "title": "Entity Export",
+  "description": "Schema for JSON exports produced by people export endpoints/tasks.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "export_version",
+    "export_date",
+    "user"
+  ],
+  "properties": {
+    "export_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "export_date": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "export_type": {
+      "type": "string",
+      "enum": [
+        "selected"
+      ]
+    },
+    "user": {
+      "$ref": "#/$defs/UserExport"
+    },
+    "entities": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/Person"
+          },
+          {
+            "$ref": "#/$defs/Note"
+          },
+          {
+            "$ref": "#/$defs/Location"
+          },
+          {
+            "$ref": "#/$defs/Movie"
+          },
+          {
+            "$ref": "#/$defs/Book"
+          },
+          {
+            "$ref": "#/$defs/Container"
+          },
+          {
+            "$ref": "#/$defs/Asset"
+          },
+          {
+            "$ref": "#/$defs/Org"
+          }
+        ]
+      }
+    },
+    "relations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/EntityRelation"
+      }
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Tag"
+      }
+    }
+  },
+  "$defs": {
+    "Uuid": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "NullableString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "StringArrayOrNull": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "Url": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "caption": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "UrlArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Url"
+      }
+    },
+    "Attachment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "filename"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preview_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thumbnail_url": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "AttachmentArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Attachment"
+      }
+    },
+    "PhotoArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/Photo"
+      }
+    },
+    "EmbeddedLocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "latitude": {
+          "type": "number"
+        },
+        "elevation": {
+          "type": "number"
+        },
+        "longitude": {
+          "type": "number"
+        }
+      }
+    },
+    "EmbeddedLocationArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/EmbeddedLocation"
+      }
+    },
+    "Photo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url",
+        "filename",
+        "thumbnail_url"
+      ],
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "filename": {
+          "type": "string",
+          "minLength": 1
+        },
+        "thumbnail_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "caption": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "UserExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username"
+      ],
+      "properties": {
+        "username": {
+          "type": "string",
+          "minLength": 1
+        },
+        "email": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "EntityBase": {
+      "type": "object",
+      "required": [
+        "id",
+        "type",
+        "display",
+        "is_encrypted",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "Person",
+            "Note",
+            "Location",
+            "Movie",
+            "Book",
+            "Container",
+            "Asset",
+            "Org"
+          ]
+        },
+        "display": {
+          "$ref": "#/$defs/NullableString"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tags": {
+          "$ref": "#/$defs/StringArrayOrNull"
+        },
+        "urls": {
+          "$ref": "#/$defs/UrlArray"
+        },
+        "photos": {
+          "$ref": "#/$defs/PhotoArray"
+        },
+        "attachments": {
+          "$ref": "#/$defs/AttachmentArray"
+        },
+        "locations": {
+          "$ref": "#/$defs/EmbeddedLocationArray"
+        },
+        "is_encrypted": {
+          "type": "boolean"
+        },
+        "encrypted_data": {
+          "$ref": "#/$defs/NullableString"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Person": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Person"
+            },
+            "first_name": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "last_name": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "dob": {
+              "type": "string",
+              "format": "date"
+            },
+            "gender": {
+              "type": "string",
+              "enum": [
+                "Unspecified",
+                "Male",
+                "Female",
+                "Binary"
+              ]
+            },
+            "emails": {
+              "$ref": "#/$defs/StringArrayOrNull"
+            },
+            "phones": {
+              "$ref": "#/$defs/StringArrayOrNull"
+            },
+            "profession": {
+              "$ref": "#/$defs/NullableString"
+            }
+          }
+        }
+      ]
+    },
+    "Note": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Note"
+            },
+            "date": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      ]
+    },
+    "Location": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Location"
+            },
+            "address1": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "address2": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "postal_code": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "city": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "state": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "country": {
+              "$ref": "#/$defs/NullableString"
+            }
+          }
+        }
+      ]
+    },
+    "Movie": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Movie"
+            },
+            "year": {
+              "type": "integer"
+            },
+            "language": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "country": {
+              "$ref": "#/$defs/NullableString"
+            }
+          }
+        }
+      ]
+    },
+    "Book": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Book"
+            },
+            "year": {
+              "type": "integer"
+            },
+            "language": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "country": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "summary": {
+              "$ref": "#/$defs/NullableString"
+            }
+          }
+        }
+      ]
+    },
+    "Container": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Container"
+            }
+          }
+        }
+      ]
+    },
+    "Asset": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Asset"
+            },
+            "value": {
+              "type": "number"
+            },
+            "acquired_on": {
+              "$ref": "#/$defs/NullableString"
+            }
+          }
+        }
+      ]
+    },
+    "Org": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        {
+          "$ref": "#/$defs/EntityBase"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "Org"
+            },
+            "name": {
+              "$ref": "#/$defs/NullableString"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "School",
+                "University",
+                "Company",
+                "NonProfit",
+                "Club",
+                "Unspecified"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "EntityRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "from_entity",
+        "to_entity",
+        "relation_type",
+        "created_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "from_entity": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "to_entity": {
+          "$ref": "#/$defs/Uuid"
+        },
+        "relation_type": {
+          "type": "string",
+          "enum": [
+            "IS_CHILD_OF",
+            "IS_PARENT_OF",
+            "IS_FRIEND_OF",
+            "IS_COLLEAGUE_OF",
+            "IS_SPOUSE_OF",
+            "IS_MANAGER_OF",
+            "WORKS_FOR_MGR",
+            "IS_STUDENT_OF",
+            "IS_TEACHER_OF",
+            "HAS_STUDENT",
+            "IS_RELATED_TO",
+            "LIVES_AT",
+            "HAS_RESIDENT",
+            "IS_LOCATED_IN",
+            "CONTAINS",
+            "HAS_ACTOR",
+            "ACTED_IN",
+            "HAS_DIRECTOR",
+            "DIRECTED",
+            "HAS_MUS_DIRECTOR",
+            "GAVE_MUSIC_TO",
+            "INSPIRED",
+            "IS_BASED_ON",
+            "HAS_AS_AUTHOR",
+            "IS_AUTHOR_OF",
+            "IS_LOCATION_OF",
+            "IS_CONTAINED_IN",
+            "IS_LOCATED_AT",
+            "HAS",
+            "HAS_EMPLOYEE",
+            "WORKS_AT",
+            "HAS_MEMBER",
+            "IS_MEMBER_OF",
+            "STUDIES_AT"
+          ]
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Tag": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "count"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

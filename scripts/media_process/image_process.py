@@ -30,7 +30,7 @@ except ImportError:
 COMMANDS = {
     'apply_exif': {
         'name': 'Apply EXIF Tags',
-        'script': '~/monorepo/scripts/apply_exif.py',
+        'script': '~/monorepo/scripts/media_process/apply_exif.py',
         'description': 'Apply EXIF/XMP tags to images',
         'params': ['files', 'place', 'location_bookmark', 'gps_coords', 'city', 'state', 'country', 
                    'country_code', 'coverage', 'date', 'offset', 'add_keyword', 'remove_keyword', 
@@ -38,25 +38,25 @@ COMMANDS = {
     },
     'locate_in_db': {
         'name': 'Locate in Database',
-        'script': '~/monorepo/scripts/locate_in_db.py',
+        'script': '~/monorepo/scripts/media_process/locate_in_db.py',
         'description': 'Find files in database by hash',
         'params': ['files', 'db_path', 'metadata', 'json_output', 'show_hash', 'summary', 'limit']
     },
     'move_media': {
         'name': 'Move Media Files',
-        'script': '~/monorepo/scripts/move_media.py',
+        'script': '~/monorepo/scripts/media_process/move_media.py',
         'description': 'Move media files and update database',
         'params': ['files', 'destination', 'volume', 'db_path', 'verbose', 'dry_run', 'audit_log', 'limit']
     },
     'find_location': {
         'name': 'Find Location Info',
-        'script': '~/monorepo/scripts/find_location.py',
+        'script': '~/monorepo/scripts/media_process/find_location.py',
         'description': 'Geocode place name and show location metadata',
         'params': ['place_name', 'date', 'offset']
     },
     'manage_dupes': {
         'name': 'Manage Duplicates',
-        'script': '~/monorepo/scripts/manage_dupes.py',
+        'script': '~/monorepo/scripts/media_process/manage_dupes.py',
         'description': 'Find and manage duplicate files',
         'params': ['source', 'destination', 'db_path', 'action', 'media_only', 
                    'include_pattern', 'skip_pattern', 'literal_patterns', 'verbose', 'dry_run', 'limit']
@@ -65,7 +65,7 @@ COMMANDS = {
         'name': 'Index Media Files',
         'script': '~/monorepo/scripts/index_media.py',
         'description': 'Index media files into database',
-        'params': ['path', 'start_dir', 'volume', 'db_path', 'include_pattern', 'skip_pattern',
+        'params': ['volume', 'start_dir', 'db_path', 'include_pattern', 'skip_pattern',
                    'literal_patterns', 'max_depth', 'verbose', 'dry_run', 'limit']
     },
     'show_exif': {
@@ -212,18 +212,11 @@ PARAM_DEFS = {
         'help': 'Source directory to scan',
         'default': ''
     },
-    'path': {
-        'label': 'Base Path',
-        'type': 'directory',
-        'flag': '--path',
-        'help': 'Base directory path',
-        'default': ''
-    },
     'start_dir': {
         'label': 'Start Directories',
         'type': 'multiline',
         'flag': '--start-dir',
-        'help': 'Starting directories (one per line)',
+        'help': 'Subdirectories under volume mount (one per line)',
         'default': ''
     },
     'volume': {

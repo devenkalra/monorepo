@@ -17,7 +17,15 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 # Import shared utilities
-from media_utils import create_database_schema
+from media_utils import (
+    create_database_schema,
+    delete_file_metadata,
+    get_volume,
+    lookup_file_by_id,
+    normalize_volume_name,
+    resolve_file_path,
+    to_storage_relpath,
+)
 
 
 # ==================== Database Operations ====================
@@ -31,13 +39,13 @@ def create_audit_table(conn: sqlite3.Connection):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             original_file_id INTEGER NOT NULL,
             original_volume TEXT NOT NULL,
-            original_fullpath TEXT NOT NULL,
+            original_relpath TEXT NOT NULL,
             original_name TEXT NOT NULL,
             original_size INTEGER NOT NULL,
             original_hash TEXT NOT NULL,
             moved_to_path TEXT NOT NULL,
             kept_file_id INTEGER NOT NULL,
-            kept_fullpath TEXT NOT NULL,
+            kept_relpath TEXT NOT NULL,
             removal_date TEXT NOT NULL,
             removal_reason TEXT NOT NULL
         )
@@ -56,60 +64,54 @@ def create_audit_table(conn: sqlite3.Connection):
     conn.commit()
 
 
-def find_duplicates_in_same_folder(conn: sqlite3.Connection, base_dir: Optional[str] = None) -> Dict[str, List[Dict]]:
-    """Find all files that have the same hash and are in the same folder.
-    
-    Args:
-        conn: Database connection
-        base_dir: Optional base directory to filter files (only process files under this directory)
-    
-    Returns:
-        Dictionary mapping folder paths to lists of duplicate file groups
-        Each group is a list of file records with the same hash
-    """
+def find_duplicates_in_same_folder(conn: sqlite3.Connection, volume_name: Optional[str] = None,
+                                   base_relpath: Optional[str] = None) -> Dict[str, List[Dict]]:
+    """Find files with the same hash in the same relpath folder."""
     cursor = conn.cursor()
-    
-    # Build the WHERE clause for base_dir filtering
-    base_dir_filter = ""
-    if base_dir:
-        # Normalize base_dir for comparison
-        base_dir_normalized = os.path.normpath(base_dir)
-        # Add trailing slash for proper prefix matching
-        if not base_dir_normalized.endswith(os.sep):
-            base_dir_normalized += os.sep
-        base_dir_filter = f"AND fullpath LIKE '{base_dir_normalized}%'"
-    
-    # Find all files with duplicate hashes in the same folder
-    # Group by folder (directory part of fullpath) and hash
+
+    filters = ["file_hash IS NOT NULL"]
+    params: List[str] = []
+    if volume_name:
+        filters.append("volume = ?")
+        params.append(normalize_volume_name(volume_name))
+    if base_relpath:
+        prefix = base_relpath.replace('\\', '/').strip('/')
+        filters.append("relpath LIKE ?")
+        params.append(f"{prefix}/%")
+
+    where_clause = " AND ".join(filters)
     query = f"""
         WITH file_folders AS (
-            SELECT 
+            SELECT
                 id,
                 volume,
-                fullpath,
+                relpath,
                 name,
                 size,
                 mime_type,
                 extension,
                 file_hash,
                 indexed_date,
-                SUBSTR(fullpath, 1, LENGTH(fullpath) - LENGTH(name)) AS folder
+                CASE
+                    WHEN INSTR(relpath, '/') > 0
+                    THEN SUBSTR(relpath, 1, LENGTH(relpath) - LENGTH(name))
+                    ELSE ''
+                END AS folder
             FROM files
-            WHERE file_hash IS NOT NULL
-            {base_dir_filter}
+            WHERE {where_clause}
         )
-        SELECT 
+        SELECT
             folder,
             file_hash,
             COUNT(*) as duplicate_count,
-            GROUP_CONCAT(id || '|' || fullpath || '|' || name || '|' || size || '|' || indexed_date, ':::') as file_info
+            GROUP_CONCAT(id || '|' || volume || '|' || relpath || '|' || name || '|' || size || '|' || indexed_date, ':::') as file_info
         FROM file_folders
         GROUP BY folder, file_hash
         HAVING COUNT(*) > 1
         ORDER BY folder, file_hash
     """
-    
-    cursor.execute(query)
+
+    cursor.execute(query, params)
     
     duplicates_by_folder = {}
     
@@ -125,11 +127,12 @@ def find_duplicates_in_same_folder(conn: sqlite3.Connection, base_dir: Optional[
             parts = file_str.split('|')
             files.append({
                 'id': int(parts[0]),
-                'fullpath': parts[1],
-                'name': parts[2],
-                'size': int(parts[3]),
-                'indexed_date': parts[4],
-                'file_hash': file_hash
+                'volume': parts[1],
+                'relpath': parts[2],
+                'name': parts[3],
+                'size': int(parts[4]),
+                'indexed_date': parts[5],
+                'file_hash': file_hash,
             })
         
         # Sort by indexed_date to keep the first one
@@ -148,54 +151,15 @@ def find_duplicates_in_same_folder(conn: sqlite3.Connection, base_dir: Optional[
     return duplicates_by_folder
 
 
-def get_file_details(conn: sqlite3.Connection, file_id: int) -> Dict:
-    """Get full file details from database.
-    
-    Args:
-        conn: Database connection
-        file_id: File ID
-    
-    Returns:
-        Dictionary with file details
-    """
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, volume, fullpath, name, size, mime_type, extension, file_hash, indexed_date
-        FROM files
-        WHERE id = ?
-    """, (file_id,))
-    
-    row = cursor.fetchone()
-    if row:
-        return {
-            'id': row[0],
-            'volume': row[1],
-            'fullpath': row[2],
-            'name': row[3],
-            'size': row[4],
-            'mime_type': row[5],
-            'extension': row[6],
-            'file_hash': row[7],
-            'indexed_date': row[8]
-        }
-    return None
+def get_file_details(conn: sqlite3.Connection, file_id: int) -> Optional[Dict]:
+    """Get full file details from database."""
+    return lookup_file_by_id(conn, file_id)
 
 
 def remove_file_from_database(conn: sqlite3.Connection, file_id: int):
-    """Remove a file and its associated metadata from the database.
-    
-    Args:
-        conn: Database connection
-        file_id: File ID to remove
-    """
+    """Remove a file and its associated metadata from the database."""
+    delete_file_metadata(conn, file_id)
     cursor = conn.cursor()
-    
-    # Delete from related tables (cascading should handle this, but being explicit)
-    cursor.execute("DELETE FROM image_metadata WHERE file_id = ?", (file_id,))
-    cursor.execute("DELETE FROM video_metadata WHERE file_id = ?", (file_id,))
-    cursor.execute("DELETE FROM thumbnails WHERE file_id = ?", (file_id,))
-    
-    # Delete from main files table
     cursor.execute("DELETE FROM files WHERE id = ?", (file_id,))
 
 
@@ -214,20 +178,20 @@ def create_audit_record(conn: sqlite3.Connection, removed_file: Dict, kept_file:
     
     cursor.execute("""
         INSERT INTO removed_duplicates (
-            original_file_id, original_volume, original_fullpath, original_name,
-            original_size, original_hash, moved_to_path, kept_file_id, kept_fullpath,
+            original_file_id, original_volume, original_relpath, original_name,
+            original_size, original_hash, moved_to_path, kept_file_id, kept_relpath,
             removal_date, removal_reason
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         removed_file['id'],
         removed_file['volume'],
-        removed_file['fullpath'],
+        removed_file['relpath'],
         removed_file['name'],
         removed_file['size'],
         removed_file['file_hash'],
         moved_to_path,
         kept_file['id'],
-        kept_file['fullpath'],
+        kept_file['relpath'],
         removal_date,
         'Duplicate in same folder'
     ))
@@ -235,48 +199,12 @@ def create_audit_record(conn: sqlite3.Connection, removed_file: Dict, kept_file:
 
 # ==================== File Operations ====================
 
-def move_duplicate_file(source_path: str, dest_root: str, volume: str,
-                       base_dir: Optional[str], dry_run: bool, verbose: int) -> Optional[str]:
-    """Move a duplicate file to the destination directory.
-    
-    Args:
-        source_path: Original file path
-        dest_root: Root directory for duplicates
-        volume: Volume tag
-        base_dir: Base directory to make paths relative to (optional)
-        dry_run: If True, don't actually move the file
-        verbose: Verbosity level
-    
-    Returns:
-        Destination path where file was (or would be) moved, or None on error
-    """
+def move_duplicate_file(file_details: Dict, dest_root: str, dry_run: bool,
+                        verbose: int) -> Optional[str]:
+    """Move a duplicate file to the destination directory."""
     try:
-        # Create destination path relative to base_dir if provided
-        if base_dir:
-            # Make source_path relative to base_dir
-            base_dir_normalized = os.path.normpath(base_dir)
-            source_path_normalized = os.path.normpath(source_path)
-            
-            # Ensure base_dir ends with separator for proper prefix check
-            if not base_dir_normalized.endswith(os.sep):
-                base_dir_check = base_dir_normalized + os.sep
-            else:
-                base_dir_check = base_dir_normalized
-            
-            if source_path_normalized.startswith(base_dir_normalized + os.sep) or source_path_normalized == base_dir_normalized:
-                # Remove base_dir prefix to get relative path
-                source_path_relative = os.path.relpath(source_path_normalized, base_dir_normalized)
-            else:
-                # If source is not under base_dir, this is an error
-                print(f"    ERROR: File {source_path} is not under base directory {base_dir}", file=sys.stderr)
-                print(f"           Skipping this file.", file=sys.stderr)
-                return None
-        else:
-            # No base_dir, use full path
-            source_path_relative = source_path.lstrip('/')
-        
-        # Create destination path: dest_root/relative_path (without volume)
-        dest_path = os.path.join(dest_root, source_path_relative)
+        source_path = file_details['fullpath']
+        dest_path = os.path.join(dest_root, file_details['volume'], file_details['relpath'].replace('/', os.sep))
         
         if verbose >= 2:
             print(f"    Source: {source_path}")
@@ -309,7 +237,7 @@ def move_duplicate_file(source_path: str, dest_root: str, volume: str,
 
 
 def process_duplicate_group(conn: sqlite3.Connection, folder: str, group: Dict,
-                           dest_root: str, base_dir: Optional[str], dry_run: bool,
+                           dest_root: str, dry_run: bool,
                            verbose: int, removal_date: str) -> Tuple[int, int]:
     """Process a group of duplicate files.
     
@@ -348,14 +276,7 @@ def process_duplicate_group(conn: sqlite3.Connection, folder: str, group: Dict,
             continue
         
         # Move the file
-        moved_to_path = move_duplicate_file(
-            file_details['fullpath'],
-            dest_root,
-            file_details['volume'],
-            base_dir,
-            dry_run,
-            verbose
-        )
+        moved_to_path = move_duplicate_file(file_details, dest_root, dry_run, verbose)
         
         if moved_to_path:
             if not dry_run:
@@ -397,9 +318,8 @@ Examples:
   # Remove duplicates and move to separate directory
   python3 remove_dupes.py --db media.db --dest /removed_dupes
   
-  # Use base directory for relative paths
-  python3 remove_dupes.py --db media.db --dest /removed_dupes --base-dir /mnt/photo
-  # Example: /mnt/photo/2010/abc.jpg -> /removed_dupes/2010/abc.jpg
+  # Use base relpath prefix for filtering
+  python3 remove_dupes.py --db media.db --dest /removed_dupes --volume Photo --base-relpath 2010
   
   # Verbose output
   python3 remove_dupes.py --db media.db --dest /removed_dupes -v 2 --dry-run
@@ -413,9 +333,10 @@ Examples:
                        help="Path to media index database")
     parser.add_argument("--dest", required=True,
                        help="Destination directory for removed duplicate files")
-    parser.add_argument("--base-dir", default=None,
-                       help="Base directory for indexed files (e.g., /mnt/photo). "
-                            "Paths in dest will be relative to this directory.")
+    parser.add_argument("--volume", default=None,
+                       help="Limit duplicate scan to one logical volume")
+    parser.add_argument("--base-relpath", default=None,
+                       help="Only process files whose stored relpath starts with this prefix")
     parser.add_argument("--verbose", "-v", type=int, default=1, choices=[0, 1, 2, 3],
                        help="Verbosity level: 0=quiet, 1=summary, 2=detailed, 3=debug (default: 1)")
     parser.add_argument("--dry-run", action="store_true",
@@ -424,53 +345,36 @@ Examples:
                        help="Limit number of duplicate groups to process (useful with --dry-run for testing)")
     
     args = parser.parse_args()
-    
-    # Validate database path
+
     if not os.path.exists(args.db_path):
         print(f"Error: Database file does not exist: {args.db_path}", file=sys.stderr)
         sys.exit(1)
-    
-    # Validate base directory if provided
-    if args.base_dir:
-        if not os.path.exists(args.base_dir):
-            print(f"Error: Base directory does not exist: {args.base_dir}", file=sys.stderr)
-            sys.exit(1)
-        # Normalize the base directory path
-        args.base_dir = os.path.normpath(os.path.abspath(args.base_dir))
-    
-    # Connect to database
+
     conn = sqlite3.connect(args.db_path)
-    
-    # Create audit table if it doesn't exist
     create_audit_table(conn)
-    
-    # Get removal timestamp
     removal_date = datetime.now().isoformat()
-    
+    start_time = datetime.now()
+
     if args.verbose >= 1:
         print("=" * 60)
         print("Remove Duplicates from Database")
         print("=" * 60)
         print(f"Database: {args.db_path}")
         print(f"Destination: {args.dest}")
-        if args.base_dir:
-            print(f"Base directory: {args.base_dir}")
-            print(f"  (Paths will be relative to base directory)")
+        if args.volume:
+            print(f"Volume: {args.volume}")
+        if args.base_relpath:
+            print(f"Base relpath prefix: {args.base_relpath}")
         if args.limit:
             print(f"Limit: {args.limit} duplicate groups")
         if args.dry_run:
             print("Mode: DRY RUN (no changes will be made)")
         print()
-    
-    # Find duplicates
-    start_time = datetime.now()
-    
-    if args.verbose >= 1:
         print("Scanning database for duplicates in same folder...")
-        if args.base_dir:
-            print(f"  Filtering files under: {args.base_dir}")
-    
-    duplicates_by_folder = find_duplicates_in_same_folder(conn, args.base_dir)
+
+    duplicates_by_folder = find_duplicates_in_same_folder(
+        conn, args.volume, args.base_relpath,
+    )
     
     if not duplicates_by_folder:
         print("\nNo duplicates found in the same folder!")
@@ -507,10 +411,9 @@ Examples:
                 folder,
                 group,
                 args.dest,
-                args.base_dir,
                 args.dry_run,
                 args.verbose,
-                removal_date
+                removal_date,
             )
             total_removed += removed
             total_kept += kept

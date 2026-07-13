@@ -88,6 +88,8 @@ INSTALLED_APPS = [
     'people.apps.PeopleConfig',
     'cad.apps.CadConfig',
     'food.apps.FoodConfig',
+    'wa_assistant.apps.WaAssistantConfig',
+    'mail_archive.apps.MailArchiveConfig',
 ]
 
 SITE_ID = 1
@@ -222,11 +224,15 @@ elif 'bldrdojo.com' in (os.environ.get('DJANGO_ALLOWED_HOSTS') or ''):
 else:
     # Development defaults (container may use 5175 or 5176 if 5175 is in use)
     CORS_ALLOWED_ORIGINS = [
+        "http://localhost",
+        "http://localhost:80",
         "http://localhost:3000",
         "http://localhost:5173",
         "http://localhost:5174",
         "http://localhost:5175",
         "http://localhost:5176",
+        "http://127.0.0.1",
+        "http://127.0.0.1:80",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
@@ -396,3 +402,9 @@ CAD_RENDER_CACHE = BASE_DIR / 'cad' / 'render_cache'
 CAD_TEXTURES_DIR = BASE_DIR / 'cad' / 'textures'
 CAD_SCENE_CONFIGS_DIR = BASE_DIR / 'cad' / 'scene_configs'
 CAD_ENV_DIR = BASE_DIR / 'cad' / 'env'
+
+# WhatsApp Cloud API (wa_assistant app)
+# Verification token - set this in Meta App Dashboard when configuring webhook
+WHATSAPP_WEBHOOK_VERIFY_TOKEN = os.environ.get('WHATSAPP_WEBHOOK_VERIFY_TOKEN', '')
+# Access token for downloading media and sending messages
+WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')

@@ -1,6 +1,6 @@
 title: Move Media Files
 description: Move media files and update database with new locations
-command: python3 ~/monorepo/scripts/move_media.py {files} {destination} {volume} {db_path}
+command: python3 ~/monorepo/scripts/media_process/move_media.py {files} {destination} {volume} {db_path}
   {verbose} {dry_run}
 working_dir: '~'
 window_size: 900x700
@@ -25,9 +25,8 @@ help_text: "Move Media Files - Help\n\nThis tool moves media files to a new dest
   \nHOW IT WORKS:\n\nFor Each File:\n  1. Check if file exists\n  2. Move to destination\
   \ directory\n  3. Handle filename conflicts (adds _1, _2, etc.)\n  4. Update database\
   \ record if exists\n  5. Insert new record if not in database\n  6. Extract and\
-  \ store metadata\n  7. Generate thumbnail\n\nDatabase Updates:\n  - Updates fullpath\
-  \ to new location\n  - Updates volume tag\n  - Updates modified date\n  - Updates\
-  \ indexed date\n  - Preserves file hash\n  - Re-extracts metadata\n\nEXAMPLES:\n\
+  \ store metadata\n  7. Generate thumbnail\n\nDatabase Updates:\n  - Updates relpath\
+  \ to new location\n  - Updates volume tag\n  - Re-extracts metadata\n \
   \nMove vacation photos:\n  Files: /photos/temp/img1.jpg\n         /photos/temp/img2.jpg\n\
   \  Destination: /photos/2024/vacation\n  Volume: Vacation2024\n  Database: media.db\n\
   \  Dry Run: \u2611 (test first)\n\nMove all JPGs from directory:\n  Files: /downloads/*.jpg\n\
@@ -36,8 +35,7 @@ help_text: "Move Media Files - Help\n\nThis tool moves media files to a new dest
   \  Destination: /new_location/organized\n  Volume: MainLibrary\n  Database: media.db\n\
   \nFILENAME CONFLICTS:\n\nIf destination file exists:\n  - Original: photo.jpg\n\
   \  - Conflict: photo_1.jpg\n  - Another: photo_2.jpg\n  - And so on...\n\nDATABASE\
-  \ BEHAVIOR:\n\nFile Already in Database:\n  - Updates existing record\n  - Changes\
-  \ fullpath to new location\n  - Updates volume tag\n  - Re-extracts metadata\n \
+  \ BEHAVIOR:\n\nFile Already in Database:\n  - Updates existing record\n  - Changes relpath to new location\n  - Updates volume tag\n  - Re-extracts metadata\n \
   \ - Regenerates thumbnail\n\nFile Not in Database:\n  - Inserts new record\n  -\
   \ Calculates hash\n  - Extracts metadata\n  - Generates thumbnail\n  - Links to\
   \ volume\n\nMETADATA PROCESSING:\n\nFor Images:\n  - EXIF data (camera, lens, settings)\n\

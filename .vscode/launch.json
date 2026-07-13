@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "mcp2: Web Server (8787)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "mcp2.main",
+      "cwd": "${workspaceFolder}/mcp2",
+      "env": {
+        "MCP2_MODE": "web",
+        "MCP2_WEB_HOST": "127.0.0.1",
+        "MCP2_WEB_PORT": "8787",
+        "MCP2_BACKEND_BASE_URL": "https://bldrdojo.com/api/",
+        "MCP2_DEFAULT_MODEL": "gpt-4.1-mini"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "mcp2: Demo Mode",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "mcp2.main",
+      "cwd": "${workspaceFolder}/mcp2",
+      "env": {
+        "MCP2_MODE": "demo"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

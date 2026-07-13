@@ -132,8 +132,8 @@ class AsyncTasksTest(TransactionTestCase):
         # Verify export data
         export_data = json.loads(download_response.content)
         self.assertEqual(export_data['export_version'], '1.0')
-        self.assertIn('people', export_data)
-        self.assertEqual(len(export_data['people']), 1)
+        self.assertIn('entities', export_data)
+        self.assertEqual(len(export_data['entities']), 1)
     
     def test_import_async(self):
         """Test async import"""
@@ -190,6 +190,85 @@ class AsyncTasksTest(TransactionTestCase):
         people = Person.objects.filter(user=self.user)
         self.assertEqual(people.count(), 1)
         self.assertEqual(people.first().first_name, 'Import')
+
+    def test_import_async_v2_create_entity(self):
+        """Test async import task execution with operation-based v2 payload."""
+        import_data = {
+            'import_version': '2.0',
+            'allow_entity_delete_cascade': True,
+            'entities': [
+                {
+                    'import_op': 'create',
+                    'import_ref': 'new_person_1',
+                    'type': 'Person',
+                    'display': 'Async V2 Person',
+                    'first_name': 'Async',
+                }
+            ]
+        }
+
+        result = import_entities_async.apply(args=(self.user.id, json.dumps(import_data)))
+        self.assertTrue(result.successful())
+        self.assertTrue(result.result.get('success'))
+
+        person = Person.objects.filter(user=self.user, display='Async V2 Person').first()
+        self.assertIsNotNone(person)
+
+    def test_import_async_v2_schema_error(self):
+        """Test async import rejects invalid v2 schema payload before queuing task."""
+        import_data = {
+            'import_version': '2.0',
+            'allow_entity_delete_cascade': True,
+            'entities': [
+                {
+                    'import_op': 'create',
+                    'id': '11111111-1111-1111-1111-111111111111',
+                    'import_ref': 'bad_ref',
+                    'type': 'Person',
+                    'display': 'Invalid',
+                }
+            ]
+        }
+
+        import io
+        file_content = json.dumps(import_data)
+        file = io.BytesIO(file_content.encode())
+        file.name = 'bad_import_v2.json'
+
+        response = self.client.post(
+            '/api/entities/import-async/',
+            {'file': file},
+            format='multipart'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('schema validation failed', response.json().get('error', '').lower())
+
+    def test_import_async_v2_rolls_back_on_operation_error(self):
+        """Test async v2 import task rolls back all writes when any operation fails."""
+        existing = Person.objects.create(user=self.user, display='Existing Async')
+        import_data = {
+            'import_version': '2.0',
+            'allow_entity_delete_cascade': True,
+            'entities': [
+                {
+                    'import_op': 'create',
+                    'import_ref': 'new_ok',
+                    'type': 'Person',
+                    'display': 'Should Rollback Async',
+                },
+                {
+                    'import_op': 'update',
+                    'id': 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+                    'display': 'Invalid',
+                },
+            ],
+        }
+
+        result = import_entities_async.apply(args=(self.user.id, json.dumps(import_data)))
+        self.assertFalse(result.successful())
+        self.assertFalse(Person.objects.filter(user=self.user, display='Should Rollback Async').exists())
+        existing.refresh_from_db()
+        self.assertEqual(existing.display, 'Existing Async')
     
     def test_progress_not_found(self):
         """Test progress endpoint with invalid task ID"""

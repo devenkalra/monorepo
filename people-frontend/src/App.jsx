@@ -10,6 +10,8 @@ import ConversationImport from './components/ConversationImport';
 import HelpModal from './components/HelpModal';
 import ProfileEdit from './components/ProfileEdit';
 import { useAuth } from './contexts/AuthContext';
+import { useEncryption } from './contexts/EncryptionContext';
+import VaultControls from './components/VaultControls';
 import api from './services/api';
 
 function App() {
@@ -17,6 +19,7 @@ function App() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
+  const { encryptionKeys, decryptText } = useEncryption();
   
   const [entities, setEntities] = useState([]);
   const [entitiesLoading, setEntitiesLoading] = useState(true);
@@ -67,7 +70,7 @@ function App() {
     } else if (entityIdMatch) {
       const entityId = entityIdMatch[1];
       // Load entity if not already loaded or different
-      if (!selectedEntity || selectedEntity.id !== entityId) {
+      if (!selectedEntity || String(selectedEntity.id) !== String(entityId)) {
         loadEntityById(entityId, viewMode);
       } else {
         // Same entity, just update view mode without reloading
@@ -102,7 +105,7 @@ function App() {
     }
     
     try {
-      const response = await api.fetch(`/api/entities/${entityId}/`);
+      const response = await api.fetch(`/api/entities/${entityId}/?_t=${Date.now()}`);
       if (!response.ok) {
         throw new Error('Failed to load entity');
       }
@@ -186,6 +189,8 @@ function App() {
     );
     // Update the selected entity so detail view shows latest data
     setSelectedEntity(updatedEntity);
+    // Refresh the entities list from the server to ensure synchronization
+    fetchEntities();
   };
 
   const handleAddEntity = () => {
@@ -243,6 +248,8 @@ function App() {
     setEntities(prevEntities => [createdEntity, ...prevEntities]);
     // Update the selected entity with the created data
     setSelectedEntity(createdEntity);
+    // Refresh the entities list from the server to ensure synchronization
+    fetchEntities();
     // Navigate to the created entity's URL
     navigate(`/entity/${createdEntity.id}`);
   };
@@ -408,9 +415,54 @@ function App() {
     fetchEntities();
   }, [query, filters]);
 
+  const [displayEntities, setDisplayEntities] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    
+    const decryptAll = async () => {
+      const decryptedList = await Promise.all(
+        entities.map(async (entity) => {
+          if (!entity.is_encrypted) {
+            return entity;
+          }
+          
+          try {
+            const { plaintext, key } = await decryptText(entity.encrypted_data);
+            const decryptedFields = JSON.parse(plaintext);
+            delete decryptedFields.encrypted_data;
+            return {
+              ...entity,
+              ...decryptedFields,
+              _decrypted: true,
+              _decryption_key: key
+            };
+          } catch (err) {
+            return {
+              ...entity,
+              display: `🔒 [Encrypted ${entity.type || 'Entity'}]`,
+              description: 'Unlock vault with correct passphrase to decrypt contents.',
+              _decrypted: false
+            };
+          }
+        })
+      );
+      
+      if (active) {
+        setDisplayEntities(decryptedList);
+      }
+    };
+    
+    decryptAll();
+    
+    return () => {
+      active = false;
+    };
+  }, [entities, encryptionKeys]);
+
   // Sort entities based on selected sort option
   const sortedEntities = useMemo(() => {
-    const sorted = [...entities];
+    const sorted = [...displayEntities];
     
     switch (sortBy) {
       case 'display':
@@ -440,7 +492,7 @@ function App() {
     }
     
     return sorted;
-  }, [entities, sortBy]);
+  }, [displayEntities, sortBy]);
 
   const mobileHeader = useMemo(
     () => (
@@ -487,8 +539,9 @@ function App() {
       <ThemeSync />
       <HelpModal open={showHelp} onClose={() => setShowHelp(false)} />
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-      <div className="mx-auto w-full max-w-5xl p-4 pb-24">
+      <div className="mx-auto w-full max-w-5xl p-4 pb-24 print:hidden">
         {mobileHeader}
+        <VaultControls />
         <SearchBar
           query={query}
           setQuery={setQuery}

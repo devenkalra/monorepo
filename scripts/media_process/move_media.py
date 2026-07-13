@@ -21,9 +21,18 @@ try:
     from media_utils import (
         create_database_schema,
         calculate_file_hash,
+        catalog_mime_type,
+        classify_file_type,
+        delete_file_metadata,
         get_mime_type,
-        is_image_file,
-        is_video_file
+        get_volume,
+        has_rich_metadata,
+        insert_thumbnail,
+        lookup_file_by_abs_path,
+        lookup_file_by_volume_relpath,
+        normalize_volume_name,
+        relpath_for_abs_path,
+        thumbnail_jpeg_dimensions,
     )
 except ImportError:
     print("Error: media_utils module not found", file=sys.stderr)
@@ -49,15 +58,25 @@ except ImportError:
 try:
     import sys
     import importlib.util
-    spec = importlib.util.spec_from_file_location("index_media", 
-                                                   os.path.join(os.path.dirname(__file__), "index_media.py"))
+    spec = importlib.util.spec_from_file_location(
+        "index_media",
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "index_media.py"),
+    )
     index_media = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(index_media)
     
     get_exif_data = index_media.get_exif_data
     normalize_exif_data = index_media.normalize_exif_data
     get_video_metadata = index_media.get_video_metadata
+    get_audio_metadata = index_media.get_audio_metadata
+    get_document_metadata = index_media.get_document_metadata
+    get_email_metadata = index_media.get_email_metadata
     generate_thumbnail = index_media.generate_thumbnail
+    process_image = index_media.process_image
+    process_video = index_media.process_video
+    process_audio = index_media.process_audio
+    process_document = index_media.process_document
+    process_email = index_media.process_email
 except Exception as e:
     print(f"Error: Could not import index_media.py functions: {e}", file=sys.stderr)
     print("Make sure index_media.py is in the same directory", file=sys.stderr)
@@ -117,104 +136,76 @@ def move_file(source_path: str, dest_dir: str, dry_run: bool, verbose: int) -> T
 
 def update_or_insert_file(conn: sqlite3.Connection, old_path: str, new_path: str,
                           volume: str, verbose: int, dry_run: bool) -> Tuple[str, int]:
-    """Update existing file record or insert new one.
-    
-    Checks if the file exists in database by old_path (source path):
-    - If found: Updates the record with new path (file was moved)
-    - If not found: Inserts new record (new file to database)
-    
-    Note: Multiple files with same hash/content can exist at different paths.
-    Each unique path gets its own database record.
-    
-    Args:
-        conn: Database connection
-        old_path: Original file path (before move)
-        new_path: New file path (after move)
-        volume: Volume tag
-        verbose: Verbosity level
-        dry_run: If True, don't commit changes
-    
-    Returns:
-        Tuple of (action, file_id) where action is 'updated', 'inserted', or 'error'
-    """
+    """Update existing file record or insert new one using volume + relpath."""
     cursor = conn.cursor()
-    
+    volume_name = normalize_volume_name(volume)
+
     try:
-        # Check if file exists in database by old path
-        cursor.execute("SELECT id FROM files WHERE fullpath = ?", (old_path,))
-        existing = cursor.fetchone()
-        
+        existing = lookup_file_by_abs_path(conn, old_path)
+        new_relpath = relpath_for_abs_path(conn, volume_name, new_path)
+
         if existing:
-            file_id = existing[0]
-            
-            # Update the record with new path
+            file_id = existing['id']
             if not dry_run:
-                # Get modified date in ISO format
                 modified_date = datetime.fromtimestamp(os.path.getmtime(new_path)).isoformat()
-                
                 cursor.execute("""
-                    UPDATE files 
-                    SET fullpath = ?, 
+                    UPDATE files
+                    SET relpath = ?,
                         volume = ?,
                         name = ?,
                         modified_date = ?,
                         indexed_date = ?
                     WHERE id = ?
                 """, (
-                    new_path,
-                    volume,
+                    new_relpath,
+                    volume_name,
                     os.path.basename(new_path),
                     modified_date,
                     datetime.now().isoformat(),
-                    file_id
+                    file_id,
                 ))
-            
+
             if verbose >= 2:
                 print(f"  Updated database record (ID: {file_id})")
-            
             return 'updated', file_id
+
+        stat = os.stat(new_path)
+        detected_mime = get_mime_type(new_path)
+        extension = os.path.splitext(new_path)[1].lower()
+        mime_type = catalog_mime_type(detected_mime, extension, new_path)
+        file_hash = calculate_file_hash(new_path)
+        modified_date = datetime.fromtimestamp(stat.st_mtime).isoformat()
+        try:
+            created_date = datetime.fromtimestamp(stat.st_ctime).isoformat()
+        except Exception:
+            created_date = modified_date
+
+        if not dry_run:
+            cursor.execute("""
+                INSERT INTO files (
+                    volume, relpath, name, created_date, modified_date,
+                    size, mime_type, extension, file_hash, indexed_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                volume_name,
+                new_relpath,
+                os.path.basename(new_path),
+                created_date,
+                modified_date,
+                stat.st_size,
+                mime_type,
+                extension,
+                file_hash,
+                datetime.now().isoformat(),
+            ))
+            file_id = cursor.lastrowid
         else:
-            # File not in database, insert new record
-            # Get file info
-            stat = os.stat(new_path)
-            mime_type = get_mime_type(new_path)
-            extension = os.path.splitext(new_path)[1].lower()
-            file_hash = calculate_file_hash(new_path)
-            
-            # Get dates in ISO format
-            modified_date = datetime.fromtimestamp(stat.st_mtime).isoformat()
-            try:
-                created_date = datetime.fromtimestamp(stat.st_ctime).isoformat()
-            except Exception:
-                created_date = modified_date
-            
-            if not dry_run:
-                cursor.execute("""
-                    INSERT INTO files (
-                        volume, fullpath, name, created_date, modified_date,
-                        size, mime_type, extension, file_hash, indexed_date
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    volume,
-                    new_path,
-                    os.path.basename(new_path),
-                    created_date,
-                    modified_date,
-                    stat.st_size,
-                    mime_type,
-                    extension,
-                    file_hash,
-                    datetime.now().isoformat()
-                ))
-                file_id = cursor.lastrowid
-            else:
-                file_id = -1
-            
-            if verbose >= 2:
-                print(f"  Inserted new database record (ID: {file_id})")
-            
-            return 'inserted', file_id
-            
+            file_id = -1
+
+        if verbose >= 2:
+            print(f"  Inserted new database record (ID: {file_id})")
+        return 'inserted', file_id
+
     except Exception as e:
         print(f"  Error updating database: {e}", file=sys.stderr)
         return 'error', -1
@@ -222,119 +213,34 @@ def update_or_insert_file(conn: sqlite3.Connection, old_path: str, new_path: str
 
 def process_metadata(conn: sqlite3.Connection, file_id: int, filepath: str,
                      mime_type: str, extension: str, verbose: int, dry_run: bool):
-    """Process and store metadata for a file.
-    
-    Args:
-        conn: Database connection
-        file_id: File ID in database
-        filepath: Path to file
-        mime_type: MIME type of file
-        extension: File extension
-        verbose: Verbosity level
-        dry_run: If True, don't commit changes
-    """
+    """Process and store metadata for a file."""
     if dry_run:
         return
-    
-    cursor = conn.cursor()
-    
+
+    delete_file_metadata(conn, file_id)
+    file_type = classify_file_type(mime_type, extension)
     try:
-        # Process based on file type
-        if is_image_file(mime_type, extension):
-            # Get EXIF data
-            exif_data = get_exif_data(filepath)
-            
-            # Store raw EXIF as JSON
-            raw_exif_json = json.dumps(exif_data) if exif_data else None
-            
-            # Normalize EXIF data
-            normalized = normalize_exif_data(exif_data)
-            
-            # Delete existing image metadata
-            cursor.execute("DELETE FROM image_metadata WHERE file_id = ?", (file_id,))
-            
-            # Insert new image metadata
-            cursor.execute("""
-                INSERT INTO image_metadata (
-                    file_id, raw_exif, width, height, date_taken,
-                    exposure_time, focal_length, focal_length_35mm, f_number,
-                    camera_make, camera_model, lens_model, iso,
-                    latitude, longitude, altitude,
-                    city, state, country, country_code, coverage,
-                    caption, keywords
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                file_id,
-                raw_exif_json,
-                normalized.get('width'),
-                normalized.get('height'),
-                normalized.get('date_taken'),
-                normalized.get('exposure_time'),
-                normalized.get('focal_length'),
-                normalized.get('focal_length_35mm'),
-                normalized.get('f_number'),
-                normalized.get('camera_make'),
-                normalized.get('camera_model'),
-                normalized.get('lens_model'),
-                normalized.get('iso'),
-                normalized.get('latitude'),
-                normalized.get('longitude'),
-                normalized.get('altitude'),
-                normalized.get('city'),
-                normalized.get('state'),
-                normalized.get('country'),
-                normalized.get('country_code'),
-                normalized.get('coverage'),
-                normalized.get('caption'),
-                normalized.get('keywords')
-            ))
-            
-            if verbose >= 3:
-                print(f"  Stored image metadata")
-            
-        elif is_video_file(mime_type):
-            # Get video metadata
-            video_meta = get_video_metadata(filepath)
-            
-            # Delete existing video metadata
-            cursor.execute("DELETE FROM video_metadata WHERE file_id = ?", (file_id,))
-            
-            # Insert new video metadata
-            if video_meta:
-                cursor.execute("""
-                    INSERT INTO video_metadata (
-                        file_id, width, height, frame_rate, video_codec,
-                        audio_channels, audio_bit_rate_kbps, duration_seconds
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    file_id,
-                    video_meta.get('width'),
-                    video_meta.get('height'),
-                    video_meta.get('frame_rate'),
-                    video_meta.get('video_codec'),
-                    video_meta.get('audio_channels'),
-                    video_meta.get('audio_bit_rate_kbps'),
-                    video_meta.get('duration_seconds')
-                ))
-                
-                if verbose >= 3:
-                    print(f"  Stored video metadata")
-        
-        # Generate and store thumbnail
-        thumbnail_data = generate_thumbnail(filepath, mime_type, extension)
-        if thumbnail_data:
-            # Delete existing thumbnail
-            cursor.execute("DELETE FROM thumbnails WHERE file_id = ?", (file_id,))
-            
-            # Insert new thumbnail
-            cursor.execute("""
-                INSERT INTO thumbnails (file_id, thumbnail_data, thumbnail_width, thumbnail_height)
-                VALUES (?, ?, ?, ?)
-            """, (file_id, thumbnail_data, 200, 200))
-            
-            if verbose >= 3:
-                print(f"  Generated thumbnail")
-                
+        if file_type == 'image':
+            process_image(filepath, file_id, conn)
+        elif file_type == 'video':
+            process_video(filepath, file_id, conn)
+        elif file_type == 'audio':
+            process_audio(filepath, file_id, conn)
+        elif file_type == 'document':
+            process_document(filepath, file_id, conn, extension)
+        elif file_type == 'email':
+            process_email(filepath, file_id, conn)
+
+        if has_rich_metadata(file_type):
+            thumbnail_data = generate_thumbnail(filepath, mime_type, extension, file_type)
+            if thumbnail_data:
+                thumb_w, thumb_h = thumbnail_jpeg_dimensions(thumbnail_data)
+                if not thumb_w:
+                    thumb_w, thumb_h = 200, 200
+                insert_thumbnail(conn, file_id, thumbnail_data, thumb_w, thumb_h)
+
+        if verbose >= 3:
+            print(f"  Stored metadata and thumbnail")
     except Exception as e:
         if verbose >= 1:
             print(f"  Warning: Could not process metadata: {e}", file=sys.stderr)
@@ -368,43 +274,30 @@ def check_destination_file(dest_path: str, source_hash: str, verbose: int) -> Tu
 
 
 def check_database_record(conn: sqlite3.Connection, dest_path: str, source_hash: str,
-                         verbose: int) -> Tuple[bool, int, str]:
-    """Check if file exists in database at destination path.
-    
-    Args:
-        conn: Database connection
-        dest_path: Destination file path
-        source_hash: Hash of source file
-        verbose: Verbosity level
-    
-    Returns:
-        Tuple of (exists, file_id, match_type)
-        match_type: 'exact_match', 'path_match_different_hash', or ''
-    """
-    cursor = conn.cursor()
-    
-    # Check by destination path only
-    cursor.execute("SELECT id, file_hash FROM files WHERE fullpath = ?", (dest_path,))
-    result = cursor.fetchone()
-    
-    if result:
-        file_id, db_hash = result
-        if db_hash == source_hash:
-            return True, file_id, 'exact_match'
-        else:
-            return True, file_id, 'path_match_different_hash'
-    
-    # Check if file with same hash exists elsewhere (informational only)
-    cursor.execute("SELECT COUNT(*), fullpath FROM files WHERE file_hash = ? LIMIT 1", (source_hash,))
-    result = cursor.fetchone()
-    
-    if result and result[0] > 0:
-        count, existing_path = result[0], result[1]
+                         volume: str, verbose: int) -> Tuple[bool, int, str]:
+    """Check if file exists in database at destination relpath."""
+    try:
+        dest_relpath = relpath_for_abs_path(conn, volume, dest_path)
+    except ValueError as e:
         if verbose >= 2:
-            print(f"  Note: {count} file(s) with same content exist in database")
-            if existing_path:
-                print(f"        Example: {existing_path}")
-    
+            print(f"  Note: destination not under volume mount: {e}")
+        return False, -1, ''
+
+    record = lookup_file_by_volume_relpath(conn, volume, dest_relpath)
+    if record:
+        if record['file_hash'] == source_hash:
+            return True, record['id'], 'exact_match'
+        return True, record['id'], 'path_match_different_hash'
+
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*), relpath FROM files WHERE file_hash = ? LIMIT 1", (source_hash,))
+    result = cursor.fetchone()
+    if result and result[0] > 0:
+        if verbose >= 2:
+            print(f"  Note: {result[0]} file(s) with same content exist in database")
+            if result[1]:
+                print(f"        Example relpath: {result[1]}")
+
     return False, -1, ''
 
 
@@ -450,7 +343,7 @@ def process_file(source_path: str, dest_dir: str, volume: str, conn: sqlite3.Con
         return 'skipped', skip_reason
     
     # Check if file exists in database at destination path
-    db_exists, file_id, match_type = check_database_record(conn, dest_path, source_hash, verbose)
+    db_exists, file_id, match_type = check_database_record(conn, dest_path, source_hash, volume, verbose)
     
     if db_exists:
         if match_type == 'exact_match':
@@ -523,7 +416,7 @@ Examples:
     parser.add_argument("--destination", "--dest", required=True,
                        help="Destination directory")
     parser.add_argument("--volume", required=True,
-                       help="Volume tag for the files")
+                       help="Logical volume name for the files (must be registered)")
     parser.add_argument("--db-path", "--db", required=True,
                        help="Path to media database")
     parser.add_argument("--verbose", "-v", type=int, default=1, choices=[0, 1, 2, 3],
@@ -559,9 +452,14 @@ Examples:
         sys.exit(1)
     
     conn = sqlite3.connect(args.db_path)
-    
-    # Ensure schema exists
     create_database_schema(conn)
+
+    if not get_volume(conn, args.volume):
+        error_msg = f"Volume not registered: {args.volume}"
+        print(f"Error: {error_msg}", file=sys.stderr)
+        log_error(audit_log, 'volume_error', error_msg)
+        conn.close()
+        sys.exit(1)
     
     # Flatten files list (in case of nested lists from action="append")
     files_to_process = []

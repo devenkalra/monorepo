@@ -1037,13 +1037,18 @@ class CrossUserImportExportTest(BaseIntegrationTest):
         response = self.client.get('/api/entities/export/')
         self.assertEqual(response.status_code, 200)
         export_data = response.json()
+
+        exported_entities = export_data.get('entities', [])
+        people_count = sum(1 for e in exported_entities if e.get('type') == 'Person')
+        org_count = sum(1 for e in exported_entities if e.get('type') == 'Org')
+        note_count = sum(1 for e in exported_entities if e.get('type') == 'Note')
         
-        print(f"✓ Exported {len(export_data['people'])} people, {len(export_data['orgs'])} orgs, {len(export_data['notes'])} notes, {len(export_data['relations'])} relations")
+        print(f"✓ Exported {people_count} people, {org_count} orgs, {note_count} notes, {len(export_data['relations'])} relations")
         
         # Verify export contains correct data
-        self.assertEqual(len(export_data['people']), 2)
-        self.assertEqual(len(export_data['orgs']), 1)
-        self.assertEqual(len(export_data['notes']), 1)
+        self.assertEqual(people_count, 2)
+        self.assertEqual(org_count, 1)
+        self.assertEqual(note_count, 1)
         self.assertEqual(len(export_data['relations']), 4)  # 2 forward + 2 reverse
         
         # Now authenticate as user2

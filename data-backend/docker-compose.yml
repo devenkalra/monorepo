@@ -41,7 +41,7 @@ services:
 
   # MeiliSearch (Search Engine)
   meilisearch:
-    image: getmeili/meilisearch:v1.5
+    image: getmeili/meilisearch:v1.12
     container_name: bldrdojo-meilisearch
     restart: unless-stopped
     volumes:
@@ -69,9 +69,9 @@ services:
       - neo4j_logs:/logs
     environment:
       - NEO4J_AUTH=${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
-      - NEO4J_dbms_memory_pagecache_size=512M
-      - NEO4J_dbms_memory_heap_initial__size=512M
-      - NEO4J_dbms_memory_heap_max__size=1G
+      - NEO4J_server_memory_pagecache_size=512M
+      - NEO4J_server_memory_heap_initial__size=512M
+      - NEO4J_server_memory_heap_max__size=1G
     networks:
       - backend-network
     healthcheck:

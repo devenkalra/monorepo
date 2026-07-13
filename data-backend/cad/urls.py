@@ -7,8 +7,8 @@ from rest_framework.permissions import IsAuthenticated
 from . import views
 
 # Wrap static file views with auth
-serve_texture = permission_classes([IsAuthenticated])(api_view(["GET"])(views.serve_texture))
-serve_env = permission_classes([IsAuthenticated])(api_view(["GET"])(views.serve_env))
+serve_texture = api_view(["GET"])(permission_classes([IsAuthenticated])(views.serve_texture))
+serve_env = api_view(["GET"])(permission_classes([IsAuthenticated])(views.serve_env))
 
 router = DefaultRouter()
 router.register(r"models", views.CADModelViewSet, basename="cadmodel")

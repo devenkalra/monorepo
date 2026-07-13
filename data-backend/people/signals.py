@@ -1,7 +1,7 @@
 from django.db.models.signals import post_save, post_delete, pre_save
 from django.dispatch import receiver
 from django.contrib.auth.models import User
-from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag, UserProfile
+from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag, UserProfile, FileReference
 from .sync import neo4j_sync, meili_sync
 
 
@@ -123,3 +123,27 @@ def sync_note_delete(sender, instance, **kwargs):
             client.delete_note(instance.id)
     except Exception as e:
         print(f"Error deleting note from vector DB: {e}")
+
+@receiver(post_delete, sender=FileReference)
+def delete_unused_file(sender, instance, **kwargs):
+    """Delete a deduplicated media file and its derivatives when no other references exist."""
+    path = instance.file_path
+    if not FileReference.objects.filter(file_path=path).exists():
+        from .utils import delete_file_and_derivatives
+        delete_file_and_derivatives(path)
+        print(f"Signal: Deleted unused media file: {path}")
+
+@receiver(post_delete, sender=Entity)
+def delete_entity_scoped_directory(sender, instance, **kwargs):
+    """Delete the entity's scoped media folder when the entity is deleted."""
+    import shutil
+    import os
+    from django.conf import settings
+    entity_dir = os.path.join(settings.MEDIA_ROOT, str(instance.id))
+    if os.path.exists(entity_dir) and os.path.isdir(entity_dir):
+        try:
+            shutil.rmtree(entity_dir)
+            print(f"Signal: Deleted entity-scoped directory: {entity_dir}")
+        except Exception as e:
+            print(f"Error removing entity-scoped directory {entity_dir}: {e}")
+

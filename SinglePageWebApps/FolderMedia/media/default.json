@@ -1,0 +1,8 @@
+{
+"basePath": "",
+"items": [
+{ "path": "./media/IMG_1.jpg", "selected": true },
+{ "path": "./media/IMG_2.png", "enabled": true },
+{ "path": "./media/IMG_3.png", "selected": true }
+]
+}

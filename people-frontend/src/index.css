@@ -41,3 +41,80 @@ body {
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
 }
+
+/* Print styles */
+@media print {
+  /* Hide everything except the detail panel */
+  body > *:not(#root) {
+    display: none !important;
+  }
+  
+  /* Hide backdrop and navigation elements */
+  .print\:hidden {
+    display: none !important;
+  }
+  
+  /* Make detail panel full width and remove fixed positioning */
+  .fixed {
+    position: static !important;
+  }
+  
+  /* Remove scrollbars and show all content */
+  * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  
+  /* Expand all text areas and fields */
+  textarea,
+  .overflow-y-auto,
+  .overflow-auto,
+  .overflow-hidden {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+  
+  /* Remove sticky positioning */
+  .sticky {
+    position: static !important;
+  }
+  
+  /* Ensure description content is fully visible */
+  .prose,
+  .prose-invert {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  /* Remove borders and shadows for cleaner print */
+  .shadow-2xl,
+  .shadow-xl,
+  .shadow-lg {
+    box-shadow: none !important;
+  }
+  
+  /* Ensure all content is visible */
+  .min-h-\[200px\] {
+    min-height: auto !important;
+  }
+  
+  /* Make sure tabs content is all visible */
+  [role="tabpanel"] {
+    display: block !important;
+  }
+  
+  /* Page breaks */
+  .page-break-before {
+    page-break-before: always;
+  }
+  
+  .page-break-after {
+    page-break-after: always;
+  }
+  
+  /* Avoid breaking inside elements */
+  .avoid-break {
+    page-break-inside: avoid;
+  }
+}

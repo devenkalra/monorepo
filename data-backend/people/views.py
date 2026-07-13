@@ -12,12 +12,117 @@ from .serializers import (
 )
 from .utils import save_file_deduplicated
 from .permissions import IsOwner, BothEntitiesOwned
+from .llm_text import build_text_block, relation_sentence
+from .import_validation import validate_import_payload
+from .import_v2_executor import execute_import_v2, ImportV2ExecutionError, normalize_legacy_snapshot_to_v2
 from django_filters.rest_framework import DjangoFilterBackend
+from django.utils import timezone
 from io import StringIO
 from people.sync import meili_sync
 import tempfile
 import os
 import json
+
+
+def _prune_export_value(value):
+    """Recursively remove null/empty values from exported payloads."""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    if isinstance(value, list):
+        pruned_items = []
+        for item in value:
+            pruned_item = _prune_export_value(item)
+            if pruned_item is not None:
+                pruned_items.append(pruned_item)
+        return pruned_items or None
+    if isinstance(value, dict):
+        pruned_dict = {}
+        for key, item in value.items():
+            pruned_item = _prune_export_value(item)
+            if pruned_item is not None:
+                pruned_dict[key] = pruned_item
+        return pruned_dict or None
+    return value
+
+
+def _sanitize_entity_records(records):
+    """Remove internal ownership field and prune null/empty values."""
+    cleaned = []
+    for record in records or []:
+        if isinstance(record, dict):
+            record = dict(record)
+            record.pop('user', None)
+        pruned = _prune_export_value(record)
+        if pruned is not None:
+            cleaned.append(pruned)
+    return cleaned
+
+
+def _build_entity_export_records(people, notes, locations, movies, books, containers, assets, orgs):
+    """Return a unified entity list for export payloads."""
+    return (
+        _sanitize_entity_records(PersonSerializer(people, many=True).data)
+        + _sanitize_entity_records(NoteSerializer(notes, many=True).data)
+        + _sanitize_entity_records(LocationSerializer(locations, many=True).data)
+        + _sanitize_entity_records(MovieSerializer(movies, many=True).data)
+        + _sanitize_entity_records(BookSerializer(books, many=True).data)
+        + _sanitize_entity_records(ContainerSerializer(containers, many=True).data)
+        + _sanitize_entity_records(AssetSerializer(assets, many=True).data)
+        + _sanitize_entity_records(OrgSerializer(orgs, many=True).data)
+    )
+
+
+def _group_entities_for_legacy_import(data):
+    """Support both old type-specific arrays and unified entities array."""
+    grouped = {
+        'people': list(data.get('people', []) or []),
+        'notes': list(data.get('notes', []) or []),
+        'locations': list(data.get('locations', []) or []),
+        'movies': list(data.get('movies', []) or []),
+        'books': list(data.get('books', []) or []),
+        'containers': list(data.get('containers', []) or []),
+        'assets': list(data.get('assets', []) or []),
+        'orgs': list(data.get('orgs', []) or []),
+    }
+
+    type_to_bucket = {
+        'Person': 'people',
+        'Note': 'notes',
+        'Location': 'locations',
+        'Movie': 'movies',
+        'Book': 'books',
+        'Container': 'containers',
+        'Asset': 'assets',
+        'Org': 'orgs',
+    }
+
+    for entity in data.get('entities', []) or []:
+        if not isinstance(entity, dict):
+            continue
+        bucket = type_to_bucket.get(entity.get('type'))
+        if bucket:
+            grouped[bucket].append(entity)
+
+    return grouped
+
+
+def _validate_payload_user_matches_request(payload, request_user):
+    """Validate optional payload user metadata against authenticated user."""
+    payload_user = payload.get('user')
+    if not payload_user or not isinstance(payload_user, dict):
+        return True, None
+
+    payload_username = payload_user.get('username')
+    if payload_username and payload_username != request_user.username:
+        return False, 'Import user.username does not match authenticated user'
+
+    payload_email = payload_user.get('email')
+    if payload_email and payload_email != request_user.email:
+        return False, 'Import user.email does not match authenticated user'
+
+    return True, None
 
 class EntityViewSet(viewsets.ModelViewSet):
     serializer_class = EntitySerializer
@@ -33,50 +138,161 @@ class EntityViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return only entities owned by the current user"""
         return Entity.objects.filter(user=self.request.user)
+
+    def retrieve(self, request, *args, **kwargs):
+        """Override retrieve to return subclass-specific serialized data"""
+        instance = self.get_object()
+        serialized = self._serialize_entity(instance=instance, request=request)
+        text_parts = build_text_block(entity=serialized, outgoing=[])
+        response_data = dict(serialized)
+        response_data['entity_sentences'] = text_parts['entity_sentences']
+        response_data['entity_text_block'] = "\n".join(text_parts['entity_sentences'])
+        return Response(response_data)
+
+    def _serialize_entity(self, instance, request):
+        entity_type = instance.type
+
+        type_info = {
+            'Person': (Person, PersonSerializer),
+            'Note': (Note, NoteSerializer),
+            'Location': (Location, LocationSerializer),
+            'Movie': (Movie, MovieSerializer),
+            'Book': (Book, BookSerializer),
+            'Container': (Container, ContainerSerializer),
+            'Asset': (Asset, AssetSerializer),
+            'Org': (Org, OrgSerializer),
+        }.get(entity_type)
+
+        if type_info:
+            model_cls, serializer_cls = type_info
+            try:
+                casted_instance = model_cls.objects.get(id=instance.id)
+                serializer = serializer_cls(casted_instance, context={'request': request})
+                return serializer.data
+            except model_cls.DoesNotExist:
+                pass
+
+        serializer = self.get_serializer(instance)
+        return serializer.data
     
     @action(detail=True, methods=['get'])
     def relations(self, request, pk=None):
         """Get all relations (both outgoing and incoming) for an entity"""
         entity = self.get_object()
+        direction = str(request.query_params.get('direction', 'both')).strip().lower()
+        include_outgoing = direction in {'both', 'outgoing'}
+        include_incoming = direction in {'both', 'incoming'}
+
+        if not include_outgoing and not include_incoming:
+            return Response(
+                {
+                    'detail': "Invalid direction. Use one of: both, outgoing, incoming.",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         
         # Get outgoing relations
-        outgoing = EntityRelation.objects.filter(from_entity=entity)
         outgoing_data = []
-        for rel in outgoing:
-            outgoing_data.append({
-                'id': rel.id,
-                'direction': 'outgoing',
-                'relation_type': rel.relation_type,
-                'entity': {
-                    'id': rel.to_entity.id,
-                    'display': rel.to_entity.display,
-                    'type': rel.to_entity.type
-                },
-                'created_at': rel.created_at
-            })
+        if include_outgoing:
+            outgoing = EntityRelation.objects.filter(from_entity=entity)
+            for rel in outgoing:
+                rel_text = relation_sentence(
+                    subject_name=entity.display or str(entity.id),
+                    relation_type=rel.relation_type,
+                    target_name=rel.to_entity.display or str(rel.to_entity.id),
+                )
+                outgoing_data.append({
+                    'id': rel.id,
+                    'direction': 'outgoing',
+                    'relation_type': rel.relation_type,
+                    'entity': {
+                        'id': rel.to_entity.id,
+                        'display': rel.to_entity.display,
+                        'type': rel.to_entity.type
+                    },
+                    'created_at': rel.created_at,
+                    'text': rel_text,
+                })
         
         # Get incoming relations
-        incoming = EntityRelation.objects.filter(to_entity=entity)
         incoming_data = []
-        for rel in incoming:
-            incoming_data.append({
-                'id': rel.id,
-                'direction': 'incoming',
-                'relation_type': rel.relation_type,
-                'entity': {
-                    'id': rel.from_entity.id,
-                    'display': rel.from_entity.display,
-                    'type': rel.from_entity.type
-                },
-                'created_at': rel.created_at
-            })
+        if include_incoming:
+            incoming = EntityRelation.objects.filter(to_entity=entity)
+            for rel in incoming:
+                rel_text = relation_sentence(
+                    subject_name=rel.from_entity.display or str(rel.from_entity.id),
+                    relation_type=rel.relation_type,
+                    target_name=entity.display or str(entity.id),
+                )
+                incoming_data.append({
+                    'id': rel.id,
+                    'direction': 'incoming',
+                    'relation_type': rel.relation_type,
+                    'entity': {
+                        'id': rel.from_entity.id,
+                        'display': rel.from_entity.display,
+                        'type': rel.from_entity.type
+                    },
+                    'created_at': rel.created_at,
+                    'text': rel_text,
+                })
         
+        outgoing_lines = [row['text'] for row in outgoing_data]
+        incoming_lines = [row['text'] for row in incoming_data]
+
         return Response({
+            'direction': direction,
             'outgoing': outgoing_data,
-            'incoming': incoming_data
+            'incoming': incoming_data,
+            'outgoing_text_block': "\n".join(outgoing_lines),
+            'incoming_text_block': "\n".join(incoming_lines),
+            'text_block': "\n".join(outgoing_lines + incoming_lines),
         })
 
-    def _import_entity_type(self, model_class, entity_data_list, entity_id_map, stats, type_name, request_user, logger):
+    @action(detail=True, methods=['get'])
+    def llm_context(self, request, pk=None):
+        """Return only a single text block for LLM context."""
+        entity = self.get_object()
+        serialized = self._serialize_entity(instance=entity, request=request)
+
+        outgoing_qs = EntityRelation.objects.filter(from_entity=entity)
+        outgoing_data = []
+        for rel in outgoing_qs:
+            outgoing_data.append(
+                {
+                    'id': rel.id,
+                    'direction': 'outgoing',
+                    'relation_type': rel.relation_type,
+                    'entity': {
+                        'id': rel.to_entity.id,
+                        'display': rel.to_entity.display,
+                        'type': rel.to_entity.type,
+                    },
+                    'created_at': rel.created_at,
+                }
+            )
+
+        incoming_qs = EntityRelation.objects.filter(to_entity=entity)
+        incoming_data = []
+        for rel in incoming_qs:
+            incoming_data.append(
+                {
+                    'id': rel.id,
+                    'direction': 'incoming',
+                    'relation_type': rel.relation_type,
+                    'entity': {
+                        'id': rel.from_entity.id,
+                        'display': rel.from_entity.display,
+                        'type': rel.from_entity.type,
+                    },
+                    'created_at': rel.created_at,
+                }
+            )
+
+        text_parts = build_text_block(entity=serialized, outgoing=outgoing_data, incoming=incoming_data)
+        return Response({'text_block': text_parts['text_block']})
+
+    def _import_entity_type(self, model_class, entity_data_list, entity_id_map, stats, type_name, request_user, logger, force_create=False):
         """Helper function to import a specific entity type with detailed tracking"""
         import uuid
         created_key = f'{type_name}_created'
@@ -92,8 +308,8 @@ class EntityViewSet(viewsets.ModelViewSet):
                 entity_data_clean = {k: v for k, v in entity_data.items()
                                    if k not in ['id', 'user', 'created_at', 'updated_at']}
                 
-                # Check if entity with this ID exists for this user
-                existing_entity = model_class.objects.filter(id=original_id, user=request_user).first()
+                # For snapshot restores based on a unified entities array, always create fresh rows.
+                existing_entity = None if force_create else model_class.objects.filter(id=original_id, user=request_user).first()
                 
                 if existing_entity:
                     # Check if update is needed (compare data)
@@ -121,7 +337,7 @@ class EntityViewSet(viewsets.ModelViewSet):
                     # Entity doesn't exist for this user - create new one
                     # Generate new UUID if the original ID is already taken by another user
                     new_id = original_id
-                    if model_class.objects.filter(id=original_id).exists():
+                    if force_create or model_class.objects.filter(id=original_id).exists():
                         # ID is taken by another user, generate new UUID
                         new_id = uuid.uuid4()
                         logger.info(f"ID {original_id} already exists for another user, using new ID {new_id}")
@@ -160,26 +376,138 @@ class EntityViewSet(viewsets.ModelViewSet):
             except json.JSONDecodeError:
                 return Response({'error': 'Invalid JSON file'}, status=status.HTTP_400_BAD_REQUEST)
 
+            # First semantic gate: schema validation.
+            is_valid, schema_error = validate_import_payload(data)
+            if not is_valid:
+                return Response(
+                    {'error': f'Import schema validation failed: {schema_error}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            user_ok, user_error = _validate_payload_user_matches_request(data, request.user)
+            if not user_ok:
+                return Response({'error': user_error}, status=status.HTTP_400_BAD_REQUEST)
+
+            legacy_unified_snapshot = bool(data.get('entities')) and not any(
+                data.get(key) for key in ['people', 'notes', 'locations', 'movies', 'books', 'containers', 'assets', 'orgs']
+            ) and data.get('export_version') == '1.0'
+
+            logger.info(
+                "import_data: user=%s import_version=%s export_version=%s unified_snapshot=%s entities=%s people=%s notes=%s relations=%s tags=%s",
+                request.user.username,
+                data.get('import_version'),
+                data.get('export_version'),
+                legacy_unified_snapshot,
+                len(data.get('entities', []) or []),
+                len(data.get('people', []) or []),
+                len(data.get('notes', []) or []),
+                len(data.get('relations', []) or []),
+                len(data.get('tags', []) or []),
+            )
+
+            if data.get('import_version') == '2.0' or legacy_unified_snapshot:
+                try:
+                    with transaction.atomic():
+                        import_payload = normalize_legacy_snapshot_to_v2(data)
+                        logger.info(
+                            "import_data: normalized payload entities=%s relations=%s tags=%s",
+                            len(import_payload.get('entities', []) or []),
+                            len(import_payload.get('relations', []) or []),
+                            len(import_payload.get('tags', []) or []),
+                        )
+                        stats = execute_import_v2(import_payload, request.user)
+                except ImportV2ExecutionError as exc:
+                    return Response(
+                        {
+                            'success': False,
+                            'error': str(exc),
+                            'stats': exc.stats,
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                entity_ids = list(Entity.objects.filter(user=request.user).values_list('id', flat=True))
+                synced = 0
+                deleted = 0
+                if meili_sync.helper:
+                    try:
+                        existing_docs = meili_sync.helper.client.index(meili_sync.index_name).search(
+                            '',
+                            {
+                                'filter': f'user_id = "{str(request.user.id)}"',
+                                'limit': 1000,
+                                'showRankingScore': False,
+                            },
+                        ).get('hits', [])
+                        existing_ids = [doc.get('id') for doc in existing_docs if doc.get('id')]
+                        if existing_ids:
+                            delete_task = meili_sync.helper.client.index(meili_sync.index_name).delete_documents(existing_ids)
+                            if hasattr(delete_task, 'task_uid'):
+                                meili_sync.helper.client.index(meili_sync.index_name).wait_for_task(delete_task.task_uid)
+                            deleted = len(existing_ids)
+                    except Exception as cleanup_exc:
+                        logger.error(f"Failed to clear stale Meili documents for user {request.user.id}: {cleanup_exc}")
+
+                for entity_id in entity_ids:
+                    try:
+                        entity = Entity.objects.get(id=entity_id)
+                        meili_sync.sync_entity(entity, wait_for_completion=True)
+                        synced += 1
+                    except Exception as sync_exc:
+                        logger.error(f"Failed to sync entity {entity_id} after v2 import: {sync_exc}")
+
+                return Response(
+                    {
+                        'success': True,
+                        'message': 'Import v2 completed',
+                        'stats': stats,
+                        'meili_cleared': deleted,
+                        'meili_synced': synced,
+                        'entities_synced': len(entity_ids),
+                    },
+                    status=status.HTTP_200_OK
+                )
+
             # Validate format
-            if 'export_version' not in data:
+            if 'export_version' not in data and 'import_version' not in data:
                 return Response({'error': 'Invalid export file format'}, status=status.HTTP_400_BAD_REQUEST)
 
             logger.info(f"Starting import for user {request.user.email}")
 
             # Track import statistics with detailed breakdown
+            grouped_entities = _group_entities_for_legacy_import(data)
+            force_create_snapshot = bool(data.get('entities')) and not any(
+                data.get(key) for key in ['people', 'notes', 'locations', 'movies', 'books', 'containers', 'assets', 'orgs']
+            )
+            logger.info(
+                "import_data legacy path: user=%s force_create_snapshot=%s entities=%s people=%s notes=%s locations=%s movies=%s books=%s containers=%s assets=%s orgs=%s relations=%s tags=%s",
+                request.user.username,
+                force_create_snapshot,
+                len(data.get('entities', []) or []),
+                len(grouped_entities['people']),
+                len(grouped_entities['notes']),
+                len(grouped_entities['locations']),
+                len(grouped_entities['movies']),
+                len(grouped_entities['books']),
+                len(grouped_entities['containers']),
+                len(grouped_entities['assets']),
+                len(grouped_entities['orgs']),
+                len(data.get('relations', []) or []),
+                len(data.get('tags', []) or []),
+            )
             stats = {
                 # File contents
                 'file_summary': {
                     'tags_in_file': len(data.get('tags', [])),
                     'entities_in_file': len(data.get('entities', [])),
-                    'people_in_file': len(data.get('people', [])),
-                    'notes_in_file': len(data.get('notes', [])),
-                    'locations_in_file': len(data.get('locations', [])),
-                    'movies_in_file': len(data.get('movies', [])),
-                    'books_in_file': len(data.get('books', [])),
-                    'containers_in_file': len(data.get('containers', [])),
-                    'assets_in_file': len(data.get('assets', [])),
-                    'orgs_in_file': len(data.get('orgs', [])),
+                    'people_in_file': len(grouped_entities['people']),
+                    'notes_in_file': len(grouped_entities['notes']),
+                    'locations_in_file': len(grouped_entities['locations']),
+                    'movies_in_file': len(grouped_entities['movies']),
+                    'books_in_file': len(grouped_entities['books']),
+                    'containers_in_file': len(grouped_entities['containers']),
+                    'assets_in_file': len(grouped_entities['assets']),
+                    'orgs_in_file': len(grouped_entities['orgs']),
                     'relations_in_file': len(data.get('relations', [])),
                 },
                 # Processing results
@@ -237,41 +565,38 @@ class EntityViewSet(viewsets.ModelViewSet):
 
             # Map old IDs to current IDs (for relations)
             entity_id_map = {}
-            
-            # Skip generic 'entities' list if present (legacy exports)
-            # We import type-specific entities instead
 
             # Import people
-            logger.info(f"Importing {len(data.get('people', []))} people")
-            self._import_entity_type(Person, data.get('people', []), entity_id_map, stats, 'people', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['people'])} people")
+            self._import_entity_type(Person, grouped_entities['people'], entity_id_map, stats, 'people', request.user, logger, force_create=force_create_snapshot)
 
             # Import notes
-            logger.info(f"Importing {len(data.get('notes', []))} notes")
-            self._import_entity_type(Note, data.get('notes', []), entity_id_map, stats, 'notes', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['notes'])} notes")
+            self._import_entity_type(Note, grouped_entities['notes'], entity_id_map, stats, 'notes', request.user, logger, force_create=force_create_snapshot)
 
             # Import locations
-            logger.info(f"Importing {len(data.get('locations', []))} locations")
-            self._import_entity_type(Location, data.get('locations', []), entity_id_map, stats, 'locations', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['locations'])} locations")
+            self._import_entity_type(Location, grouped_entities['locations'], entity_id_map, stats, 'locations', request.user, logger, force_create=force_create_snapshot)
 
             # Import movies
-            logger.info(f"Importing {len(data.get('movies', []))} movies")
-            self._import_entity_type(Movie, data.get('movies', []), entity_id_map, stats, 'movies', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['movies'])} movies")
+            self._import_entity_type(Movie, grouped_entities['movies'], entity_id_map, stats, 'movies', request.user, logger, force_create=force_create_snapshot)
 
             # Import books
-            logger.info(f"Importing {len(data.get('books', []))} books")
-            self._import_entity_type(Book, data.get('books', []), entity_id_map, stats, 'books', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['books'])} books")
+            self._import_entity_type(Book, grouped_entities['books'], entity_id_map, stats, 'books', request.user, logger, force_create=force_create_snapshot)
 
             # Import containers
-            logger.info(f"Importing {len(data.get('containers', []))} containers")
-            self._import_entity_type(Container, data.get('containers', []), entity_id_map, stats, 'containers', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['containers'])} containers")
+            self._import_entity_type(Container, grouped_entities['containers'], entity_id_map, stats, 'containers', request.user, logger, force_create=force_create_snapshot)
 
             # Import assets
-            logger.info(f"Importing {len(data.get('assets', []))} assets")
-            self._import_entity_type(Asset, data.get('assets', []), entity_id_map, stats, 'assets', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['assets'])} assets")
+            self._import_entity_type(Asset, grouped_entities['assets'], entity_id_map, stats, 'assets', request.user, logger, force_create=force_create_snapshot)
 
             # Import orgs
-            logger.info(f"Importing {len(data.get('orgs', []))} orgs")
-            self._import_entity_type(Org, data.get('orgs', []), entity_id_map, stats, 'orgs', request.user, logger)
+            logger.info(f"Importing {len(grouped_entities['orgs'])} orgs")
+            self._import_entity_type(Org, grouped_entities['orgs'], entity_id_map, stats, 'orgs', request.user, logger, force_create=force_create_snapshot)
 
             # Import relations (after all entities exist)
             logger.info(f"Importing {len(data.get('relations', []))} relations")
@@ -408,7 +733,6 @@ class EntityViewSet(viewsets.ModelViewSet):
             from datetime import datetime
             
             # Gather all user's data
-            entities = Entity.objects.filter(user=request.user)
             people = Person.objects.filter(user=request.user)
             notes = Note.objects.filter(user=request.user)
             locations = Location.objects.filter(user=request.user)
@@ -421,27 +745,28 @@ class EntityViewSet(viewsets.ModelViewSet):
                 from_entity__user=request.user,
                 to_entity__user=request.user
             )
-            tags = Tag.objects.all()  # Tags are global, not user-specific
+            tags = Tag.objects.filter(user=request.user)
             
             export_data = {
                 'export_version': '1.0',
-                'export_date': datetime.now().isoformat(),
-                'user': {
+                'export_date': timezone.now().isoformat(),
+                'user': _prune_export_value({
                     'username': request.user.username,
                     'email': request.user.email
-                },
-                # Don't export generic 'entities' - use type-specific lists instead
-                'people': PersonSerializer(people, many=True).data,
-                'notes': NoteSerializer(notes, many=True).data,
-                'locations': LocationSerializer(locations, many=True).data,
-                'movies': MovieSerializer(movies, many=True).data,
-                'books': BookSerializer(books, many=True).data,
-                'containers': ContainerSerializer(containers, many=True).data,
-                'assets': AssetSerializer(assets, many=True).data,
-                'orgs': OrgSerializer(orgs, many=True).data,
-                'relations': EntityRelationSerializer(relations, many=True).data,
-                'tags': TagSerializer(tags, many=True).data,
+                }),
             }
+
+            entities_payload = _build_entity_export_records(
+                people, notes, locations, movies, books, containers, assets, orgs
+            )
+
+            # Export only non-empty collections.
+            collection_data = {
+                'entities': _prune_export_value(entities_payload),
+                'relations': _prune_export_value(EntityRelationSerializer(relations, many=True).data),
+                'tags': _prune_export_value(TagSerializer(tags, many=True).data),
+            }
+            export_data.update({key: value for key, value in collection_data.items() if value})
             
             # Create response with JSON file
             response = HttpResponse(
@@ -478,9 +803,21 @@ class EntityViewSet(viewsets.ModelViewSet):
                 data = json.loads(content)
             except json.JSONDecodeError:
                 return Response({'error': 'Invalid JSON file'}, status=status.HTTP_400_BAD_REQUEST)
+
+            # First semantic gate: schema validation.
+            is_valid, schema_error = validate_import_payload(data)
+            if not is_valid:
+                return Response(
+                    {'error': f'Import schema validation failed: {schema_error}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            user_ok, user_error = _validate_payload_user_matches_request(data, request.user)
+            if not user_ok:
+                return Response({'error': user_error}, status=status.HTTP_400_BAD_REQUEST)
             
             # Validate format
-            if 'export_version' not in data:
+            if 'export_version' not in data and 'import_version' not in data:
                 return Response({'error': 'Invalid export file format'}, status=status.HTTP_400_BAD_REQUEST)
             
             # Start async task
@@ -608,20 +945,21 @@ class EntityViewSet(viewsets.ModelViewSet):
         from datetime import datetime
         export_data = {
             'export_version': '1.0',
-            'export_date': datetime.now().isoformat(),
+            'export_date': timezone.now().isoformat(),
             'export_type': 'selected',
-            'user': {'username': user.username, 'email': user.email},
-            'people': PersonSerializer(people, many=True).data,
-            'notes': NoteSerializer(notes, many=True).data,
-            'locations': LocationSerializer(locations, many=True).data,
-            'movies': MovieSerializer(movies, many=True).data,
-            'books': BookSerializer(books, many=True).data,
-            'containers': ContainerSerializer(containers, many=True).data,
-            'assets': AssetSerializer(assets, many=True).data,
-            'orgs': OrgSerializer(orgs, many=True).data,
-            'relations': EntityRelationSerializer(network_relations, many=True).data,
-            'tags': TagSerializer(tags, many=True).data,
+            'user': _prune_export_value({'username': user.username, 'email': user.email}),
         }
+
+        entities_payload = _build_entity_export_records(
+            people, notes, locations, movies, books, containers, assets, orgs
+        )
+
+        collection_data = {
+            'entities': _prune_export_value(entities_payload),
+            'relations': _prune_export_value(EntityRelationSerializer(network_relations, many=True).data),
+            'tags': _prune_export_value(TagSerializer(tags, many=True).data),
+        }
+        export_data.update({key: value for key, value in collection_data.items() if value})
 
         export_json = json.dumps(export_data, indent=2, default=str)
         response = HttpResponse(export_json, content_type='application/json')
@@ -753,18 +1091,46 @@ class EntityViewSet(viewsets.ModelViewSet):
 
 class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
     """Return the most recently modified entities.
-    Supports an optional `limit` query parameter (default 20).
+    Supports optional `limit`, `page`, `page_size`, and `sort_by` query parameters.
     """
     serializer_class = EntitySerializer
     permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
+        # Get sorting parameter
+        sort_by = self.request.query_params.get('sort_by', 'updated_at')
+        
+        # Get pagination parameters
+        page = self.request.query_params.get('page')
+        page_size = self.request.query_params.get('page_size')
         limit = self.request.query_params.get('limit')
-        try:
-            limit = int(limit) if limit is not None else 20
-        except ValueError:
-            limit = 20
-        return Entity.objects.filter(user=self.request.user).order_by('-updated_at')[:limit]
+        
+        queryset = Entity.objects.filter(user=self.request.user)
+        
+        # Apply sorting
+        if sort_by == 'display':
+            queryset = queryset.order_by('display')
+        elif sort_by == 'display_desc':
+            queryset = queryset.order_by('-display')
+        elif sort_by == 'type':
+            queryset = queryset.order_by('type', '-updated_at')
+        elif sort_by == 'created_at':
+            queryset = queryset.order_by('-created_at')
+        else:  # default to updated_at
+            queryset = queryset.order_by('-updated_at')
+        
+        # Apply limit or pagination
+        if page is not None and page_size is not None:
+            # Pagination mode - don't apply limit here, will be handled in list()
+            return queryset
+        elif limit is not None:
+            try:
+                limit = int(limit)
+            except ValueError:
+                limit = 20
+            return queryset[:limit]
+        else:
+            return queryset[:20]
     
     def get_serializer_class(self):
         """Return the appropriate serializer based on entity type"""
@@ -783,46 +1149,110 @@ class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
         return EntitySerializer
     
     def list(self, request, *args, **kwargs):
-        """Override list to return type-specific serialized data"""
+        """Override list to return type-specific serialized data with pagination"""
         queryset = self.get_queryset()
         
-        # Serialize each entity with its type-specific serializer
-        serialized_data = []
-        for entity in queryset:
-            # Get the appropriate serializer for this entity type
-            serializer_class = {
-                'Person': PersonSerializer,
-                'Note': NoteSerializer,
-                'Location': LocationSerializer,
-                'Movie': MovieSerializer,
-                'Book': BookSerializer,
-                'Container': ContainerSerializer,
-                'Asset': AssetSerializer,
-                'Org': OrgSerializer,
-            }.get(entity.type, EntitySerializer)
-            
-            # Cast to the specific type if needed
-            if entity.type == 'Person':
-                entity = Person.objects.get(id=entity.id)
-            elif entity.type == 'Note':
-                entity = Note.objects.get(id=entity.id)
-            elif entity.type == 'Location':
-                entity = Location.objects.get(id=entity.id)
-            elif entity.type == 'Movie':
-                entity = Movie.objects.get(id=entity.id)
-            elif entity.type == 'Book':
-                entity = Book.objects.get(id=entity.id)
-            elif entity.type == 'Container':
-                entity = Container.objects.get(id=entity.id)
-            elif entity.type == 'Asset':
-                entity = Asset.objects.get(id=entity.id)
-            elif entity.type == 'Org':
-                entity = Org.objects.get(id=entity.id)
-            
-            serializer = serializer_class(entity)
-            serialized_data.append(serializer.data)
+        # Check if pagination is requested
+        page = request.query_params.get('page')
+        page_size = request.query_params.get('page_size')
         
-        return Response(serialized_data)
+        if page is not None and page_size is not None:
+            try:
+                page = int(page)
+                page_size = int(page_size)
+                page = max(1, page)
+                page_size = min(max(1, page_size), 100)
+            except ValueError:
+                page = 1
+                page_size = 20
+            
+            # Get total count
+            total_count = queryset.count()
+            
+            # Apply pagination
+            start = (page - 1) * page_size
+            end = start + page_size
+            queryset = queryset[start:end]
+            
+            # Serialize each entity with its type-specific serializer
+            serialized_data = []
+            for entity in queryset:
+                serializer_class = {
+                    'Person': PersonSerializer,
+                    'Note': NoteSerializer,
+                    'Location': LocationSerializer,
+                    'Movie': MovieSerializer,
+                    'Book': BookSerializer,
+                    'Container': ContainerSerializer,
+                    'Asset': AssetSerializer,
+                    'Org': OrgSerializer,
+                }.get(entity.type, EntitySerializer)
+                
+                # Cast to the specific type if needed
+                if entity.type == 'Person':
+                    entity = Person.objects.get(id=entity.id)
+                elif entity.type == 'Note':
+                    entity = Note.objects.get(id=entity.id)
+                elif entity.type == 'Location':
+                    entity = Location.objects.get(id=entity.id)
+                elif entity.type == 'Movie':
+                    entity = Movie.objects.get(id=entity.id)
+                elif entity.type == 'Book':
+                    entity = Book.objects.get(id=entity.id)
+                elif entity.type == 'Container':
+                    entity = Container.objects.get(id=entity.id)
+                elif entity.type == 'Asset':
+                    entity = Asset.objects.get(id=entity.id)
+                elif entity.type == 'Org':
+                    entity = Org.objects.get(id=entity.id)
+                
+                serializer = serializer_class(entity)
+                serialized_data.append(serializer.data)
+            
+            return Response({
+                'results': serialized_data,
+                'count': total_count,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (total_count + page_size - 1) // page_size
+            })
+        else:
+            # Legacy mode - return simple array
+            serialized_data = []
+            for entity in queryset:
+                serializer_class = {
+                    'Person': PersonSerializer,
+                    'Note': NoteSerializer,
+                    'Location': LocationSerializer,
+                    'Movie': MovieSerializer,
+                    'Book': BookSerializer,
+                    'Container': ContainerSerializer,
+                    'Asset': AssetSerializer,
+                    'Org': OrgSerializer,
+                }.get(entity.type, EntitySerializer)
+                
+                # Cast to the specific type if needed
+                if entity.type == 'Person':
+                    entity = Person.objects.get(id=entity.id)
+                elif entity.type == 'Note':
+                    entity = Note.objects.get(id=entity.id)
+                elif entity.type == 'Location':
+                    entity = Location.objects.get(id=entity.id)
+                elif entity.type == 'Movie':
+                    entity = Movie.objects.get(id=entity.id)
+                elif entity.type == 'Book':
+                    entity = Book.objects.get(id=entity.id)
+                elif entity.type == 'Container':
+                    entity = Container.objects.get(id=entity.id)
+                elif entity.type == 'Asset':
+                    entity = Asset.objects.get(id=entity.id)
+                elif entity.type == 'Org':
+                    entity = Org.objects.get(id=entity.id)
+                
+                serializer = serializer_class(entity)
+                serialized_data.append(serializer.data)
+            
+            return Response(serialized_data)
 
 class PersonViewSet(viewsets.ModelViewSet):
     serializer_class = PersonSerializer
@@ -871,16 +1301,23 @@ class NoteViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], parser_classes=[MultiPartParser, FormParser])
     def import_file(self, request):
         """Import conversations as Note entities from uploaded JSON file"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if 'file' not in request.FILES:
             return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
         
         file_obj = request.FILES['file']
         source = request.POST.get('source', 'unknown')
         
+        logger.info(f"Starting ChatGPT import for user {request.user.email}, source: {source}")
+        
         try:
             import json
             content = file_obj.read().decode('utf-8')
             data = json.loads(content)
+            
+            logger.info(f"Parsed JSON, type: {type(data)}, keys: {data.keys() if isinstance(data, dict) else 'N/A'}")
             
             stats = {
                 'notes_created': 0,
@@ -889,26 +1326,192 @@ class NoteViewSet(viewsets.ModelViewSet):
             
             # Import conversations as notes
             conversations = data if isinstance(data, list) else [data]
+            logger.info(f"Processing {len(conversations)} conversations")
             
-            for conv in conversations:
+            for i, conv in enumerate(conversations, 1):
+                logger.info(f"Processing conversation {i}/{len(conversations)}: {conv.get('title', 'No title')}")
                 try:
+                    # Extract conversation content - check both direct mapping and raw_source.mapping
+                    mapping = conv.get('mapping', {})
+                    if not mapping and 'raw_source' in conv:
+                        mapping = conv.get('raw_source', {}).get('mapping', {})
+                    
+                    logger.info(f"Conversation has mapping with {len(mapping) if isinstance(mapping, dict) else 0} nodes")
+                    
+                    # Build description from conversation turns with TOC and navigation
+                    if isinstance(mapping, dict):
+                        # Sort nodes by creation time if available, handle None values
+                        sorted_nodes = sorted(
+                            mapping.items(),
+                            key=lambda x: (x[1].get('message', {}).get('create_time') or 0) if x[1].get('message') else 0
+                        )
+                        
+                        # First pass: extract all messages and build TOC
+                        messages = []
+                        toc_items = []
+                        
+                        for node_id, node_data in sorted_nodes:
+                            message = node_data.get('message')
+                            if not message:
+                                continue
+                            
+                            author = message.get('author', {})
+                            role = author.get('role', 'unknown') if isinstance(author, dict) else 'unknown'
+                            
+                            content = message.get('content')
+                            if not content:
+                                continue
+                            
+                            # Extract text
+                            text = None
+                            if isinstance(content, dict):
+                                parts = content.get('parts', [])
+                                if parts and isinstance(parts, list):
+                                    text = '\n'.join(str(p) for p in parts if p)
+                            elif isinstance(content, str):
+                                text = content
+                            
+                            if text:
+                                messages.append({'role': role, 'text': text})
+                                
+                                # Add to TOC if user message
+                                if role == 'user':
+                                    truncated = text[:80] + '...' if len(text) > 80 else text
+                                    truncated = truncated.replace('\n', ' ')
+                                    toc_items.append({
+                                        'index': len(messages) - 1,
+                                        'text': truncated
+                                    })
+                        
+                        logger.info(f"Extracted {len(messages)} messages, {len(toc_items)} user prompts")
+                        
+                        # Build HTML with TOC
+                        html_parts = []
+                        
+                        # Add anchor at top
+                        html_parts.append('<div id="top"></div>')
+                        
+                        # Table of Contents
+                        if toc_items:
+                            html_parts.append('''
+                                <div style="margin-bottom: 2rem; padding: 1rem; background-color: rgba(0,0,0,0.03); border-radius: 0.5rem; border: 1px solid rgba(0,0,0,0.1);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+                                        <h3 style="margin: 0; font-weight: bold; font-size: 1rem; color: inherit;">📋 Table of Contents ({} prompts)</h3>
+                                        <span style="font-size: 0.875rem; opacity: 0.6;">▼ Click to expand</span>
+                                    </div>
+                                    <div style="display: none; margin-top: 1rem; max-height: 300px; overflow-y: auto;">
+                            '''.format(len(toc_items)))
+                            
+                            for item in toc_items:
+                                html_parts.append(
+                                    f'<div style="margin-bottom: 0.5rem;">'
+                                    f'<a href="#msg-{item["index"]}" style="color: #3b82f6; text-decoration: none; font-size: 0.875rem; display: block; padding: 0.25rem; border-radius: 0.25rem;" '
+                                    f'onmouseover="this.style.backgroundColor=\'rgba(59,130,246,0.1)\'" onmouseout="this.style.backgroundColor=\'transparent\'">'
+                                    f'→ {item["text"]}'
+                                    f'</a></div>'
+                                )
+                            
+                            html_parts.append('</div></div>')
+                        
+                        # Add messages with navigation
+                        import markdown
+                        for idx, msg in enumerate(messages):
+                            role = msg['role']
+                            text = msg['text']
+                            
+                            role_label = role.upper()
+                            role_color = '#3b82f6' if role == 'user' else '#10b981'
+                            bg_color = '#f0f9ff' if role == 'user' else '#f0fdf4'
+                            
+                            # Convert markdown to HTML
+                            text_html = markdown.markdown(
+                                text,
+                                extensions=['fenced_code', 'tables', 'nl2br', 'codehilite']
+                            )
+                            
+                            # Fix anchor links: remove target="_blank" from internal anchor links
+                            # Replace <a ... href="#..."> with proper anchor link attributes
+                            import re
+                            text_html = re.sub(
+                                r'<a\s+([^>]*?)href="(#[^"]*)"([^>]*?)>',
+                                r'<a href="\2">',
+                                text_html
+                            )
+                            
+                            # Navigation buttons with dark mode support
+                            nav_html = '<div style="display: flex; gap: 0.5rem; margin-bottom: 0.5rem;">'
+                            nav_html += '<a href="#top" style="padding: 0.25rem 0.5rem; background-color: rgba(0,0,0,0.1); border-radius: 0.25rem; text-decoration: none; font-size: 0.75rem; color: inherit; opacity: 0.8;">⬆ Top</a>'
+                            
+                            # Always show Prev button
+                            if idx > 0:
+                                nav_html += f'<a href="#msg-{idx-1}" style="padding: 0.25rem 0.5rem; background-color: rgba(0,0,0,0.1); border-radius: 0.25rem; text-decoration: none; font-size: 0.75rem; color: inherit; opacity: 0.8;">← Prev</a>'
+                            else:
+                                nav_html += '<span style="padding: 0.25rem 0.5rem; background-color: rgba(0,0,0,0.05); border-radius: 0.25rem; font-size: 0.75rem; color: inherit; opacity: 0.3;">← Prev</span>'
+                            
+                            # Always show Next button
+                            if idx < len(messages) - 1:
+                                nav_html += f'<a href="#msg-{idx+1}" style="padding: 0.25rem 0.5rem; background-color: rgba(0,0,0,0.1); border-radius: 0.25rem; text-decoration: none; font-size: 0.75rem; color: inherit; opacity: 0.8;">Next →</a>'
+                            else:
+                                nav_html += '<span style="padding: 0.25rem 0.5rem; background-color: rgba(0,0,0,0.05); border-radius: 0.25rem; font-size: 0.75rem; color: inherit; opacity: 0.3;">Next →</span>'
+                            
+                            nav_html += '</div>'
+                            
+                            # Use rgba colors that work in both light and dark modes
+                            msg_bg_color = 'rgba(59,130,246,0.08)' if role == 'user' else 'rgba(16,185,129,0.08)'
+                            
+                            html_parts.append(
+                                f'<div id="msg-{idx}" style="margin-bottom: 1.5rem; padding: 1rem; background-color: {msg_bg_color}; border-radius: 0.5rem; border-left: 4px solid {role_color}; scroll-margin-top: 6rem;">'
+                                f'{nav_html}'
+                                f'<div style="font-weight: bold; color: {role_color}; margin-bottom: 0.5rem; font-size: 0.875rem;">{role_label} (Message {idx+1}/{len(messages)})</div>'
+                                f'<div style="line-height: 1.6; color: inherit;">{text_html}</div>'
+                                f'</div>'
+                            )
+                        
+                        description = ''.join(html_parts)
+                    else:
+                        description = f'<pre>{str(conv)[:1000]}</pre>'
+                    
+                    logger.info(f"Built description with {len(messages) if 'messages' in locals() else 0} messages, total length={len(description)}")
+                    
+                    # Parse date - ChatGPT exports use Unix timestamps
+                    date_value = None
+                    create_time = conv.get('create_time') or conv.get('update_time')
+                    if create_time:
+                        try:
+                            from datetime import datetime
+                            if isinstance(create_time, (int, float)):
+                                # Unix timestamp
+                                date_value = datetime.fromtimestamp(create_time)
+                            elif isinstance(create_time, str):
+                                # ISO format string
+                                date_value = datetime.fromisoformat(create_time.replace('Z', '+00:00'))
+                        except Exception as e:
+                            logger.warning(f"Failed to parse date '{create_time}': {str(e)}")
+                    
                     # Create note from conversation
+                    # TextField supports unlimited length in PostgreSQL
                     note = Note.objects.create(
                         user=request.user,
                         display=conv.get('title', 'Imported Conversation'),
-                        description=conv.get('mapping', {}) if isinstance(conv.get('mapping'), dict) else str(conv),
+                        description=description,  # No length limit
                         tags=[source, 'imported'],
-                        date=conv.get('create_time') or conv.get('update_time')
+                        date=date_value
                     )
+                    logger.info(f"Successfully created note {note.id}: {note.display}")
                     stats['notes_created'] += 1
                 except Exception as e:
-                    stats['errors'].append(str(e))
+                    error_msg = f"Conversation '{conv.get('title', 'unknown')}': {str(e)}"
+                    logger.error(f"Failed to create note: {error_msg}")
+                    stats['errors'].append(error_msg)
+            
+            logger.info(f"Import complete: {stats['notes_created']} notes created, {len(stats['errors'])} errors")
             
             return Response({
                 'success': True,
                 'stats': stats
             })
         except Exception as e:
+            logger.error(f"Import failed with exception: {str(e)}")
             return Response(
                 {'error': f'Import failed: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -1183,11 +1786,17 @@ class UploadViewSet(viewsets.ViewSet):
         if not file_obj:
             return Response({"error": "No file provided"}, status=status.HTTP_400_BAD_REQUEST)
         
+        entity_id = request.data.get('entity_id')
         try:
-            result = save_file_deduplicated(file_obj)
+            if entity_id:
+                from .utils import save_file_scoped
+                result = save_file_scoped(file_obj, entity_id)
+            else:
+                result = save_file_deduplicated(file_obj)
             return Response(result, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class TagViewSet(viewsets.ModelViewSet):
     serializer_class = TagSerializer
@@ -1199,6 +1808,10 @@ class TagViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """Return all tags for the current user"""
         return Tag.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        """Auto-assign current user on create"""
+        serializer.save(user=self.request.user)
 
     def destroy(self, request, *args, **kwargs):
         """Delete a tag and remove it from user's entities.
@@ -1383,6 +1996,13 @@ class SearchViewSet(viewsets.ViewSet):
         elif display_val and query:
             query = f"{query} {display_val}"
             search_attributes = ['display', 'description', 'tags']
+
+        # Handle other filters (exact match) to stay consistent with list endpoint
+        other_filters = ['first_name', 'last_name', 'gender']
+        for key in other_filters:
+            val = request.query_params.get(key)
+            if val:
+                filters.append(f'{key} = "{val}"')
         
         # Add user filter
         user_filter = f'user_id = "{str(self.request.user.id)}"'
@@ -1396,45 +2016,29 @@ class SearchViewSet(viewsets.ViewSet):
             count = Entity.objects.filter(id__in=relation_entity_ids, user=self.request.user).count()
             return Response({'count': count})
         
-        # Get count from database (more accurate than MeiliSearch estimatedTotalHits)
-        # Build Django ORM query based on filters
-        queryset = Entity.objects.filter(user=self.request.user)
-        
-        # Apply type filter
-        if type_val:
-            types = [t.strip() for t in type_val.split(',')]
-            queryset = queryset.filter(type__in=types)
-        
-        # Apply tags filter
-        if tags_val:
-            tags = [t.strip() for t in tags_val.split(',')]
-            expanded_tags = []
-            for tag in tags:
-                expanded_tags.extend(self._expand_hierarchical_tags(tag))
-            expanded_tags = list(set(expanded_tags))
-            
-            # Filter entities that have any of the expanded tags
-            from django.db.models import Q
-            tag_query = Q()
-            for tag in expanded_tags:
-                tag_query |= Q(tags__contains=[tag])
-            queryset = queryset.filter(tag_query)
-        
-        # Apply text search filters (display, description)
-        if query or display_val:
-            search_text = query if query else display_val
-            from django.db.models import Q
-            queryset = queryset.filter(
-                Q(display__icontains=search_text) |
-                Q(description__icontains=search_text)
-            )
-        
-        # Apply relation filter
+        # Use same MeiliSearch path as list() for consistency with UI results.
+        from .sync import meili_sync
+        hybrid_params = {
+            'semanticRatio': 0.25,
+            'embedder': 'default',
+        }
+        search_query = query if query else ''
+        results = meili_sync.search(
+            search_query,
+            filter_str=filter_str,
+            attributes_to_search_on=search_attributes,
+            hybrid=hybrid_params,
+            ranking_score_threshold=0.82,
+            show_ranking_score=True,
+            limit=10000,
+        )
+
+        # If we have relation filtering, intersect Meili results with relation IDs.
         if relation_entity_ids is not None:
-            queryset = queryset.filter(id__in=relation_entity_ids)
-        
-        count = queryset.count()
-        return Response({'count': count})
+            relation_id_set = set(relation_entity_ids)
+            results = [r for r in results if r.get('id') in relation_id_set]
+
+        return Response({'count': len(results)})
     
     def _expand_hierarchical_tags(self, tag):
         """
@@ -1464,6 +2068,19 @@ class SearchViewSet(viewsets.ViewSet):
     def list(self, request):
         query = request.query_params.get('q', '')
         
+        # Pagination parameters
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('page_size', 20))
+            page = max(1, page)
+            page_size = min(max(1, page_size), 100)  # Cap at 100
+        except ValueError:
+            page = 1
+            page_size = 20
+        
+        # Sort parameter
+        sort_by = request.query_params.get('sort_by', 'updated_at')
+        
         # Check for relation-based filtering
         relation_entity_id = request.query_params.get('relation_entity')
         relation_type = request.query_params.get('relation_type')
@@ -1476,7 +2093,13 @@ class SearchViewSet(viewsets.ViewSet):
             
             if not relation_entity_ids:
                 # No entities match the relation, return empty
-                return Response([])
+                return Response({
+                    'results': [],
+                    'count': 0,
+                    'page': page,
+                    'page_size': page_size,
+                    'total_pages': 0
+                })
         
         # Build filter string for Meilisearch
         # Supported filters: type, tags, first_name, last_name, gender
@@ -1536,11 +2159,25 @@ class SearchViewSet(viewsets.ViewSet):
         else:
             filter_str = user_filter
 
-        # If we have relation filtering but no other search criteria, just return the related entities
+        # If we have relation filtering but no other search criteria, use Django ORM with sorting
         if relation_entity_ids is not None and not query and len(filters) == 0:
-            entities = Entity.objects.filter(id__in=relation_entity_ids, user=self.request.user)
+            queryset = Entity.objects.filter(id__in=relation_entity_ids, user=self.request.user)
+            queryset = self._apply_sorting(queryset, sort_by)
+            
+            # Apply pagination
+            total_count = queryset.count()
+            start = (page - 1) * page_size
+            end = start + page_size
+            entities = queryset[start:end]
+            
             serialized = EntitySerializer(entities, many=True)
-            return Response(serialized.data)
+            return Response({
+                'results': serialized.data,
+                'count': total_count,
+                'page': page,
+                'page_size': page_size,
+                'total_pages': (total_count + page_size - 1) // page_size
+            })
         
         # Import global instance
         from .sync import meili_sync
@@ -1548,9 +2185,23 @@ class SearchViewSet(viewsets.ViewSet):
         # If no query but we have filters, use empty query (MeiliSearch will return all matching filters)
         # MeiliSearch requires at least empty string for query
         search_query = query if query else ''
+
+        # Match the previously working hybrid semantic search payload.
+        hybrid_params = {
+            'semanticRatio': 0.25,
+            'embedder': 'default',
+        }
         
         # Perform Meilisearch query with user filter and optional attribute restriction
-        results = meili_sync.search(search_query, filter_str=filter_str, attributes_to_search_on=search_attributes)
+        results = meili_sync.search(
+            search_query,
+            filter_str=filter_str,
+            attributes_to_search_on=search_attributes,
+            hybrid=hybrid_params,
+            ranking_score_threshold=0.82,
+            show_ranking_score=True,
+            limit=10000,
+        )
         
         # If we have relation filtering, intersect the results with relation entity IDs
         if relation_entity_ids is not None:
@@ -1558,7 +2209,49 @@ class SearchViewSet(viewsets.ViewSet):
             relation_id_set = set(relation_entity_ids)
             results = [r for r in results if r.get('id') in relation_id_set]
         
-        return Response(results)
+        # Preserve Meili relevance order for text queries unless caller explicitly requests a sort.
+        if not (query and sort_by == 'updated_at'):
+            results = self._sort_results(results, sort_by)
+        
+        # Apply pagination
+        total_count = len(results)
+        start = (page - 1) * page_size
+        end = start + page_size
+        paginated_results = results[start:end]
+        
+        return Response({
+            'results': paginated_results,
+            'count': total_count,
+            'page': page,
+            'page_size': page_size,
+            'total_pages': (total_count + page_size - 1) // page_size
+        })
+    
+    def _apply_sorting(self, queryset, sort_by):
+        """Apply sorting to Django ORM queryset"""
+        if sort_by == 'display':
+            return queryset.order_by('display')
+        elif sort_by == 'display_desc':
+            return queryset.order_by('-display')
+        elif sort_by == 'type':
+            return queryset.order_by('type', '-updated_at')
+        elif sort_by == 'created_at':
+            return queryset.order_by('-created_at')
+        else:  # default to updated_at
+            return queryset.order_by('-updated_at')
+    
+    def _sort_results(self, results, sort_by):
+        """Apply sorting to list of result dictionaries"""
+        if sort_by == 'display':
+            return sorted(results, key=lambda x: (x.get('display') or x.get('label') or '').lower())
+        elif sort_by == 'display_desc':
+            return sorted(results, key=lambda x: (x.get('display') or x.get('label') or '').lower(), reverse=True)
+        elif sort_by == 'type':
+            return sorted(results, key=lambda x: x.get('type', ''))
+        elif sort_by == 'created_at':
+            return sorted(results, key=lambda x: x.get('created_at', ''), reverse=True)
+        else:  # default to updated_at
+            return sorted(results, key=lambda x: x.get('updated_at', ''), reverse=True)
 
 
 # ConversationViewSet and ConversationTurnViewSet removed - conversations are now Note entities

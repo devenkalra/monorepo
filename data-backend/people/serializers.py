@@ -101,116 +101,194 @@ class CustomRegisterSerializer(serializers.Serializer):
         pass
 
 
-class EntitySerializer(serializers.ModelSerializer):
+class BaseEntitySerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(required=False)
+    referenced_files = serializers.JSONField(write_only=True, required=False, default=list)
+    active_scoped_files = serializers.JSONField(write_only=True, required=False, default=list)
+
+    class Meta:
+        model = Entity
+        fields = '__all__'
+
+    def create(self, validated_data):
+        referenced_files = validated_data.pop('referenced_files', [])
+        active_scoped_files = validated_data.pop('active_scoped_files', [])
+        instance = super().create(validated_data)
+        self._sync_files(instance, referenced_files, active_scoped_files)
+        return instance
+
+    def update(self, instance, validated_data):
+        referenced_files = validated_data.pop('referenced_files', [])
+        active_scoped_files = validated_data.pop('active_scoped_files', [])
+        instance = super().update(instance, validated_data)
+        self._sync_files(instance, referenced_files, active_scoped_files)
+        return instance
+
+    def _sync_files(self, instance, referenced_files, active_scoped_files):
+        from .models import FileReference
+        current_paths = {item['path']: item.get('is_encrypted', False) for item in referenced_files if 'path' in item}
+        
+        existing_refs = FileReference.objects.filter(entity=instance)
+        existing_paths = {ref.file_path: ref for ref in existing_refs}
+        
+        # Delete unused references
+        for path, ref in existing_paths.items():
+            if path not in current_paths:
+                ref.delete()
+                
+        # Create new references
+        for path, is_enc in current_paths.items():
+            if path not in existing_paths:
+                FileReference.objects.create(
+                    entity=instance,
+                    file_path=path,
+                    is_encrypted=is_enc
+                )
+                
+        # Clean up unused entity-scoped files
+        from django.conf import settings
+        import os
+        entity_dir = os.path.join(settings.MEDIA_ROOT, str(instance.id))
+        if os.path.exists(entity_dir) and os.path.isdir(entity_dir):
+            try:
+                for entry in os.listdir(entity_dir):
+                    entry_path = os.path.join(entity_dir, entry)
+                    if os.path.isfile(entry_path):
+                        if entry not in active_scoped_files:
+                            os.remove(entry_path)
+                # If directory is empty, remove it
+                if not os.listdir(entity_dir):
+                    os.rmdir(entity_dir)
+            except Exception as e:
+                print(f"Error cleaning up scoped files for entity {instance.id}: {e}")
+
+class EntitySerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Entity
         fields = '__all__'
         read_only_fields = ['user', 'created_at', 'updated_at']
 
-class PersonSerializer(serializers.ModelSerializer):
+class PersonSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Person
         fields = [
             'id', 'type', 'display', 'description', 
             'tags', 'urls', 'photos', 'attachments', 'locations',
+            'is_encrypted', 'encrypted_data',
             'created_at', 'updated_at', 'user',
-            'first_name', 'last_name', 'dob', 'gender', 'emails', 'phones', 'profession'
+            'first_name', 'last_name', 'dob', 'gender', 'emails', 'phones', 'profession',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
 
-class NoteSerializer(serializers.ModelSerializer):
+class NoteSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Note
         fields = [
             'id', 'type', 'display', 'description', 
             'tags', 'urls', 'photos', 'attachments', 'locations',
+            'is_encrypted', 'encrypted_data',
             'created_at', 'updated_at', 'user',
-            'date'
+            'date',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
 
-class LocationSerializer(serializers.ModelSerializer):
+class LocationSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Location
         fields = [
             'id', 'type', 'display', 'description',
             'tags', 'urls', 'photos', 'attachments', 'locations',
+            'is_encrypted', 'encrypted_data',
             'created_at', 'updated_at', 'user',
-            'address1', 'address2', 'postal_code', 'city', 'state', 'country'
+            'address1', 'address2', 'postal_code', 'city', 'state', 'country',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
 
-class MovieSerializer(serializers.ModelSerializer):
+class MovieSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Movie
         fields = [
             'id', 'type', 'display', 'description',
             'tags', 'urls', 'photos', 'attachments', 'locations',
+            'is_encrypted', 'encrypted_data',
             'created_at', 'updated_at', 'user',
-            'year', 'language', 'country'
+            'year', 'language', 'country',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
 
-class BookSerializer(serializers.ModelSerializer):
+class BookSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Book
         fields = [
             'id', 'type', 'display', 'description',
             'tags', 'urls', 'photos', 'attachments', 'locations',
+            'is_encrypted', 'encrypted_data',
             'created_at', 'updated_at', 'user',
-            'year', 'language', 'country', 'summary'
+            'year', 'language', 'country', 'summary',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
 
-class ContainerSerializer(serializers.ModelSerializer):
+class ContainerSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Container
         fields = [
             'id', 'type', 'display', 'description',
             'tags', 'urls', 'photos', 'attachments', 'locations',
-            'created_at', 'updated_at', 'user'
+            'is_encrypted', 'encrypted_data',
+            'created_at', 'updated_at', 'user',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
 
-class AssetSerializer(serializers.ModelSerializer):
+class AssetSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Asset
         fields = [
             'id', 'type', 'display', 'description',
             'tags', 'urls', 'photos', 'attachments', 'locations',
+            'is_encrypted', 'encrypted_data',
             'created_at', 'updated_at', 'user',
-            'value', 'acquired_on'
+            'value', 'acquired_on',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
 
-class OrgSerializer(serializers.ModelSerializer):
+class OrgSerializer(BaseEntitySerializer):
     user = serializers.PrimaryKeyRelatedField(read_only=True)
     
-    class Meta:
+    class Meta(BaseEntitySerializer.Meta):
         model = Org
         fields = [
             'id', 'type', 'display', 'description',
             'tags', 'urls', 'photos', 'attachments', 'locations',
+            'is_encrypted', 'encrypted_data',
             'created_at', 'updated_at', 'user',
-            'name', 'kind'
+            'name', 'kind',
+            'referenced_files', 'active_scoped_files'
         ]
         read_only_fields = ['type', 'created_at', 'updated_at', 'user']
+
 
 class PersonWithRelationsSerializer(PersonSerializer):
     relations = serializers.SerializerMethodField()

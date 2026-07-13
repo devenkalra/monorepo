@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 // Placeholder tag tree – in real app fetch from API
 const TAG_TREE = [
@@ -14,14 +14,31 @@ const TAG_TREE = [
 // Placeholder entity types
 const ENTITY_TYPES = ['Person', 'Note', 'Organization', 'Location', 'Event'];
 
-// Placeholder relation types
-const RELATION_TYPES = [
-    'IS_CHILD_OF',
-    'IS_PARENT_OF',
-    'IS_SPOUSE_OF',
-    'WORKS_AT',
-    'STUDIED_AT',
-    'LOCATED_IN',
+const RELATION_SCHEMA = [
+    { key: 'IS_CHILD_OF', reverseKey: 'IS_PARENT_OF', fromEntity: 'Person', toEntity: 'Person' },
+    { key: 'IS_FRIEND_OF', reverseKey: 'IS_FRIEND_OF', fromEntity: 'Person', toEntity: 'Person' },
+    { key: 'IS_COLLEAGUE_OF', reverseKey: 'IS_COLLEAGUE_OF', fromEntity: 'Person', toEntity: 'Person' },
+    { key: 'IS_SPOUSE_OF', reverseKey: 'IS_SPOUSE_OF', fromEntity: 'Person', toEntity: 'Person' },
+    { key: 'IS_MANAGER_OF', reverseKey: 'WORKS_FOR_MGR', fromEntity: 'Person', toEntity: 'Person' },
+    { key: 'IS_STUDENT_OF', reverseKey: 'IS_TEACHER_OF', fromEntity: 'Person', toEntity: 'Person' },
+    { key: 'HAS_STUDENT', reverseKey: 'IS_STUDENT_OF', fromEntity: 'Person', toEntity: 'Person' },
+    { key: 'IS_STUDENT_OF', reverseKey: 'HAS_STUDENT', fromEntity: 'Person', toEntity: 'Org' },
+    { key: 'IS_RELATED_TO', reverseKey: 'IS_RELATED_TO', fromEntity: '*', toEntity: '*' },
+    { key: 'LIVES_AT', reverseKey: 'HAS_RESIDENT', fromEntity: 'Person', toEntity: 'Location' },
+    { key: 'IS_LOCATED_IN', reverseKey: 'CONTAINS', fromEntity: 'Location', toEntity: 'Location' },
+    { key: 'HAS_ACTOR', reverseKey: 'ACTED_IN', fromEntity: 'Movie', toEntity: 'Person' },
+    { key: 'HAS_DIRECTOR', reverseKey: 'DIRECTED', fromEntity: 'Movie', toEntity: 'Person' },
+    { key: 'HAS_MUS_DIRECTOR', reverseKey: 'GAVE_MUSIC_TO', fromEntity: 'Movie', toEntity: 'Person' },
+    { key: 'INSPIRED', reverseKey: 'IS_BASED_ON', fromEntity: 'Book', toEntity: 'Movie' },
+    { key: 'HAS_AS_AUTHOR', reverseKey: 'IS_AUTHOR_OF', fromEntity: 'Book', toEntity: 'Person' },
+    { key: 'IS_LOCATED_IN', reverseKey: 'IS_LOCATION_OF', fromEntity: 'Book', toEntity: 'Location' },
+    { key: 'IS_CONTAINED_IN', reverseKey: 'CONTAINS', fromEntity: 'Container', toEntity: 'Container' },
+    { key: 'IS_LOCATED_IN', reverseKey: 'CONTAINS', fromEntity: 'Container', toEntity: 'Location' },
+    { key: 'IS_LOCATED_IN', reverseKey: 'CONTAINS', fromEntity: 'Asset', toEntity: 'Container' },
+    { key: 'IS_LOCATED_AT', reverseKey: 'HAS', fromEntity: 'Org', toEntity: 'Location' },
+    { key: 'HAS_EMPLOYEE', reverseKey: 'WORKS_AT', fromEntity: 'Org', toEntity: 'Person' },
+    { key: 'HAS_MEMBER', reverseKey: 'IS_MEMBER_OF', fromEntity: 'Org', toEntity: 'Person' },
+    { key: 'HAS_STUDENT', reverseKey: 'STUDIES_AT', fromEntity: 'Org', toEntity: 'Person' },
 ];
 
 function SearchBar({ query, setQuery, filters, setFilters }) {
@@ -33,6 +50,29 @@ function SearchBar({ query, setQuery, filters, setFilters }) {
     const [relationEntitySuggestions, setRelationEntitySuggestions] = useState([]);
     const [selectedRelationEntity, setSelectedRelationEntity] = useState(null);
     const [selectedRelationType, setSelectedRelationType] = useState('');
+
+    const normalizeEntityType = (entityType) => {
+        if (!entityType) return '';
+        if (entityType === 'Organization') return 'Org';
+        return entityType;
+    };
+
+    const relationTypeOptions = useMemo(() => {
+        const targetType = normalizeEntityType(selectedRelationEntity?.type);
+        if (!targetType) return [];
+
+        const relationTypes = new Set();
+        RELATION_SCHEMA.forEach((schema) => {
+            if (schema.toEntity === targetType || schema.toEntity === '*') {
+                relationTypes.add(schema.key);
+            }
+            if (schema.fromEntity === targetType || schema.fromEntity === '*') {
+                relationTypes.add(schema.reverseKey);
+            }
+        });
+
+        return Array.from(relationTypes).sort();
+    }, [selectedRelationEntity]);
 
     const handleQueryChange = (e) => {
         setQuery(e.target.value);
@@ -69,6 +109,8 @@ function SearchBar({ query, setQuery, filters, setFilters }) {
 
     const handleRelationEntitySearch = async (searchText) => {
         setRelationEntity(searchText);
+        setSelectedRelationEntity(null);
+        setSelectedRelationType('');
         if (!searchText.trim()) {
             setRelationEntitySuggestions([]);
             return;
@@ -78,7 +120,7 @@ function SearchBar({ query, setQuery, filters, setFilters }) {
         try {
             const { default: api } = await import('../services/api');
             const data = await api.search(searchText, { limit: 5 });
-            setRelationEntitySuggestions(Array.isArray(data) ? data : []);
+            setRelationEntitySuggestions(Array.isArray(data.results) ? data.results : []);
         } catch (error) {
             console.error('Failed to fetch entity suggestions', error);
             setRelationEntitySuggestions([]);
@@ -367,6 +409,7 @@ function SearchBar({ query, setQuery, filters, setFilters }) {
                                             key={entity.id}
                                             onClick={() => {
                                                 setSelectedRelationEntity(entity);
+                                                setSelectedRelationType('');
                                                 setRelationEntity(entity.display || entity.label);
                                                 setRelationEntitySuggestions([]);
                                             }}
@@ -386,10 +429,11 @@ function SearchBar({ query, setQuery, filters, setFilters }) {
                                 <select
                                     value={selectedRelationType}
                                     onChange={(e) => setSelectedRelationType(e.target.value)}
+                                    disabled={!selectedRelationEntity}
                                     className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                                 >
-                                    <option value="">Select relation...</option>
-                                    {RELATION_TYPES.map((relType) => (
+                                    <option value="">{selectedRelationEntity ? 'Select relation...' : 'Select an entity first'}</option>
+                                    {relationTypeOptions.map((relType) => (
                                         <option key={relType} value={relType}>
                                             {relType}
                                         </option>

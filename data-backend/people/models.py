@@ -43,6 +43,10 @@ class Entity(models.Model):
     attachments = models.JSONField(default=list, blank=True, null=True)
     locations = models.JSONField(default=list, blank=True, null=True)
 
+    # Encryption support
+    is_encrypted = models.BooleanField(default=False)
+    encrypted_data = models.TextField(blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -353,3 +357,21 @@ class Tag(models.Model):
 
     def __str__(self):
         return self.name
+
+class FileReference(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name='file_references')
+    file_path = models.CharField(max_length=500)
+    is_encrypted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['file_path']),
+            models.Index(fields=['entity', 'file_path']),
+        ]
+        unique_together = ('entity', 'file_path')
+
+    def __str__(self):
+        return f"{self.entity.id} -> {self.file_path}"
+

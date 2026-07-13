@@ -57,11 +57,12 @@ TEST_FILES=(
     "tests/test_locate_in_db.py"
     "tests/test_show_exif.py"
     "tests/test_media_utils.py"
+    "tests/test_search_media.py"
     "tests/test_location_utils.py"
 )
 
 # Set PYTHONPATH to include current directory
-export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
+export PYTHONPATH="$PROJECT_ROOT:$PROJECT_ROOT/media_process:$PYTHONPATH"
 
 # Run tests
 FAILED_TESTS=()

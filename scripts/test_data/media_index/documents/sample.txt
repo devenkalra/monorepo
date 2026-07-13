@@ -1,0 +1,8 @@
+Sample text document for media index testing.
+
+This file exercises:
+- document detection (.txt)
+- text_preview extraction in document_metadata
+- text-based thumbnail generation
+
+Line 3 is intentionally here so the thumbnail shows multiple lines of content.

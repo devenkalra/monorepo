@@ -29,6 +29,7 @@ setup(
     py_modules=[
         'apply_exif',
         'audit_utils',
+        'backup_media_db',
         'command_runner',
         'convert_non_photos',
         'download_images',
@@ -37,7 +38,10 @@ setup(
         'index_media',
         'locate_in_db',
         'location_utils',
+        'manage_volumes',
         'manage_dupes',
+        'search_media',
+        'show_thumbnails',
         'media_utils',
         'move_media',
         'remove_dupes',
@@ -65,6 +69,9 @@ setup(
     entry_points={
         'console_scripts': [
             'photo-index=index_media:main',
+            'photo-volumes=manage_volumes:main',
+            'photo-search=search_media:main',
+            'photo-show-thumbnails=show_thumbnails:main',
             'photo-apply-exif=apply_exif:main',
             'photo-move=move_media:main',
             'photo-locate=locate_in_db:main',
@@ -72,6 +79,7 @@ setup(
             'photo-find-location=find_location:main',
             'photo-manage-dupes=manage_dupes:main',
             'photo-remove-dupes=remove_dupes:main',
+            'photo-backup=backup_media_db:main',
             'photo-gui=image_process:main',
         ],
     },

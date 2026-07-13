@@ -1,0 +1,301 @@
+{
+  "server": {
+    "name": "bldrdojo-data-backend",
+    "version": "0.1.0",
+    "baseUrl": "http://localhost:8000",
+    "apiPrefix": "/api"
+  },
+  "tools": [
+    {
+      "name": "system.health",
+      "description": "Check backend health.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/health/"
+      }
+    },
+    {
+      "name": "system.health_detailed",
+      "description": "Check backend dependency health.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/health/detailed/"
+      }
+    },
+    {
+      "name": "auth.login",
+      "description": "Log in and store JWT tokens in MCP session context.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["email", "password"],
+        "properties": {
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "POST",
+        "path": "/api/auth/login/"
+      }
+    },
+    {
+      "name": "auth.current_user",
+      "description": "Fetch current authenticated user.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/auth/user/"
+      }
+    },
+    {
+      "name": "auth.refresh",
+      "description": "Refresh access token with refresh token.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["refresh"],
+        "properties": {
+          "refresh": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "POST",
+        "path": "/api/auth/token/refresh/"
+      }
+    },
+    {
+      "name": "entities.list",
+      "description": "List entities with optional search/filter arguments.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "search": { "type": "string" },
+          "type": { "type": "string" },
+          "display": { "type": "string" },
+          "ordering": { "type": "string" },
+          "page": { "type": "integer", "minimum": 1 },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 100 }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/entities/"
+      }
+    },
+    {
+      "name": "entities.get",
+      "description": "Get one entity by UUID.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/entities/{id}/"
+      }
+    },
+    {
+      "name": "entities.create",
+      "description": "Create an entity.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["payload"],
+        "properties": {
+          "payload": { "type": "object" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "POST",
+        "path": "/api/entities/"
+      }
+    },
+    {
+      "name": "entities.update",
+      "description": "Patch an existing entity by UUID.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id", "payload"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "payload": { "type": "object" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "PATCH",
+        "path": "/api/entities/{id}/"
+      }
+    },
+    {
+      "name": "entities.delete",
+      "description": "Delete an entity by UUID.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "DELETE",
+        "path": "/api/entities/{id}/"
+      }
+    },
+    {
+      "name": "entities.relations",
+      "description": "Get incoming and outgoing relations for an entity.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/entities/{id}/relations/"
+      }
+    },
+    {
+      "name": "search.query",
+      "description": "Execute search endpoint with pagination and filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string" },
+          "type": { "type": "string" },
+          "tags": { "type": "string" },
+          "display": { "type": "string" },
+          "sort_by": { "type": "string" },
+          "relation_entity": { "type": "string", "format": "uuid" },
+          "relation_type": { "type": "string" },
+          "page": { "type": "integer", "minimum": 1 },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 100 }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/search/"
+      }
+    },
+    {
+      "name": "search.count",
+      "description": "Get count for search filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "q": { "type": "string" },
+          "type": { "type": "string" },
+          "tags": { "type": "string" },
+          "display": { "type": "string" },
+          "relation_entity": { "type": "string", "format": "uuid" },
+          "relation_type": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/search/count/"
+      }
+    },
+    {
+      "name": "tasks.progress",
+      "description": "Fetch async task progress by task ID.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["task_id"],
+        "properties": {
+          "task_id": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/entities/tasks/{task_id}/progress/"
+      }
+    },
+    {
+      "name": "cad.render",
+      "description": "Render CAD model with optional parameters.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "integer" },
+          "parameters": { "type": "object", "default": {} },
+          "debug": { "type": "boolean", "default": false }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "POST",
+        "path": "/api/cad/models/{id}/render/"
+      }
+    },
+    {
+      "name": "cad.geometry",
+      "description": "Retrieve rendered CAD geometry.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "integer" }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/cad/models/{id}/geometry/"
+      }
+    },
+    {
+      "name": "mail.emails.list",
+      "description": "List archived emails with filters.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "account": { "type": "integer" },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "subject": { "type": "string" },
+          "q": { "type": "string" },
+          "has_attachments": { "type": "boolean" },
+          "date_from": { "type": "string" },
+          "date_to": { "type": "string" },
+          "sort_by": { "type": "string" },
+          "page": { "type": "integer", "minimum": 1 },
+          "page_size": { "type": "integer", "minimum": 1, "maximum": 100 }
+        },
+        "additionalProperties": false
+      },
+      "backend": {
+        "method": "GET",
+        "path": "/api/mail/emails/"
+      }
+    }
+  ]
+}

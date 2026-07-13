@@ -1,0 +1,21 @@
+From: sender@example.com
+To: recipient@example.com
+Cc: cc@example.com
+Subject: Media Index Test Email
+Date: Thu, 01 Jan 2026 12:00:00 +0000
+Message-ID: <media-index-test@example.com>
+Content-Type: multipart/mixed; boundary="boundary42"
+
+--boundary42
+Content-Type: text/plain; charset="utf-8"
+
+This is the plain-text body of a test email used for indexing.
+
+Email body content is not stored in the database; only headers are indexed.
+
+--boundary42
+Content-Type: application/octet-stream; name="notes.txt"
+Content-Disposition: attachment; filename="notes.txt"
+
+Attachment content placeholder
+--boundary42--

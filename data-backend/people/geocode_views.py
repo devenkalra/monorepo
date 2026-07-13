@@ -8,6 +8,14 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
+import socket
+
+# Force IPv4 DNS resolution for requests inside the Docker container to avoid IPv6 routing errors
+_orig_getaddrinfo = socket.getaddrinfo
+def _getaddrinfo_ipv4(*args, **kwargs):
+    responses = _orig_getaddrinfo(*args, **kwargs)
+    return [r for r in responses if r[0] == socket.AF_INET]
+socket.getaddrinfo = _getaddrinfo_ipv4
 
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org"
 OPEN_ELEVATION_BASE = "https://api.open-elevation.com/api/v1"

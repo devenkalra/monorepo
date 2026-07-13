@@ -25,7 +25,7 @@ function App() {
   const [selectedEntity, setSelectedEntity] = useState(null);
   const [showDetail, setShowDetail] = useState(false);
   const [initialViewMode, setInitialViewMode] = useState('details');
-  const [sortBy, setSortBy] = useState('updated_at'); // default sort by last modified
+  const [sortBy, setSortBy] = useState('updated_at');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -35,6 +35,10 @@ function App() {
   const [isAllSelected, setIsAllSelected] = useState(false);
   const [totalEntityCount, setTotalEntityCount] = useState(0);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(20);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
   // Handle URL changes (back/forward navigation)
   useEffect(() => {
@@ -309,7 +313,8 @@ function App() {
     const params = new URLSearchParams();
     let url = '/api/entities/recent/';
     if (!hasSearch) {
-      params.append('limit', '20');
+      params.append('page', currentPage.toString());
+      params.append('page_size', pageSize.toString());
     } else {
       url = '/api/search/';
       if (query) params.append('q', query);
@@ -320,7 +325,12 @@ function App() {
         params.append('relation_entity', filters.relation.entityId);
         params.append('relation_type', filters.relation.relationType);
       }
+      params.append('page', currentPage.toString());
+      params.append('page_size', pageSize.toString());
     }
+    
+    // Always add sort_by parameter
+    params.append('sort_by', sortBy);
 
     try {
       const resp = await api.fetch(`${url}?${params.toString()}`);
@@ -328,14 +338,22 @@ function App() {
       // Handle both paginated response {results: [...]} and array response [...]
       if (Array.isArray(data)) {
         setEntities(data);
+        setTotalCount(data.length);
+        setTotalPages(1);
       } else if (data && Array.isArray(data.results)) {
         setEntities(data.results);
+        setTotalCount(data.count || 0);
+        setTotalPages(data.total_pages || 0);
       } else {
         setEntities([]);
+        setTotalCount(0);
+        setTotalPages(0);
       }
     } catch (error) {
       console.error('Failed to fetch entities', error);
       setEntities([]);
+      setTotalCount(0);
+      setTotalPages(0);
     }
   };
 
@@ -349,42 +367,14 @@ function App() {
   }, [query]);
 
   useEffect(() => {
+    setCurrentPage(1); // Reset to page 1 when filters, query, or sort change
+  }, [query, filters, sortBy]);
+  
+  useEffect(() => {
     fetchEntities();
-  }, [query, filters]);
+  }, [currentPage, query, filters, sortBy]);
 
-  // Sort entities based on selected sort option
-  const sortedEntities = useMemo(() => {
-    const sorted = [...entities];
-    
-    switch (sortBy) {
-      case 'display':
-        sorted.sort((a, b) => {
-          const aName = (a.display || a.label || '').toLowerCase();
-          const bName = (b.display || b.label || '').toLowerCase();
-          return aName.localeCompare(bName);
-        });
-        break;
-      case 'display_desc':
-        sorted.sort((a, b) => {
-          const aName = (a.display || a.label || '').toLowerCase();
-          const bName = (b.display || b.label || '').toLowerCase();
-          return bName.localeCompare(aName);
-        });
-        break;
-      case 'type':
-        sorted.sort((a, b) => a.type.localeCompare(b.type));
-        break;
-      case 'created_at':
-        sorted.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        break;
-      case 'updated_at':
-      default:
-        sorted.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
-        break;
-    }
-    
-    return sorted;
-  }, [entities, sortBy]);
+  // Entities are now sorted by backend, no need for client-side sorting
 
   const mobileHeader = useMemo(
     () => (
@@ -407,6 +397,14 @@ function App() {
             >
               CAD
             </Link>
+            <span className="text-gray-400">|</span>
+            <a
+              href={window.location.hostname === 'localhost' && window.location.port === '5173' ? 'http://localhost:5176' : '/email-app/'}
+              className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+              target={window.location.hostname === 'localhost' && window.location.port === '5173' ? '_blank' : '_self'}
+            >
+              Email
+            </a>
             <span className="text-gray-400">|</span>
             <a
               href="/food-app/"
@@ -444,7 +442,8 @@ function App() {
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              {sortedEntities.length} {sortedEntities.length === 1 ? 'entity' : 'entities'}
+              {totalCount > 0 ? `${totalCount} ${totalCount === 1 ? 'entity' : 'entities'}` : `${entities.length} ${entities.length === 1 ? 'entity' : 'entities'}`}
+              {totalPages > 1 && ` (Page ${currentPage} of ${totalPages})`}
             </p>
             
             {!selectionMode ? (
@@ -568,7 +567,7 @@ function App() {
         </div>
         
         <EntityList 
-          entities={sortedEntities} 
+          entities={entities} 
           onEntityClick={handleEntityClick}
           selectionMode={selectionMode}
           selectedEntityIds={selectedEntityIds}
@@ -586,6 +585,47 @@ function App() {
             }
           }}
         />
+        
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-center gap-2">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700"
+              title="First page"
+            >
+              ««
+            </button>
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700"
+              title="Previous page"
+            >
+              ‹ Prev
+            </button>
+            <span className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700"
+              title="Next page"
+            >
+              Next ›
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700"
+              title="Last page"
+            >
+              »»
+            </button>
+          </div>
+        )}
       </div>
       
       {/* Floating Action Buttons */}

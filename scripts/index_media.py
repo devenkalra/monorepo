@@ -1,36 +1,42 @@
 #!/usr/bin/env python3
-"""index_media.py - Index media files (images and videos) into a SQLite database.
+"""index_media.py - Index files into a SQLite database by logical volume.
 
-This script recursively scans a directory, extracts metadata from image and video files,
-generates thumbnails, and stores everything in a SQLite database.
+Recursively scans a registered volume mount, extracts metadata by file type,
+generates thumbnails, and stores portable relative paths in the database.
 
-Features:
-- Recursive directory scanning with pattern-based skipping
-- Image metadata extraction from EXIF data
-- Video metadata extraction using ffprobe
-- Thumbnail generation for both images and videos
-- File hashing for duplicate detection
-- Normalized metadata fields for easy querying
+Supported types: images, videos, audio, documents (PDF/txt/Office), and .eml email.
 """
 
 import argparse
+import email
+import io
 import json
 import os
 import re
 import sqlite3
 import subprocess
 import sys
+import textwrap
 from datetime import datetime
+from email import policy
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-# Import shared utilities
 from media_utils import (
-    create_database_schema,
+    METADATA_TABLES,
     calculate_file_hash,
+    catalog_mime_type,
+    classify_file_type,
+    create_database_schema,
+    get_indexable_file_type,
     get_mime_type,
-    is_image_file,
-    is_video_file
+    get_volume,
+    has_rich_metadata,
+    insert_thumbnail,
+    normalize_volume_name,
+    prepare_image_for_thumbnail,
+    thumbnail_jpeg_dimensions,
+    to_storage_relpath,
 )
 
 # Try to import PIL for image processing
@@ -259,26 +265,288 @@ def get_video_metadata(filepath: str) -> Optional[Dict]:
         return None
 
 
+def get_audio_metadata(filepath: str) -> Optional[Dict]:
+    """Extract metadata from an audio file using ffprobe."""
+    try:
+        cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-show_streams", "-show_format", filepath,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        data = json.loads(result.stdout)
+
+        metadata = {}
+        audio_stream = None
+        for stream in data.get('streams', []):
+            if stream.get('codec_type') == 'audio' and audio_stream is None:
+                audio_stream = stream
+                break
+
+        if audio_stream:
+            metadata['audio_codec'] = audio_stream.get('codec_name')
+            metadata['channels'] = audio_stream.get('channels')
+            sample_rate = audio_stream.get('sample_rate')
+            if sample_rate:
+                try:
+                    metadata['sample_rate'] = int(sample_rate)
+                except ValueError:
+                    pass
+            bit_rate = audio_stream.get('bit_rate')
+            if bit_rate:
+                try:
+                    metadata['bit_rate_kbps'] = float(bit_rate) / 1000
+                except ValueError:
+                    pass
+
+        format_data = data.get('format', {})
+        duration = format_data.get('duration')
+        if duration:
+            try:
+                metadata['duration_seconds'] = float(duration)
+            except ValueError:
+                pass
+
+        tags = format_data.get('tags') or {}
+        metadata['title'] = tags.get('title') or tags.get('TITLE')
+        metadata['artist'] = tags.get('artist') or tags.get('ARTIST')
+        metadata['album'] = tags.get('album') or tags.get('ALBUM')
+
+        return metadata if metadata else None
+    except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError) as e:
+        print(f"Error extracting audio metadata from {filepath}: {e}", file=sys.stderr)
+        return None
+
+
+def get_document_metadata(filepath: str, extension: str) -> Optional[Dict]:
+    """Extract metadata from PDF, text, and Office documents."""
+    metadata = {}
+    ext = extension.lower()
+
+    if ext == '.pdf':
+        try:
+            cmd = ["pdfinfo", filepath]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+            for line in result.stdout.splitlines():
+                if ':' not in line:
+                    continue
+                key, value = line.split(':', 1)
+                key = key.strip().lower()
+                value = value.strip()
+                if key == 'pages':
+                    try:
+                        metadata['page_count'] = int(value)
+                    except ValueError:
+                        pass
+                elif key == 'title':
+                    metadata['title'] = value
+                elif key == 'author':
+                    metadata['author'] = value
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    if ext in {'.txt', '.md'} or (get_mime_type(filepath).startswith('text/') and ext in {'.txt', '.md'}):
+        try:
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                metadata['text_preview'] = f.read(8000)
+        except OSError as e:
+            print(f"Error reading text file {filepath}: {e}", file=sys.stderr)
+
+    if ext in {'.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.rtf'}:
+        try:
+            cmd = ["exiftool", "-json", "-PageCount", "-Title", "-Author", filepath]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=30)
+            data = json.loads(result.stdout)
+            if data:
+                item = data[0]
+                page_count = item.get('PageCount')
+                if page_count is not None:
+                    try:
+                        metadata['page_count'] = int(page_count)
+                    except (TypeError, ValueError):
+                        pass
+                if item.get('Title'):
+                    metadata['title'] = str(item['Title'])
+                if item.get('Author'):
+                    metadata['author'] = str(item['Author'])
+        except (subprocess.CalledProcessError, json.JSONDecodeError, FileNotFoundError,
+                subprocess.TimeoutExpired):
+            pass
+
+    return metadata if metadata else {}
+
+
+def get_email_metadata(filepath: str) -> Optional[Dict]:
+    """Extract metadata from an .eml file (headers only, no body)."""
+    try:
+        with open(filepath, 'rb') as f:
+            msg = email.message_from_binary_file(f, policy=policy.default)
+
+        attachment_count = 0
+        if msg.is_multipart():
+            for part in msg.walk():
+                if part.get_content_disposition() == 'attachment':
+                    attachment_count += 1
+
+        recipients = msg.get('To', '') or ''
+        return {
+            'message_id': msg.get('Message-ID', ''),
+            'subject': msg.get('Subject', ''),
+            'sender': msg.get('From', ''),
+            'recipients': recipients,
+            'cc': msg.get('Cc', ''),
+            'email_date': msg.get('Date', ''),
+            'has_attachments': attachment_count > 0,
+            'attachment_count': attachment_count,
+        }
+    except Exception as e:
+        print(f"Error parsing email {filepath}: {e}", file=sys.stderr)
+        return None
+
+
 # ==================== Thumbnail Generation ====================
 
-def generate_thumbnail(filepath: str, mime_type: str, extension: str = '', 
-                       max_size: Tuple[int, int] = (200, 200)) -> Optional[bytes]:
-    """Generate a thumbnail for an image or video file."""
-    
-    # Check if it's a RAW file
+def generate_thumbnail(filepath: str, mime_type: str, extension: str = '',
+                       file_type: str = '', max_size: Tuple[int, int] = (200, 200)) -> Optional[bytes]:
+    """Generate a thumbnail for a supported file."""
+    ext = extension.lower()
+
     raw_extensions = [
-        '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2', 
+        '.raw', '.cr2', '.cr3', '.nef', '.arw', '.dng', '.orf', '.rw2',
         '.pef', '.srw', '.raf', '.3fr', '.fff', '.iiq', '.rwl', '.nrw',
-        '.mrw', '.erf', '.kdc', '.dcr', '.mos', '.ptx', '.r3d'
+        '.mrw', '.erf', '.kdc', '.dcr', '.mos', '.ptx', '.r3d',
     ]
-    
-    if extension.lower() in raw_extensions:
+
+    if ext in raw_extensions:
         return _generate_raw_thumbnail(filepath, max_size)
-    elif mime_type.startswith('image/'):
+    if file_type == 'image' or mime_type.startswith('image/'):
         return _generate_image_thumbnail(filepath, max_size)
-    elif mime_type.startswith('video/'):
+    if file_type == 'video' or mime_type.startswith('video/'):
         return _generate_video_thumbnail(filepath, max_size)
-    
+    if file_type == 'document':
+        return _generate_document_thumbnail(filepath, ext, max_size)
+    if file_type == 'email':
+        meta = get_email_metadata(filepath) or {}
+        label = meta.get('subject') or os.path.basename(filepath)
+        sender = meta.get('sender') or ''
+        return _generate_text_thumbnail(f"{label}\n\n{sender}", max_size)
+    if file_type == 'audio':
+        return _generate_text_thumbnail(os.path.basename(filepath), max_size)
+
+    return None
+
+
+def _generate_text_thumbnail(text: str, max_size: Tuple[int, int]) -> Optional[bytes]:
+    """Render text into a JPEG thumbnail."""
+    if not PIL_AVAILABLE:
+        return None
+
+    try:
+        from PIL import ImageDraw, ImageFont
+
+        img = Image.new('RGB', max_size, color=(248, 248, 248))
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.load_default()
+        except Exception:
+            font = None
+
+        wrapped = textwrap.fill(text or 'Document', width=28)
+        draw.multiline_text((10, 10), wrapped[:500], fill=(20, 20, 20), font=font, spacing=4)
+
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=85)
+        return buffer.getvalue()
+    except Exception as e:
+        print(f"Error generating text thumbnail: {e}", file=sys.stderr)
+        return None
+
+
+def _generate_document_thumbnail(filepath: str, extension: str,
+                                 max_size: Tuple[int, int]) -> Optional[bytes]:
+    """Generate a first-page thumbnail for documents."""
+    ext = extension.lower()
+
+    if ext == '.pdf':
+        thumbnail = _generate_pdf_thumbnail(filepath, max_size)
+        if thumbnail:
+            return thumbnail
+
+    if ext in {'.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp', '.rtf'}:
+        thumbnail = _generate_office_thumbnail(filepath, max_size)
+        if thumbnail:
+            return thumbnail
+
+    if ext in {'.txt', '.md'}:
+        try:
+            with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                return _generate_text_thumbnail(f.read(1500), max_size)
+        except OSError:
+            pass
+
+    return _generate_text_thumbnail(os.path.basename(filepath), max_size)
+
+
+def _generate_pdf_thumbnail(filepath: str, max_size: Tuple[int, int]) -> Optional[bytes]:
+    """Extract the first page of a PDF as a thumbnail."""
+    if not PIL_AVAILABLE:
+        return None
+
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        for tool, cmd in [
+            ('pdftoppm', ['pdftoppm', '-f', '1', '-l', '1', '-png', '-singlefile', filepath, tmp_path[:-4]]),
+            ('mutool', ['mutool', 'draw', '-o', tmp_path, filepath, '1']),
+        ]:
+            try:
+                result = subprocess.run(cmd, capture_output=True, timeout=30)
+                output_path = tmp_path if tool == 'mutool' else tmp_path[:-4] + '.png'
+                if result.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+                    with Image.open(output_path) as img:
+                        if img.mode not in ('RGB', 'RGBA'):
+                            img = img.convert('RGB')
+                        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                        buffer = io.BytesIO()
+                        img.save(buffer, format='JPEG', quality=85)
+                        return buffer.getvalue()
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+    finally:
+        for path in (tmp_path, tmp_path[:-4] + '.png'):
+            try:
+                if os.path.exists(path):
+                    os.remove(path)
+            except OSError:
+                pass
+
+    return None
+
+
+def _generate_office_thumbnail(filepath: str, max_size: Tuple[int, int]) -> Optional[bytes]:
+    """Convert an Office document to PDF and render the first page."""
+    import tempfile
+    import shutil
+
+    if not shutil.which('soffice'):
+        return None
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            subprocess.run(
+                ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', tmpdir, filepath],
+                capture_output=True, check=True, timeout=120,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
+            return None
+
+        pdf_name = os.path.splitext(os.path.basename(filepath))[0] + '.pdf'
+        pdf_path = os.path.join(tmpdir, pdf_name)
+        if os.path.exists(pdf_path):
+            return _generate_pdf_thumbnail(pdf_path, max_size)
+
     return None
 
 
@@ -299,20 +567,12 @@ def _generate_raw_thumbnail(filepath: str, max_size: Tuple[int, int]) -> Optiona
                 result = subprocess.run(cmd, capture_output=True, check=True, timeout=30)
                 
                 if result.stdout and len(result.stdout) > 100:  # Valid image data
-                    # Load the extracted image
-                    img = Image.open(io.BytesIO(result.stdout))
-                    
-                    # Convert to RGB if necessary
-                    if img.mode not in ('RGB', 'RGBA'):
-                        img = img.convert('RGB')
-                    
-                    # Generate thumbnail
-                    img.thumbnail(max_size, Image.Resampling.LANCZOS)
-                    
-                    # Save to bytes
-                    buffer = io.BytesIO()
-                    img.save(buffer, format='JPEG', quality=85)
-                    return buffer.getvalue()
+                    with Image.open(io.BytesIO(result.stdout)) as img:
+                        img = prepare_image_for_thumbnail(img)
+                        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                        buffer = io.BytesIO()
+                        img.save(buffer, format='JPEG', quality=85)
+                        return buffer.getvalue()
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 continue  # Try next tag
         
@@ -331,15 +591,8 @@ def _generate_image_thumbnail(filepath: str, max_size: Tuple[int, int]) -> Optio
     
     try:
         with Image.open(filepath) as img:
-            # Convert to RGB if necessary
-            if img.mode not in ('RGB', 'RGBA'):
-                img = img.convert('RGB')
-            
-            # Generate thumbnail
+            img = prepare_image_for_thumbnail(img)
             img.thumbnail(max_size, Image.Resampling.LANCZOS)
-            
-            # Save to bytes
-            import io
             buffer = io.BytesIO()
             img.save(buffer, format='JPEG', quality=85)
             return buffer.getvalue()
@@ -525,111 +778,118 @@ def calculate_depth(base_path: str, current_path: str) -> int:
         return 0
 
 
-def record_skipped_file(filepath: str, skip_reason: str, volume: str, 
-                        run_timestamp: str, conn: sqlite3.Connection):
+def record_skipped_file(filepath: str, skip_reason: str, volume: str,
+                        mount_path: str, run_timestamp: str, conn: sqlite3.Connection):
     """Record a skipped file in the database."""
     try:
         cursor = conn.cursor()
-        
-        # Get file size if file exists
+
         file_size = None
         if os.path.exists(filepath):
             try:
                 file_size = os.path.getsize(filepath)
             except Exception:
                 pass
-        
+
+        relpath = to_storage_relpath(filepath, mount_path)
         cursor.execute("""
-            INSERT INTO skipped_files (run_timestamp, fullpath, skip_reason, volume, file_size, recorded_date)
+            INSERT INTO skipped_files (run_timestamp, relpath, skip_reason, volume, file_size, recorded_date)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (
             run_timestamp,
-            os.path.abspath(filepath),
+            relpath,
             skip_reason,
-            volume,
+            normalize_volume_name(volume),
             file_size,
-            datetime.now().isoformat()
+            datetime.now().isoformat(),
         ))
-        # Don't commit here - let the caller handle commits
     except Exception as e:
         print(f"Warning: Could not record skipped file {filepath}: {e}", file=sys.stderr)
 
 
-def get_file_info(filepath: str, volume: str) -> Dict:
-    """Get basic file information."""
+def get_file_info(filepath: str, volume: str, mount_path: str) -> Dict:
+    """Get basic file information with portable relative path."""
     stat = os.stat(filepath)
-    
+
     info = {
-        'volume': volume,
-        'fullpath': os.path.abspath(filepath),
+        'volume': normalize_volume_name(volume),
+        'relpath': to_storage_relpath(filepath, mount_path),
         'name': os.path.basename(filepath),
         'modified_date': datetime.fromtimestamp(stat.st_mtime).isoformat(),
         'size': stat.st_size,
         'extension': os.path.splitext(filepath)[1].lower(),
     }
-    
-    # Try to get creation date (platform dependent)
+
     try:
         info['created_date'] = datetime.fromtimestamp(stat.st_ctime).isoformat()
     except Exception:
         info['created_date'] = info['modified_date']
-    
-    # Get MIME type
+
     info['mime_type'] = get_mime_type(filepath)
-    
     return info
 
 
+def _criterion_column(criterion: str) -> Optional[str]:
+    """Map CLI existence-check criteria to database columns."""
+    if criterion in ('relpath', 'fullpath'):
+        return 'relpath'
+    if criterion in ('volume', 'size', 'modified_date', 'hash'):
+        return 'file_hash' if criterion == 'hash' else criterion
+    return None
+
+
 def check_file_exists(file_info: Dict, check_criteria: List[str], conn: sqlite3.Connection) -> bool:
-    """Check if a file already exists in database based on specified criteria.
-    
-    Args:
-        file_info: Dictionary with file information
-        check_criteria: List of criteria to check ('fullpath', 'volume', 'size', 'modified_date', 'hash')
-        conn: Database connection
-    
-    Returns:
-        True if file exists, False otherwise
-    """
+    """Check if a file already exists in database based on specified criteria."""
     cursor = conn.cursor()
-    
-    # Build WHERE clause based on criteria
+
     conditions = []
     params = []
-    
+
     for criterion in check_criteria:
-        if criterion == 'fullpath':
-            conditions.append("fullpath = ?")
-            params.append(file_info.get('fullpath'))
-        elif criterion == 'volume':
-            conditions.append("volume = ?")
-            params.append(file_info.get('volume'))
-        elif criterion == 'size':
-            conditions.append("size = ?")
-            params.append(file_info.get('size'))
-        elif criterion == 'modified_date':
-            conditions.append("modified_date = ?")
-            params.append(file_info.get('modified_date'))
-        elif criterion == 'hash':
-            # Hash might not be calculated yet
-            if 'file_hash' in file_info and file_info['file_hash']:
+        column = _criterion_column(criterion)
+        if not column:
+            continue
+        if column == 'file_hash':
+            if file_info.get('file_hash'):
                 conditions.append("file_hash = ?")
                 params.append(file_info['file_hash'])
-    
+        else:
+            value = file_info.get(column)
+            if value is not None:
+                conditions.append(f"{column} = ?")
+                params.append(value)
+
     if not conditions:
-        # Default to fullpath and volume
-        conditions = ["fullpath = ?", "volume = ?"]
-        params = [file_info.get('fullpath'), file_info.get('volume')]
-    
+        conditions = ["relpath = ?", "volume = ?"]
+        params = [file_info.get('relpath'), file_info.get('volume')]
+
     where_clause = " AND ".join(conditions)
     query = f"SELECT id FROM files WHERE {where_clause}"
-    
     cursor.execute(query, params)
     return cursor.fetchone() is not None
 
 
-def process_file(filepath: str, volume: str, run_timestamp: str, 
-                check_existing: List[str], verbose: int, dry_run: bool, conn: sqlite3.Connection) -> Tuple[bool, Optional[str], bool]:
+def _delete_metadata_for_file(cursor: sqlite3.Cursor, file_id: int):
+    """Remove all type-specific metadata rows before re-indexing."""
+    for table in METADATA_TABLES:
+        cursor.execute(f"DELETE FROM {table} WHERE file_id = ?", (file_id,))
+    cursor.execute("DELETE FROM thumbnails WHERE file_id = ?", (file_id,))
+
+
+def _file_type_label(file_type: str) -> str:
+    return {
+        'image': 'Image',
+        'video': 'Video',
+        'audio': 'Audio',
+        'document': 'Document',
+        'email': 'Email',
+        'unknown': 'Unknown',
+    }.get(file_type, file_type.title())
+
+
+def process_file(filepath: str, volume: str, mount_path: str, run_timestamp: str,
+                 check_existing: List[str], verbose: int, dry_run: bool,
+                 conn: sqlite3.Connection) -> Tuple[bool, Optional[str], bool]:
     """Process a single media file and store in database.
     
     Args:
@@ -648,66 +908,57 @@ def process_file(filepath: str, volume: str, run_timestamp: str,
         - was_update: True if existing record was updated, False if new record
     """
     cursor = conn.cursor()
-    
+
     try:
-        # Get basic file info
-        file_info = get_file_info(filepath, volume)
-        
-        # Calculate hash if it's part of check criteria
+        file_info = get_file_info(filepath, volume, mount_path)
+
         if 'hash' in check_existing:
             file_info['file_hash'] = calculate_file_hash(filepath)
-        
-        # Check if file already exists based on user's specified criteria
-        existing_file_id = None
+
         if check_file_exists(file_info, check_existing, conn):
-            # File exists based on check criteria - we'll skip it
             criteria_str = '+'.join(check_existing)
-            if verbose >= 1:
+            if verbose >= 1 or dry_run:
                 print(f"Skipping (already indexed by {criteria_str}): {filepath}")
             return False, f"already_indexed (by {criteria_str})", False
-        
-        # Check if file exists by fullpath+volume (UNIQUE constraint)
-        # If it exists but didn't match check criteria, we need to update it
-        cursor.execute("SELECT id FROM files WHERE fullpath = ? AND volume = ?", 
-                      (file_info['fullpath'], file_info['volume']))
+
+        cursor.execute(
+            "SELECT id FROM files WHERE relpath = ? AND volume = ?",
+            (file_info['relpath'], file_info['volume']),
+        )
         existing = cursor.fetchone()
-        if existing:
-            existing_file_id = existing[0]
+        existing_file_id = existing[0] if existing else None
+
+        if existing_file_id:
             if dry_run or verbose >= 1:
                 action = "[DRY RUN] Would update" if dry_run else "Updating"
                 print(f"{action} existing record: {filepath}")
-        else:
-            if dry_run or verbose >= 1:
-                action = "[DRY RUN] Would process" if dry_run else "Processing"
-                print(f"{action}: {filepath}")
-        
+        elif dry_run or verbose >= 1:
+            action = "[DRY RUN] Would process" if dry_run else "Processing"
+            print(f"{action}: {filepath}")
+
         mime_type = file_info['mime_type']
         extension = file_info['extension']
-        
-        # Only process image and video files
-        if not (is_image_file(mime_type, extension) or is_video_file(mime_type)):
-            return False, f"not_media_file (mime: {mime_type}, ext: {extension})", False
-        
-        # In dry-run mode, stop here and return success
+        file_type = classify_file_type(mime_type, extension)
+        stored_mime_type = catalog_mime_type(mime_type, extension, filepath)
+        file_info['mime_type'] = stored_mime_type
+
         if dry_run:
             if verbose >= 2:
-                print(f"  Type: {'Image' if is_image_file(mime_type, extension) else 'Video'} ({mime_type})")
+                print(f"  Type: {_file_type_label(file_type)} ({stored_mime_type})")
+                print(f"  Relpath: {file_info['relpath']}")
                 print(f"  Size: {file_info['size']} bytes")
-            if verbose >= 3:
-                print(f"  [DRY RUN] Would extract and store metadata")
-            return True, None, (existing_file_id is not None)
-        
-        # Calculate hash if not already calculated
+            if verbose >= 3 and has_rich_metadata(file_type):
+                print("  [DRY RUN] Would extract and store metadata")
+            return True, None, existing_file_id is not None
+
         if 'file_hash' not in file_info:
             file_info['file_hash'] = calculate_file_hash(filepath)
         file_info['indexed_date'] = datetime.now().isoformat()
-        
-        # Insert or update file record
+
         if existing_file_id:
-            # Update existing record
             cursor.execute("""
-                UPDATE files 
-                SET name = ?, created_date = ?, modified_date = ?, 
+                UPDATE files
+                SET name = ?, created_date = ?, modified_date = ?,
                     size = ?, mime_type = ?, extension = ?, file_hash = ?, indexed_date = ?
                 WHERE id = ?
             """, (
@@ -719,23 +970,18 @@ def process_file(filepath: str, volume: str, run_timestamp: str,
                 file_info['extension'],
                 file_info['file_hash'],
                 file_info['indexed_date'],
-                existing_file_id
+                existing_file_id,
             ))
             file_id = existing_file_id
-            
-            # Delete old metadata and thumbnails (will be regenerated)
-            cursor.execute("DELETE FROM image_metadata WHERE file_id = ?", (file_id,))
-            cursor.execute("DELETE FROM video_metadata WHERE file_id = ?", (file_id,))
-            cursor.execute("DELETE FROM thumbnails WHERE file_id = ?", (file_id,))
+            _delete_metadata_for_file(cursor, file_id)
         else:
-            # Insert new record
             cursor.execute("""
-                INSERT INTO files (volume, fullpath, name, created_date, modified_date, 
-                                 size, mime_type, extension, file_hash, indexed_date)
+                INSERT INTO files (volume, relpath, name, created_date, modified_date,
+                                   size, mime_type, extension, file_hash, indexed_date)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 file_info['volume'],
-                file_info['fullpath'],
+                file_info['relpath'],
                 file_info['name'],
                 file_info['created_date'],
                 file_info['modified_date'],
@@ -743,45 +989,44 @@ def process_file(filepath: str, volume: str, run_timestamp: str,
                 file_info['mime_type'],
                 file_info['extension'],
                 file_info['file_hash'],
-                file_info['indexed_date']
+                file_info['indexed_date'],
             ))
             file_id = cursor.lastrowid
-        
-        # Process based on file type
-        if is_image_file(mime_type, extension):
-            normalized_data = process_image(filepath, file_id, conn)
-            if verbose >= 2:
-                print(f"  Type: Image ({mime_type})")
-                print(f"  Size: {file_info['size']} bytes")
-                print(f"  Hash: {file_info['file_hash'][:16]}...")
-            if verbose >= 3 and normalized_data:
-                print(f"  Image metadata:")
-                for key, value in normalized_data.items():
-                    if value is not None and value != '':
-                        print(f"    {key}: {value}")
-        elif is_video_file(mime_type):
-            video_data = process_video(filepath, file_id, conn)
-            if verbose >= 2:
-                print(f"  Type: Video ({mime_type})")
-                print(f"  Size: {file_info['size']} bytes")
-                print(f"  Hash: {file_info['file_hash'][:16]}...")
-            if verbose >= 3 and video_data:
-                print(f"  Video metadata:")
-                for key, value in video_data.items():
-                    if value is not None and value != '':
-                        print(f"    {key}: {value}")
-        
-        # Generate and store thumbnail
-        thumbnail_data = generate_thumbnail(filepath, mime_type, extension)
-        if thumbnail_data:
-            cursor.execute("""
-                INSERT INTO thumbnails (file_id, thumbnail_data, thumbnail_width, thumbnail_height)
-                VALUES (?, ?, ?, ?)
-            """, (file_id, thumbnail_data, 200, 200))
-        
+
+        metadata = None
+        if file_type == 'image':
+            metadata = process_image(filepath, file_id, conn)
+        elif file_type == 'video':
+            metadata = process_video(filepath, file_id, conn)
+        elif file_type == 'audio':
+            metadata = process_audio(filepath, file_id, conn)
+        elif file_type == 'document':
+            metadata = process_document(filepath, file_id, conn, extension)
+        elif file_type == 'email':
+            metadata = process_email(filepath, file_id, conn)
+
+        if verbose >= 2:
+            print(f"  Type: {_file_type_label(file_type)} ({stored_mime_type})")
+            print(f"  Relpath: {file_info['relpath']}")
+            print(f"  Size: {file_info['size']} bytes")
+            print(f"  Hash: {file_info['file_hash'][:16]}...")
+        if verbose >= 3 and metadata:
+            print(f"  Metadata:")
+            for key, value in metadata.items():
+                if value is not None and value != '':
+                    print(f"    {key}: {value}")
+
+        if has_rich_metadata(file_type):
+            thumbnail_data = generate_thumbnail(filepath, mime_type, extension, file_type)
+            if thumbnail_data:
+                thumb_w, thumb_h = thumbnail_jpeg_dimensions(thumbnail_data)
+                if not thumb_w:
+                    thumb_w, thumb_h = 200, 200
+                insert_thumbnail(conn, file_id, thumbnail_data, thumb_w, thumb_h)
+
         conn.commit()
-        return True, None, (existing_file_id is not None)
-        
+        return True, None, existing_file_id is not None
+
     except Exception as e:
         error_msg = f"Error processing file {filepath}: {e}"
         print(error_msg, file=sys.stderr)
@@ -880,46 +1125,107 @@ def process_video(filepath: str, file_id: int, conn: sqlite3.Connection) -> Opti
     return None
 
 
+def process_audio(filepath: str, file_id: int, conn: sqlite3.Connection) -> Optional[Dict]:
+    """Process audio file and extract metadata."""
+    cursor = conn.cursor()
+    audio_data = get_audio_metadata(filepath)
+
+    if audio_data:
+        cursor.execute("""
+            INSERT INTO audio_metadata (
+                file_id, duration_seconds, audio_codec, bit_rate_kbps,
+                sample_rate, channels, title, artist, album
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            file_id,
+            audio_data.get('duration_seconds'),
+            audio_data.get('audio_codec'),
+            audio_data.get('bit_rate_kbps'),
+            audio_data.get('sample_rate'),
+            audio_data.get('channels'),
+            audio_data.get('title'),
+            audio_data.get('artist'),
+            audio_data.get('album'),
+        ))
+        return audio_data
+
+    return None
+
+
+def process_document(filepath: str, file_id: int, conn: sqlite3.Connection,
+                     extension: str) -> Optional[Dict]:
+    """Process document file and extract metadata."""
+    cursor = conn.cursor()
+    document_data = get_document_metadata(filepath, extension)
+
+    if document_data is not None:
+        cursor.execute("""
+            INSERT INTO document_metadata (
+                file_id, page_count, title, author, text_preview
+            ) VALUES (?, ?, ?, ?, ?)
+        """, (
+            file_id,
+            document_data.get('page_count'),
+            document_data.get('title'),
+            document_data.get('author'),
+            document_data.get('text_preview'),
+        ))
+        return document_data
+
+    return None
+
+
+def process_email(filepath: str, file_id: int, conn: sqlite3.Connection) -> Optional[Dict]:
+    """Process email file and extract metadata."""
+    cursor = conn.cursor()
+    email_data = get_email_metadata(filepath)
+
+    if email_data:
+        cursor.execute("""
+            INSERT INTO email_metadata (
+                file_id, message_id, subject, sender, recipients, cc,
+                email_date, has_attachments, attachment_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            file_id,
+            email_data.get('message_id'),
+            email_data.get('subject'),
+            email_data.get('sender'),
+            email_data.get('recipients'),
+            email_data.get('cc'),
+            email_data.get('email_date'),
+            1 if email_data.get('has_attachments') else 0,
+            email_data.get('attachment_count', 0),
+        ))
+        return email_data
+
+    return None
+
+
 # ==================== Directory Scanning ====================
 
-def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: List[str],
+def scan_directory(mount_path: str, start_dir: str, volume: str, skip_patterns: List[str],
                    include_patterns: List[str], max_depth: Optional[int],
                    check_existing: List[str], verbose: int, dry_run: bool, literal_patterns: bool,
                    run_timestamp: str, conn: sqlite3.Connection, limit: Optional[int] = None) -> Tuple[int, int, int]:
-    """Recursively scan directory and process media files.
-    
-    Args:
-        base_path: Base directory path
-        start_dir: Starting subdirectory
-        volume: Volume tag for this collection
-        skip_patterns: Patterns to skip (applied after include)
-        include_patterns: Patterns to include (applied first)
-        max_depth: Maximum depth to recurse (None = unlimited, 0 = current dir only)
-        check_existing: Criteria for checking if file exists (fullpath, volume, size, modified_date, hash)
-        verbose: Verbosity level (0=quiet, 1=file+outcome, 2=more details, 3=full data)
-        dry_run: If True, only show what would be done without actually doing it
-        literal_patterns: If True, treat patterns as literal strings; if False, treat as regex
-        run_timestamp: Timestamp for this run (for tracking skipped files)
-        conn: Database connection
-    
-    Returns:
-        Tuple of (files_added, files_updated, files_skipped)
-    """
-    full_path = os.path.join(base_path, start_dir) if start_dir else base_path
-    
+    """Recursively scan a volume mount and process indexable files."""
+    full_path = os.path.join(mount_path, start_dir) if start_dir else mount_path
+    volume_name = normalize_volume_name(volume)
+
     if not os.path.exists(full_path):
         print(f"Error: Path does not exist: {full_path}", file=sys.stderr)
         return 0, 0, 0
-    
+
     files_added = 0
     files_updated = 0
     files_skipped = 0
     files_processed = 0
     commit_counter = 0
-    commit_interval = 100  # Commit every 100 files
-    
+    commit_interval = 100
+
     print(f"\nScanning directory: {full_path}")
-    print(f"Volume tag: {volume}")
+    print(f"Volume: {volume_name}")
+    print(f"Mount path: {mount_path}")
     print(f"Include patterns: {include_patterns if include_patterns else 'All files'}")
     print(f"Skip patterns: {skip_patterns if skip_patterns else 'None'}")
     print(f"Max depth: {max_depth if max_depth is not None else 'Unlimited'}")
@@ -927,56 +1233,52 @@ def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: L
     if limit:
         print(f"Limit: {limit} files")
     if dry_run:
-        print(f"Mode: DRY RUN (no changes will be made)")
+        print("Mode: DRY RUN (no changes will be made)")
     print()
-    
+
     for root, dirs, files in os.walk(full_path):
-        # Calculate current depth
         current_depth = calculate_depth(full_path, root)
-        
-        # Check if we've exceeded max depth
+
         if max_depth is not None and current_depth > max_depth:
-            dirs.clear()  # Don't recurse further
+            dirs.clear()
             continue
-        
-        # Check if current directory should be skipped
+
         if should_skip_path(root, skip_patterns, literal_patterns):
             print(f"Skipping directory (matches skip pattern): {root}")
-            dirs.clear()  # Don't recurse into subdirectories
+            dirs.clear()
             continue
-        
-        # Filter out directories to skip, and respect max_depth
+
         if max_depth is not None:
-            # Only keep directories if we haven't reached max depth
             if current_depth >= max_depth:
                 dirs.clear()
             else:
                 dirs[:] = [d for d in dirs if not should_skip_path(os.path.join(root, d), skip_patterns, literal_patterns)]
         else:
             dirs[:] = [d for d in dirs if not should_skip_path(os.path.join(root, d), skip_patterns, literal_patterns)]
-        
+
         for filename in files:
-            # Check if we've reached the limit
             if limit and files_processed >= limit:
                 print(f"\nReached limit of {limit} files. Stopping.")
                 return files_added, files_updated, files_skipped
-            
+
             filepath = os.path.join(root, filename)
-            
-            # First check if file matches include pattern
+
             if not matches_include_pattern(filepath, include_patterns, literal_patterns):
-                record_skipped_file(filepath, "not_matching_include_pattern", volume, run_timestamp, conn)
+                record_skipped_file(filepath, "not_matching_include_pattern", volume_name,
+                                    mount_path, run_timestamp, conn)
                 files_skipped += 1
                 continue
-            
-            # Then check if file should be skipped
+
             if should_skip_path(filepath, skip_patterns, literal_patterns):
-                record_skipped_file(filepath, "matches_skip_pattern", volume, run_timestamp, conn)
+                record_skipped_file(filepath, "matches_skip_pattern", volume_name,
+                                    mount_path, run_timestamp, conn)
                 files_skipped += 1
                 continue
-            
-            # Process the file
-            success, skip_reason, was_update = process_file(filepath, volume, run_timestamp, check_existing, verbose, dry_run, conn)
+
+            success, skip_reason, was_update = process_file(
+                filepath, volume_name, mount_path, run_timestamp,
+                check_existing, verbose, dry_run, conn,
+            )
             if success:
                 if was_update:
                     files_updated += 1
@@ -985,21 +1287,19 @@ def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: L
                 files_processed += 1
             else:
                 files_skipped += 1
-                if skip_reason and not dry_run:
-                    record_skipped_file(filepath, skip_reason, volume, run_timestamp, conn)
-            
-            # Periodic commit to avoid losing too much data and keep transaction size manageable
-            # Skip commits in dry-run mode
+                if skip_reason:
+                    record_skipped_file(filepath, skip_reason, volume_name,
+                                        mount_path, run_timestamp, conn)
+
             if not dry_run:
                 commit_counter += 1
                 if commit_counter >= commit_interval:
                     conn.commit()
                     commit_counter = 0
-    
-    # Final commit for any remaining data (skip in dry-run mode)
+
     if not dry_run:
         conn.commit()
-    
+
     return files_added, files_updated, files_skipped
 
 
@@ -1007,114 +1307,106 @@ def scan_directory(base_path: str, start_dir: str, volume: str, skip_patterns: L
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Index media files (images and videos) into a SQLite database.",
+        description="Index files by logical volume into a SQLite database.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Index all media in a directory
-  python3 index_media.py --path /media --start-dir photos --volume "MyPhotos" --db-path media.db
-  
-  # Only process current directory (depth 0)
-  python3 index_media.py --path /media/photos --volume "MyPhotos" --max-depth 0
-  
-  # Limit depth to 2 levels
-  python3 index_media.py --path /media --volume "MyPhotos" --max-depth 2
-  
-  # Only include JPG files
-  python3 index_media.py --path /media --volume "MyPhotos" --include-pattern ".jpg" --include-pattern ".JPG"
-  
-  # Include only images, skip thumbnails
-  python3 index_media.py --path /media --volume "MyPhotos" --include-pattern "image/" --skip-pattern "thumb"
-  
-  # Skip certain directories
-  python3 index_media.py --path /media --volume "MyPhotos" --skip-pattern ".git" --skip-pattern "node_modules"
-  
-  # Check for duplicates by hash (useful for finding moved/renamed files)
-  python3 index_media.py --path /media --volume "MyPhotos" --check-existing hash
-  
-  # Check by multiple criteria (hash AND size)
-  python3 index_media.py --path /media --volume "MyPhotos" --check-existing hash --check-existing size
+  # Register a volume first
+  python3 manage_volumes.py --db-path media.db set Photo \\
+      --src-root /volume1/photo --mount /mnt/photo
+
+  # Index all supported files in a volume
+  python3 index_media.py --volume Photo --db-path media.db
+
+  # Index one subdirectory
+  python3 index_media.py --volume Photo --start-dir 2024 --db-path media.db
+
+  # Incremental indexing
+  python3 index_media.py --volume Photo --db-path media.db \\
+      --check-existing relpath --check-existing size --check-existing modified_date
         """
     )
-    
-    parser.add_argument("--path", required=True, 
-                       help="Base path to scan")
-    parser.add_argument("--start-dir", action="append", default=[],
-                       help="Starting directory relative to path (can be repeated; default: scan from path root)")
+
     parser.add_argument("--volume", required=True,
-                       help="Volume tag to identify this collection")
+                        help="Logical volume name (case-insensitive; must be registered)")
+    parser.add_argument("--start-dir", action="append", default=[],
+                        help="Starting directory relative to volume mount (repeatable)")
     parser.add_argument("--include-pattern", action="append", default=[],
-                       help="Pattern to include in paths (regex by default, literal with --literal-patterns; can be repeated)")
+                        help="Pattern to include in paths (regex by default)")
     parser.add_argument("--skip-pattern", action="append", default=[],
-                       help="Pattern to skip in paths (regex by default, literal with --literal-patterns; can be repeated)")
+                        help="Pattern to skip in paths (regex by default)")
     parser.add_argument("--literal-patterns", action="store_true",
-                       help="Treat include/skip patterns as literal strings instead of regex (auto-escapes special chars)")
+                        help="Treat include/skip patterns as literal strings")
     parser.add_argument("--max-depth", type=int, default=None,
-                       help="Maximum directory depth to recurse (0 = current directory only, default: unlimited)")
-    parser.add_argument("--check-existing", action="append", 
-                       choices=['fullpath', 'volume', 'size', 'modified_date', 'hash'],
-                       help="Criteria for checking if file already indexed (can be repeated; default: fullpath+volume)")
+                        help="Maximum directory depth to recurse")
+    parser.add_argument("--check-existing", action="append",
+                        choices=['relpath', 'fullpath', 'volume', 'size', 'modified_date', 'hash'],
+                        help="Criteria for checking if file already indexed")
     parser.add_argument("--verbose", "-v", type=int, default=0, choices=[0, 1, 2, 3],
-                       help="Verbosity level: 0=quiet, 1=file+outcome, 2=more details, 3=full metadata (default: 0)")
+                        help="Verbosity level")
     parser.add_argument("--dry-run", action="store_true",
-                       help="Show what would be done without actually processing files or modifying the database")
+                        help="Show actions without modifying the database")
     parser.add_argument("--limit", type=int,
-                       help="Limit number of files to process (useful with --dry-run for testing)")
+                        help="Limit number of files to process")
     parser.add_argument("--db-path", default="media_index.db",
-                       help="Path to SQLite database file (default: media_index.db)")
-    
+                        help="Path to SQLite database file")
+
     args = parser.parse_args()
-    
-    # Check dependencies
+
     if not PIL_AVAILABLE:
         print("Warning: PIL/Pillow not installed. Install with: pip install Pillow", file=sys.stderr)
-    
-    # Check for exiftool
+
     try:
         subprocess.run(["exiftool", "-ver"], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         print("Error: exiftool not found. Please install it.", file=sys.stderr)
         sys.exit(1)
-    
-    # Check for ffprobe
+
     try:
         subprocess.run(["ffprobe", "-version"], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
-        print("Warning: ffprobe not found. Video processing will be limited.", file=sys.stderr)
-    
-    # Connect to database
+        print("Warning: ffprobe not found. Audio/video processing will be limited.", file=sys.stderr)
+
     print(f"Using database: {args.db_path}")
     conn = sqlite3.connect(args.db_path)
-    
-    # Create schema
     create_database_schema(conn)
-    
-    # Generate run timestamp
+
+    volume = get_volume(conn, args.volume)
+    if not volume:
+        print(
+            f"Error: volume '{args.volume}' is not registered. "
+            f"Use manage_volumes.py set to register it.",
+            file=sys.stderr,
+        )
+        conn.close()
+        sys.exit(1)
+
+    mount_path = volume['mount_path']
+    if not os.path.isdir(mount_path):
+        print(f"Error: volume mount path is not accessible: {mount_path}", file=sys.stderr)
+        conn.close()
+        sys.exit(1)
+
     start_time = datetime.now()
     run_timestamp = start_time.isoformat()
-    
-    # Set default check_existing criteria if none specified
-    check_existing = args.check_existing if args.check_existing else ['fullpath', 'volume']
-    
-    print(f"Run timestamp: {run_timestamp}\n")
-    
-    # Determine which directories to scan
+    check_existing = args.check_existing if args.check_existing else ['relpath', 'volume']
+
+    print(f"Run timestamp: {run_timestamp}")
+    print(f"Resolved volume '{volume['name']}' -> {mount_path}")
+    print(f"Source root: {volume['src_root']}\n")
+
     start_dirs = args.start_dir if args.start_dir else [""]
-    
-    # Scan directories (accumulate totals across all start_dirs)
     total_files_added = 0
     total_files_updated = 0
     total_files_skipped = 0
-    
-    remaining_limit = args.limit  # Track remaining limit across directories
+    remaining_limit = args.limit
+
     for start_dir in start_dirs:
-        # Calculate limit for this directory
         current_limit = remaining_limit if remaining_limit else None
-        
         files_added, files_updated, files_skipped = scan_directory(
-            args.path,
+            mount_path,
             start_dir,
-            args.volume,
+            volume['name'],
             args.skip_pattern,
             args.include_pattern,
             args.max_depth,
@@ -1124,53 +1416,49 @@ Examples:
             args.literal_patterns,
             run_timestamp,
             conn,
-            current_limit
+            current_limit,
         )
         total_files_added += files_added
         total_files_updated += files_updated
         total_files_skipped += files_skipped
-        
-        # Update remaining limit
+
         if remaining_limit:
             remaining_limit -= (files_added + files_updated)
             if remaining_limit <= 0:
-                print(f"\nLimit reached. Stopping further directory scans.")
+                print("\nLimit reached. Stopping further directory scans.")
                 break
-    
+
     end_time = datetime.now()
-    
-    # Get skipped files count by reason (before closing database)
+
     skip_reasons = []
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT skip_reason, COUNT(*) 
-            FROM skipped_files 
-            WHERE run_timestamp = ? 
-            GROUP BY skip_reason 
+            SELECT skip_reason, COUNT(*)
+            FROM skipped_files
+            WHERE run_timestamp = ?
+            GROUP BY skip_reason
             ORDER BY COUNT(*) DESC
         """, (run_timestamp,))
         skip_reasons = cursor.fetchall()
     except Exception as e:
         print(f"Warning: Could not retrieve skip reasons summary: {e}", file=sys.stderr)
-    
-    # Close database
+
     conn.close()
-    
-    # Print summary
+
     duration = (end_time - start_time).total_seconds()
     print(f"\n{'='*60}")
-    print(f"Indexing complete!")
+    print("Indexing complete!")
     print(f"Run timestamp: {run_timestamp}")
     print(f"Files added: {total_files_added}")
     print(f"Files updated: {total_files_updated}")
     print(f"Files skipped: {total_files_skipped}")
-    
+
     if skip_reasons:
-        print(f"\nSkip reasons breakdown:")
+        print("\nSkip reasons breakdown:")
         for reason, count in skip_reasons:
             print(f"  - {reason}: {count}")
-    
+
     print(f"\nDuration: {duration:.2f} seconds")
     print(f"Database: {args.db_path}")
     print(f"{'='*60}")

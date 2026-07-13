@@ -67,8 +67,7 @@ def save_file_deduplicated(uploaded_file):
             thumb_full_path = os.path.join(settings.MEDIA_ROOT, thumb_relative_path)
             
             if not os.path.exists(thumb_full_path):
-                uploaded_file.seek(0)
-                image = Image.open(uploaded_file)
+                image = Image.open(full_path)
                 image.thumbnail((256, 256)) # Max dimension 256px
                 image.save(thumb_full_path)
             
@@ -85,14 +84,10 @@ def save_file_deduplicated(uploaded_file):
             preview_full_path = os.path.join(settings.MEDIA_ROOT, preview_relative_path)
             
             if not os.path.exists(thumb_full_path) or not os.path.exists(preview_full_path):
-                from pdf2image import convert_from_bytes
+                from pdf2image import convert_from_path
                 
-                # We need to read the file bytes
-                uploaded_file.seek(0)
-                file_bytes = uploaded_file.read()
-                
-                # Convert first page
-                images = convert_from_bytes(file_bytes, first_page=1, last_page=1)
+                # Convert first page directly from disk path
+                images = convert_from_path(full_path, first_page=1, last_page=1)
                 if images:
                     original_image = images[0]
                     
@@ -114,3 +109,76 @@ def save_file_deduplicated(uploaded_file):
         print(f"Thumbnail generation failed: {e}") # Non-blocking error
 
     return result
+
+def save_file_scoped(uploaded_file, entity_id):
+    """
+    Saves a file to MEDIA_ROOT under an entity-scoped directory for description images:
+    media/<entity_id>/<filename>
+    
+    Returns:
+        dict: {
+            'url': media_url,
+            'path': relative_path,
+            'name': filename
+        }
+    """
+    from django.utils.text import get_valid_filename
+    
+    # 1. Clean the entity_id to prevent any directory traversal (ensure it's alphanumeric + hyphens/UUID)
+    clean_entity_id = str(entity_id).replace('/', '').replace('\\', '').strip()
+    
+    # 2. Get sanitized filename
+    filename = get_valid_filename(uploaded_file.name)
+    
+    relative_path = os.path.join(clean_entity_id, filename)
+    full_path = os.path.join(settings.MEDIA_ROOT, relative_path)
+    
+    # Ensure dir exists
+    os.makedirs(os.path.dirname(full_path), exist_ok=True)
+    
+    # 3. Write file
+    uploaded_file.seek(0)
+    with open(full_path, 'wb+') as destination:
+        for chunk in uploaded_file.chunks():
+            destination.write(chunk)
+            
+    # 4. Construct URL
+    url = f"{settings.MEDIA_URL}{clean_entity_id}/{filename}"
+    
+    result = {
+        'url': url,
+        'path': relative_path,
+        'name': filename
+    }
+    
+    return result
+
+def delete_file_and_derivatives(file_path):
+    """
+    Deletes the primary file and any thumbnail or preview files associated with it.
+    """
+    full_path = os.path.join(settings.MEDIA_ROOT, file_path)
+    if os.path.exists(full_path):
+        try:
+            os.remove(full_path)
+        except Exception as e:
+            print(f"Error deleting file {full_path}: {e}")
+            
+    # Derive thumbnail and preview paths
+    dir_name, file_name = os.path.split(file_path)
+    base_name, ext = os.path.splitext(file_name)
+    
+    derivatives = [
+        f"{base_name}_thumb{ext}",
+        f"{base_name}_thumb.jpg",
+        f"{base_name}_preview.jpg"
+    ]
+    
+    for derivative in derivatives:
+        deriv_path = os.path.join(settings.MEDIA_ROOT, dir_name, derivative)
+        if os.path.exists(deriv_path):
+            try:
+                os.remove(deriv_path)
+            except Exception as e:
+                print(f"Error deleting derivative {deriv_path}: {e}")
+

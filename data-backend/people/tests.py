@@ -293,7 +293,44 @@ class SearchTests(PatchMixin, APITestCase):
              self.assertEqual(len(response.data), 1)
              self.assertEqual(response.data[0]['label'], 'Test Result')
              
-             mock_sync.search.assert_called_with('test', filter_str=None)
+             mock_sync.search.assert_called_with(
+                 'test',
+                 filter_str=None,
+                 attributes_to_search_on=None,
+                 hybrid={
+                     'semanticRatio': 0.25,
+                     'embedder': 'default',
+                 },
+                 ranking_score_threshold=0.82,
+                 show_ranking_score=True,
+                 limit=10,
+             )
+
+    def test_search_partial_query(self):
+        with patch('people.sync.meili_sync') as mock_sync:
+             mock_sync.search.return_value = [
+                 {'id': '123', 'label': 'William Shakespeare', 'type': 'Person'}
+             ]
+
+             url = reverse('search-list') + '?q=Shak'
+             response = self.client.get(url)
+
+             self.assertEqual(response.status_code, status.HTTP_200_OK)
+             self.assertEqual(len(response.data), 1)
+             self.assertEqual(response.data[0]['label'], 'William Shakespeare')
+
+             mock_sync.search.assert_called_with(
+                 'Shak',
+                 filter_str=None,
+                 attributes_to_search_on=None,
+                 hybrid={
+                     'semanticRatio': 0.25,
+                     'embedder': 'default',
+                 },
+                 ranking_score_threshold=0.82,
+                 show_ranking_score=True,
+                 limit=10,
+             )
 
     def test_search_with_filter(self):
         with patch('people.sync.meili_sync') as mock_sync:
