@@ -82,6 +82,8 @@ SYNC_PATHS=(
     "data-backend/people"
     "data-backend/cad"
     "data-backend/food"
+    "data-backend/wa_assistant"
+    "data-backend/mail_archive"
     "data-backend/static"
     "data-backend/requirements.txt"
     "data-backend/Dockerfile"

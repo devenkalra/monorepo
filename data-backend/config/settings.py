@@ -88,9 +88,15 @@ INSTALLED_APPS = [
     'people.apps.PeopleConfig',
     'cad.apps.CadConfig',
     'food.apps.FoodConfig',
-    'wa_assistant.apps.WaAssistantConfig',
-    'mail_archive.apps.MailArchiveConfig',
 ]
+
+ENABLE_MAIL_ARCHIVE = os.environ.get('ENABLE_MAIL_ARCHIVE', 'False') == 'True'
+if ENABLE_MAIL_ARCHIVE:
+    INSTALLED_APPS.append('mail_archive.apps.MailArchiveConfig')
+
+ENABLE_WA_ASSISTANT = os.environ.get('ENABLE_WA_ASSISTANT', 'False') == 'True'
+if ENABLE_WA_ASSISTANT:
+    INSTALLED_APPS.append('wa_assistant.apps.WaAssistantConfig')
 
 SITE_ID = 1
 

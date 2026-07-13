@@ -1,4 +1,5 @@
 import json
+import uuid
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -288,6 +289,75 @@ class ImportV2APITestCase(TestCase):
         self.assertFalse(Person.objects.filter(user=self.user, display="Should Rollback").exists())
         existing.refresh_from_db()
         self.assertEqual(existing.display, "Existing")
+
+    def test_legacy_snapshot_reimport_is_idempotent(self):
+        payload = {
+            "export_version": "1.0",
+            "entities": [
+                {
+                    "id": "11111111-1111-1111-1111-111111111111",
+                    "type": "Person",
+                    "display": "Legacy Person",
+                    "first_name": "Legacy",
+                }
+            ],
+            "relations": [],
+            "tags": [],
+        }
+
+        first = self._post_import(payload)
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(Person.objects.filter(user=self.user, display="Legacy Person").count(), 1)
+
+        second = self._post_import(payload)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+
+        people = Person.objects.filter(user=self.user, display="Legacy Person")
+        self.assertEqual(people.count(), 1)
+        self.assertEqual(str(people.first().id), "11111111-1111-1111-1111-111111111111")
+
+        second_stats = second.json().get("stats", {})
+        self.assertEqual(int(second_stats.get("entities_created", 0)), 0)
+
+    def test_legacy_snapshot_reimport_idempotent_with_cross_user_id_conflict(self):
+        other_user = User.objects.create_user(
+            username="otheruser",
+            email="other@example.com",
+            password="otherpass123",
+        )
+        conflict_id = "22222222-2222-2222-2222-222222222222"
+        Person.objects.create(id=conflict_id, user=other_user, display="Other User Person")
+
+        payload = {
+            "export_version": "1.0",
+            "entities": [
+                {
+                    "id": conflict_id,
+                    "type": "Person",
+                    "display": "Imported Conflict Person",
+                    "first_name": "Imported",
+                }
+            ],
+            "relations": [],
+            "tags": [],
+        }
+
+        first = self._post_import(payload)
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(Person.objects.filter(user=self.user, display="Imported Conflict Person").count(), 1)
+
+        second = self._post_import(payload)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+
+        rows = Person.objects.filter(user=self.user, display="Imported Conflict Person")
+        self.assertEqual(rows.count(), 1)
+
+        expected_surrogate = uuid.uuid5(uuid.NAMESPACE_URL, f"import-v2:{self.user.id}:{conflict_id}")
+        self.assertEqual(str(rows.first().id), str(expected_surrogate))
+
+        second_summary = second.json().get("stats", {}).get("summary", {})
+        self.assertEqual(int(second_summary.get("legacy_id_conflict_fallback_created", 0)), 0)
+        self.assertEqual(int(second_summary.get("legacy_id_conflict_fallback_updated", 0)), 1)
 
     def test_v2_mixed_operations_and_relation_rewire(self):
         update_target = Person.objects.create(

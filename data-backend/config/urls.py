@@ -54,6 +54,10 @@ urlpatterns = [
     path('api/', include('people.urls')),
     path('api/cad/', include('cad.urls')),
     path('api/food/', include('food.urls')),
-    path('api/wa-assistant/', include('wa_assistant.urls')),
-    path('api/mail/', include('mail_archive.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+if getattr(settings, 'ENABLE_MAIL_ARCHIVE', False):
+    urlpatterns.insert(-1, path('api/mail/', include('mail_archive.urls')))
+
+if getattr(settings, 'ENABLE_WA_ASSISTANT', False):
+    urlpatterns.insert(-1, path('api/wa-assistant/', include('wa_assistant.urls')))

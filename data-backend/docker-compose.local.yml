@@ -181,6 +181,8 @@ services:
       dockerfile: Dockerfile
     container_name: bldrdojo-local-celery-worker
     restart: unless-stopped
+    healthcheck:
+      disable: true
     volumes:
       - ./:/app
       - media_volume_local:/app/media

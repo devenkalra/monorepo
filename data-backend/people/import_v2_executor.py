@@ -11,7 +11,9 @@ from people.models import (
     Person,
     Tag,
 )
+from collections import Counter
 import logging
+import uuid
 
 
 logger = logging.getLogger(__name__)
@@ -49,8 +51,8 @@ CONTROL_KEYS = {
 def normalize_legacy_snapshot_to_v2(data):
     """Convert a legacy export snapshot with an entities array into v2 create operations.
 
-    The resulting payload preserves the original graph structure but always restores
-    entities as new rows, which is safer than trying to reconcile old UUIDs.
+    The resulting payload preserves original IDs as legacy_id hints so the executor
+    can upsert by stable IDs for idempotent re-imports when those IDs are available.
     """
     if data.get("import_version") == "2.0":
         return data
@@ -97,6 +99,26 @@ def normalize_legacy_snapshot_to_v2(data):
         if "type" not in entity_op and entity.get("type"):
             entity_op["type"] = entity["type"]
         normalized["entities"].append(entity_op)
+
+    # Diagnostics: identify semantically duplicated entities in the snapshot
+    # (same type/display/name tuple but different ids), which can look like re-import duplicates.
+    semantic_counter = Counter()
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        key = (
+            str(entity.get("type") or ""),
+            str(entity.get("display") or ""),
+            str(entity.get("first_name") or ""),
+            str(entity.get("last_name") or ""),
+        )
+        semantic_counter[key] += 1
+    semantic_dupes = sum(1 for count in semantic_counter.values() if count > 1)
+    if semantic_dupes:
+        logger.warning(
+            "normalize_legacy_snapshot_to_v2: detected %s semantic duplicate groups in snapshot",
+            semantic_dupes,
+        )
 
     for relation in data.get("relations", []) or []:
         if not isinstance(relation, dict):
@@ -226,6 +248,10 @@ def execute_import_v2(data, user, check_cancelled=None):
         "entities_updated": 0,
         "entities_replaced": 0,
         "entities_deleted": 0,
+        "entities_legacy_id_updated": 0,
+        "entities_legacy_id_created": 0,
+        "entities_legacy_id_conflict_fallback_created": 0,
+        "entities_legacy_id_conflict_fallback_updated": 0,
         "relations_created": 0,
         "relations_skipped": 0,
         "relations_updated": 0,
@@ -286,7 +312,60 @@ def execute_import_v2(data, user, check_cancelled=None):
                     existing_entity.save()
                     entity_id_map[import_ref] = existing_entity.id
                     stats["entities_updated"] += 1
+                    stats["entities_legacy_id_updated"] += 1
+                    logger.info(
+                        "execute_import_v2: legacy upsert update import_ref=%s legacy_id=%s",
+                        import_ref,
+                        legacy_id,
+                    )
                     continue
+
+                # Preserve legacy IDs on first import when available so re-imports can
+                # match/update existing rows instead of duplicating them.
+                legacy_taken_by_other_user = Entity.objects.filter(id=legacy_id).exclude(user=user).exists()
+                if not legacy_taken_by_other_user:
+                    entity = model_cls.objects.create(id=legacy_id, user=user, **payload)
+                    entity_id_map[import_ref] = entity.id
+                    stats["entities_created"] += 1
+                    stats["entities_legacy_id_created"] += 1
+                    logger.info(
+                        "execute_import_v2: legacy upsert create import_ref=%s legacy_id=%s",
+                        import_ref,
+                        legacy_id,
+                    )
+                    continue
+
+                stats["warnings"].append(
+                    f"Entity create ({import_ref}): legacy_id {legacy_id} belongs to another user; using deterministic surrogate id"
+                )
+                surrogate_id = uuid.uuid5(uuid.NAMESPACE_URL, f"import-v2:{user.id}:{legacy_id}")
+                surrogate_existing = model_cls.objects.filter(id=surrogate_id, user=user).first()
+                if surrogate_existing:
+                    for key, value in payload.items():
+                        setattr(surrogate_existing, key, value)
+                    surrogate_existing.save()
+                    entity_id_map[import_ref] = surrogate_existing.id
+                    stats["entities_updated"] += 1
+                    stats["entities_legacy_id_conflict_fallback_updated"] += 1
+                    logger.warning(
+                        "execute_import_v2: legacy_id conflict import_ref=%s legacy_id=%s; updated deterministic surrogate_id=%s",
+                        import_ref,
+                        legacy_id,
+                        surrogate_id,
+                    )
+                    continue
+
+                entity = model_cls.objects.create(id=surrogate_id, user=user, **payload)
+                entity_id_map[import_ref] = entity.id
+                stats["entities_created"] += 1
+                stats["entities_legacy_id_conflict_fallback_created"] += 1
+                logger.warning(
+                    "execute_import_v2: legacy_id conflict import_ref=%s legacy_id=%s; created deterministic surrogate_id=%s",
+                    import_ref,
+                    legacy_id,
+                    surrogate_id,
+                )
+                continue
 
             entity = model_cls.objects.create(user=user, **payload)
             entity_id_map[import_ref] = entity.id
@@ -518,6 +597,10 @@ def execute_import_v2(data, user, check_cancelled=None):
         "total_deleted": stats["entities_deleted"] + stats["relations_deleted"] + stats["tags_deleted"],
         "total_errors": len(stats["errors"]),
         "total_warnings": len(stats["warnings"]),
+        "legacy_id_updated": stats["entities_legacy_id_updated"],
+        "legacy_id_created": stats["entities_legacy_id_created"],
+        "legacy_id_conflict_fallback_created": stats["entities_legacy_id_conflict_fallback_created"],
+        "legacy_id_conflict_fallback_updated": stats["entities_legacy_id_conflict_fallback_updated"],
     }
 
     # Fail whole import (transaction rollback at caller) if any operation-level error occurred.

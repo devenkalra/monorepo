@@ -56,3 +56,9 @@ __pycache__/
 dist/
 build/
 .eggs/
+scripts/*.db
+scripts/*.db.bak
+scripts/*.bak
+scripts/*.zip
+apps/YoutubeTranscript/venv/
+data-backend/tests/integration/e2e/e2e_api_calls*.md

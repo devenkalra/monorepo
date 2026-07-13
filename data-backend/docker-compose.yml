@@ -168,6 +168,8 @@ services:
       dockerfile: Dockerfile
     container_name: bldrdojo-celery-worker
     restart: unless-stopped
+    healthcheck:
+      disable: true
     volumes:
       - /var/lib/bldrdojo/media:/app/media
       - cad_render_cache:/app/cad/render_cache

@@ -247,11 +247,11 @@ class SuiteFImportExportSyncE2ETest(unittest.TestCase):
 
     def test_04_reimport_idempotency_count_stability(self):
         """
-        log_title: Reimport Behavior
+        log_title: Reimport Idempotency
         id: F-04
         feature: Import Reimport Semantics
         scenario: Import identical snapshot twice
-        objective: Validate and document current repeated-import behavior for this backend
+        objective: Validate repeated import does not create duplicate entities
         """
         self._seed_snapshot_fixture()
 
@@ -279,9 +279,7 @@ class SuiteFImportExportSyncE2ETest(unittest.TestCase):
         time.sleep(0.5)
         count_after_2 = self._count_entities()
 
-        # Current backend behavior may create duplicate rows on re-import for this flow.
-        # Keep this assertion descriptive and stable for existing implementation.
-        self.assertGreaterEqual(count_after_2, count_after_1)
+        self.assertEqual(count_after_2, count_after_1)
         import_2_payload = self.client.json_or_empty(import_2)
         self.assertTrue(import_2_payload.get("success"))
 
