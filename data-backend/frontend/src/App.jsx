@@ -8,6 +8,9 @@ import UserMenu from './components/UserMenu';
 import ConversationImport from './components/ConversationImport';
 import api from './services/api';
 
+const SEARCH_DEBOUNCE_MS = 450;
+const MIN_TEXT_SEARCH_LENGTH = 3;
+
 function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -15,6 +18,8 @@ function App() {
   
   const [entities, setEntities] = useState([]);
   const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [queryDebouncing, setQueryDebouncing] = useState(false);
   const [filters, setFilters] = useState({
     primaryTag: '',
     tags: [],
@@ -39,6 +44,10 @@ function App() {
   const [pageSize] = useState(20);
   const [totalPages, setTotalPages] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [entitiesLoading, setEntitiesLoading] = useState(false);
+  const effectiveQuery = (debouncedQuery || '').trim().length >= MIN_TEXT_SEARCH_LENGTH
+    ? (debouncedQuery || '').trim()
+    : '';
 
   // Handle URL changes (back/forward navigation)
   useEffect(() => {
@@ -254,7 +263,7 @@ function App() {
         const tagList = [...tagSet];
         
         const params = new URLSearchParams();
-        if (query) params.append('q', query);
+        if (debouncedQuery) params.append('q', debouncedQuery);
         if (filters.display) params.append('display', filters.display);
         if (filters.types.length) params.append('type', filters.types.join(','));
         if (tagList.length) params.append('tags', tagList.join(','));
@@ -304,7 +313,7 @@ function App() {
     if (filters.primaryTag) tagSet.add(filters.primaryTag);
     const tagList = [...tagSet];
     const hasSearch =
-      Boolean(query) ||
+      Boolean(effectiveQuery) ||
       Boolean(filters.display) ||
       tagList.length > 0 ||
       filters.types.length > 0 ||
@@ -317,7 +326,7 @@ function App() {
       params.append('page_size', pageSize.toString());
     } else {
       url = '/api/search/';
-      if (query) params.append('q', query);
+      if (effectiveQuery) params.append('q', effectiveQuery);
       if (filters.display) params.append('display', filters.display);
       if (filters.types.length) params.append('type', filters.types.join(','));
       if (tagList.length) params.append('tags', tagList.join(','));
@@ -333,6 +342,7 @@ function App() {
     params.append('sort_by', sortBy);
 
     try {
+      setEntitiesLoading(true);
       const resp = await api.fetch(`${url}?${params.toString()}`);
       const data = await resp.json();
       // Handle both paginated response {results: [...]} and array response [...]
@@ -354,25 +364,42 @@ function App() {
       setEntities([]);
       setTotalCount(0);
       setTotalPages(0);
+    } finally {
+      setEntitiesLoading(false);
     }
   };
 
-  // Update URL when search query changes
   useEffect(() => {
-    if (query && !location.pathname.startsWith('/entity/')) {
-      navigate(`/?q=${encodeURIComponent(query)}`, { replace: true });
-    } else if (!query && searchParams.get('q')) {
+    if (query === debouncedQuery) {
+      setQueryDebouncing(false);
+      return;
+    }
+
+    setQueryDebouncing(true);
+    const timeout = setTimeout(() => {
+      setDebouncedQuery(query);
+      setQueryDebouncing(false);
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => clearTimeout(timeout);
+  }, [query, debouncedQuery]);
+
+  // Update URL when debounced query changes
+  useEffect(() => {
+    if (effectiveQuery && !location.pathname.startsWith('/entity/')) {
+      navigate(`/?q=${encodeURIComponent(effectiveQuery)}`, { replace: true });
+    } else if (searchParams.get('q')) {
       navigate('/', { replace: true });
     }
-  }, [query]);
+  }, [effectiveQuery]);
 
   useEffect(() => {
     setCurrentPage(1); // Reset to page 1 when filters, query, or sort change
-  }, [query, filters, sortBy]);
+  }, [effectiveQuery, filters, sortBy]);
   
   useEffect(() => {
     fetchEntities();
-  }, [currentPage, query, filters, sortBy]);
+  }, [currentPage, effectiveQuery, filters, sortBy]);
 
   // Entities are now sorted by backend, no need for client-side sorting
 
@@ -430,6 +457,7 @@ function App() {
         <SearchBar
           query={query}
           setQuery={setQuery}
+          isSearchBusy={queryDebouncing || entitiesLoading}
           filters={filters}
           setFilters={setFilters}
           sortBy={sortBy}

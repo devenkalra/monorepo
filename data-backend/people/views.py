@@ -3,6 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.throttling import ScopedRateThrottle
 from django.core.management import call_command
 from .models import Entity, Person, Note, Location, Movie, Book, Container, Asset, Org, EntityRelation, Tag
 from .serializers import (
@@ -1832,6 +1833,8 @@ class TagViewSet(viewsets.ModelViewSet):
 
 class SearchViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'search'
     
     @action(detail=False, methods=['post'])
     def delete_all(self, request):
