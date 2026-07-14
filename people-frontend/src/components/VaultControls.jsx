@@ -24,7 +24,7 @@ function VaultControls() {
                 setTimeout(() => setSuccessMessage(''), 3000);
             } catch (err) {
                 console.error(err);
-                setError('Failed to derive key. Make sure you are logged in.');
+                setError(err?.message || 'Failed to derive key.');
             } finally {
                 setIsUnlocking(false);
             }

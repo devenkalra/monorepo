@@ -8,9 +8,22 @@ export const EncryptionProvider = ({ children }) => {
   const [encryptionKeys, setEncryptionKeys] = useState([]);
   const { user } = useAuth();
 
+  const ensureCryptoSupport = () => {
+    if (!window.crypto || !window.crypto.subtle) {
+      throw new Error('Web Crypto is unavailable in this browser/context. Use HTTPS (or localhost) and a modern browser.');
+    }
+  };
+
   const deriveKey = async (passphrase) => {
-    if (!user) throw new Error('User not authenticated');
-    const saltString = `bldrdojo-salt-${user.id || user.email || 'default'}`;
+    ensureCryptoSupport();
+    if (!passphrase || !passphrase.trim()) {
+      throw new Error('Passphrase is required.');
+    }
+
+    // Allow key derivation even if user context is still loading.
+    // This avoids intermittent unlock failures during app bootstrap.
+    const userScope = user?.id || user?.email || 'default';
+    const saltString = `bldrdojo-salt-${userScope}`;
     const encoder = new TextEncoder();
     const passphraseBytes = encoder.encode(passphrase);
     const saltBytes = encoder.encode(saltString);
@@ -53,6 +66,7 @@ export const EncryptionProvider = ({ children }) => {
   };
 
   const encryptText = async (text, key) => {
+    ensureCryptoSupport();
     // If no key specified, use the most recently added key
     const targetKey = key || encryptionKeys[encryptionKeys.length - 1];
     if (!targetKey) throw new Error('No encryption key available. Unlock the vault first.');
@@ -86,6 +100,7 @@ export const EncryptionProvider = ({ children }) => {
   };
 
   const decryptText = async (base64Ciphertext) => {
+    ensureCryptoSupport();
     if (encryptionKeys.length === 0) throw new Error('Vault is locked. No keys available.');
     if (!base64Ciphertext) return { plaintext: '', key: null };
 
@@ -124,6 +139,7 @@ export const EncryptionProvider = ({ children }) => {
   };
 
   const encryptBlob = async (blob, key) => {
+    ensureCryptoSupport();
     const targetKey = key || encryptionKeys[encryptionKeys.length - 1];
     if (!targetKey) throw new Error('No encryption key available. Unlock the vault first.');
     
@@ -148,6 +164,7 @@ export const EncryptionProvider = ({ children }) => {
   };
 
   const decryptBlob = async (encryptedBlob, mimeType, key) => {
+    ensureCryptoSupport();
     // If we have a specific key associated with the entity, use it.
     // Otherwise try all keys in the key ring.
     const keysToTry = key ? [key] : encryptionKeys;
