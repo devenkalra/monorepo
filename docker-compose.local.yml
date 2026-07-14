@@ -66,7 +66,7 @@ services:
       - DJANGO_SETTINGS_MODULE=config.settings
       - DJANGO_DEBUG=True
       - DJANGO_SECRET_KEY=local-dev-secret-key-change-in-production
-      - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,bldrdojo.com,www.bldrdojo.com,192.168.4.200
+      - DJANGO_ALLOWED_HOSTS=localhost,127.0.0.1,0.0.0.0,bldrdojo.com,www.bldrdojo.com,bldrdojo.local,devenkalra.local,192.168.4.200
       - POSTGRES_DB=entitydb
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=dbpassword
@@ -167,11 +167,11 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
       args:
-        BUILD_ENV: local
+        BUILD_ENV: proxy
     container_name: bldrdojo-local-frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "127.0.0.1:8080:80"
     volumes:
       - static_volume_local:/app/staticfiles:ro
       - media_volume_local:/app/media

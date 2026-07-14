@@ -43,13 +43,22 @@ ARG BUILD_ENV=production
 COPY frontend/nginx.conf /etc/nginx/nginx.conf
 COPY frontend/default.conf /etc/nginx/conf.d/default.conf
 COPY frontend/default-local.conf /etc/nginx/conf.d/default-local.conf
+COPY frontend/default-proxy.conf /etc/nginx/conf.d/default-proxy.conf
 COPY --from=builder /out /usr/share/nginx/html
-# Use local config (HTTP only) when BUILD_ENV=local; otherwise exclude local config to avoid duplicate server blocks
+# Config selection by BUILD_ENV:
+# - local: local HTTP-only config
+# - proxy: HTTP-only config intended behind a host/edge reverse proxy
+# - production (default): SSL-terminating in-container config
 RUN if [ "$BUILD_ENV" = "local" ]; then \
       mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default-prod.conf.bak && \
-      mv /etc/nginx/conf.d/default-local.conf /etc/nginx/conf.d/default.conf; \
+            mv /etc/nginx/conf.d/default-local.conf /etc/nginx/conf.d/default.conf && \
+            rm -f /etc/nginx/conf.d/default-proxy.conf; \
+        elif [ "$BUILD_ENV" = "proxy" ]; then \
+            mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default-prod.conf.bak && \
+            mv /etc/nginx/conf.d/default-proxy.conf /etc/nginx/conf.d/default.conf && \
+            rm -f /etc/nginx/conf.d/default-local.conf; \
     else \
-      rm -f /etc/nginx/conf.d/default-local.conf; \
+            rm -f /etc/nginx/conf.d/default-local.conf /etc/nginx/conf.d/default-proxy.conf; \
     fi
 
 RUN mkdir -p /etc/nginx/ssl && \

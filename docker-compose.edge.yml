@@ -1,0 +1,38 @@
+# Edge proxy compose file
+#
+# Purpose:
+# - Single entrypoint on host ports 80/443
+# - Route multiple domains to different upstream apps/containers
+#
+# Usage (local sample):
+#   docker compose -f docker-compose.edge.yml up -d
+#
+# Notes:
+# - By default this uses the local HTTP-only sample config.
+# - For production, switch EDGE_NGINX_CONF to scripts/nginx/multi-domain-edge-example.conf
+#   and provide certs in ./ssl-edge.
+
+services:
+  edge-nginx:
+    image: nginx:alpine
+    container_name: edge-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      # Choose one config via EDGE_NGINX_CONF env var.
+      # Default is local HTTP-only sample.
+      - ${EDGE_NGINX_CONF:-./scripts/nginx/local-edge-proxy-sample.conf}:/etc/nginx/conf.d/default.conf:ro
+      # Optional TLS certs for production config
+      - ./ssl-edge:/etc/letsencrypt:ro
+      - ./logs/edge-nginx:/var/log/nginx
+    extra_hosts:
+      # Allows proxying to services published on host loopback from inside Linux containers.
+      # Safe on Docker Desktop; useful on Linux with host-gateway support.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
