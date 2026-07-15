@@ -347,44 +347,54 @@ class MeiliSync:
     ):
         if not self.helper: return []
         # If the connected MeiliSearch version does not support newer search
-        # parameters (for example "hybrid"), transparently retry without them.
-        try:
-            # Basic search
-            params = {}
-            if filter_str:
-                params['filter'] = filter_str
-            if attributes_to_search_on:
-                params['attributesToSearchOn'] = attributes_to_search_on
-            if hybrid:
-                params['hybrid'] = hybrid
-            if ranking_score_threshold is not None:
-                params['rankingScoreThreshold'] = ranking_score_threshold
-            if show_ranking_score is not None:
-                params['showRankingScore'] = show_ranking_score
-            if limit is not None:
-                params['limit'] = limit
-            
-            # If query is empty and we have filters, use empty string to get all matching filter results
-            search_query = query if query else ''
-            
-            result = self.helper.client.index(self.index_name).search(search_query, params)
-            return result.get('hits', [])
-        except Exception as e:
-            error_text = str(e)
-            if 'hybrid' in params and 'Unknown field `hybrid`' in error_text:
-                logger.warning(
-                    "MeiliSearch does not support 'hybrid' in this environment; retrying without it"
-                )
-                try:
-                    retry_params = dict(params)
-                    retry_params.pop('hybrid', None)
-                    result = self.helper.client.index(self.index_name).search(search_query, retry_params)
-                    return result.get('hits', [])
-                except Exception as retry_error:
-                    logger.error(f"Error searching MeiliSearch after retry without hybrid: {retry_error}")
-                    return []
-            logger.error(f"Error searching MeiliSearch: {e}")
-            return []
+        # parameters (for example "hybrid" or "rankingScoreThreshold"),
+        # retry after removing only unsupported keys.
+        params = {}
+        if filter_str:
+            params['filter'] = filter_str
+        if attributes_to_search_on:
+            params['attributesToSearchOn'] = attributes_to_search_on
+        if hybrid:
+            params['hybrid'] = hybrid
+        if ranking_score_threshold is not None:
+            params['rankingScoreThreshold'] = ranking_score_threshold
+        if show_ranking_score is not None:
+            params['showRankingScore'] = show_ranking_score
+        if limit is not None:
+            params['limit'] = limit
+
+        # If query is empty and we have filters, use empty string to get all matching filter results
+        search_query = query if query else ''
+
+        unsupported_fields = {
+            'hybrid': "'hybrid'",
+            'rankingScoreThreshold': "'rankingScoreThreshold'",
+            'showRankingScore': "'showRankingScore'",
+        }
+
+        while True:
+            try:
+                result = self.helper.client.index(self.index_name).search(search_query, params)
+                return result.get('hits', [])
+            except Exception as e:
+                error_text = str(e)
+                field_to_drop = None
+
+                for field in unsupported_fields:
+                    if f"Unknown field `{field}`" in error_text and field in params:
+                        field_to_drop = field
+                        break
+
+                if field_to_drop:
+                    logger.warning(
+                        "MeiliSearch does not support %s in this environment; retrying without it",
+                        unsupported_fields[field_to_drop],
+                    )
+                    params.pop(field_to_drop, None)
+                    continue
+
+                logger.error(f"Error searching MeiliSearch: {e}")
+                return []
 
 # Global instances
 neo4j_sync = Neo4jSync()

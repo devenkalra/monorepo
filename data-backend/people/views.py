@@ -2082,6 +2082,7 @@ class SearchViewSet(viewsets.ViewSet):
     
     def list(self, request):
         query = request.query_params.get('q', '')
+        pagination_requested = ('page' in request.query_params) or ('page_size' in request.query_params)
         
         # Pagination parameters
         try:
@@ -2108,13 +2109,15 @@ class SearchViewSet(viewsets.ViewSet):
             
             if not relation_entity_ids:
                 # No entities match the relation, return empty
-                return Response({
-                    'results': [],
-                    'count': 0,
-                    'page': page,
-                    'page_size': page_size,
-                    'total_pages': 0
-                })
+                if pagination_requested:
+                    return Response({
+                        'results': [],
+                        'count': 0,
+                        'page': page,
+                        'page_size': page_size,
+                        'total_pages': 0
+                    })
+                return Response([])
         
         # Build filter string for Meilisearch
         # Supported filters: type, tags, first_name, last_name, gender
@@ -2178,6 +2181,11 @@ class SearchViewSet(viewsets.ViewSet):
         if relation_entity_ids is not None and not query and len(filters) == 0:
             queryset = Entity.objects.filter(id__in=relation_entity_ids, user=self.request.user)
             queryset = self._apply_sorting(queryset, sort_by)
+
+            if not pagination_requested:
+                entities = list(queryset)
+                serialized = EntitySerializer(entities, many=True)
+                return Response(serialized.data)
             
             # Apply pagination
             total_count = queryset.count()
@@ -2229,6 +2237,9 @@ class SearchViewSet(viewsets.ViewSet):
             results = self._sort_results(results, sort_by)
         
         # Apply pagination
+        if not pagination_requested:
+            return Response(results)
+
         total_count = len(results)
         start = (page - 1) * page_size
         end = start + page_size
