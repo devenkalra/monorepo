@@ -140,6 +140,10 @@ class EntityViewSet(viewsets.ModelViewSet):
         """Return only entities owned by the current user"""
         return Entity.objects.filter(user=self.request.user)
 
+    def perform_create(self, serializer):
+        """Ensure entities created via generic endpoint are owned by the auth user."""
+        serializer.save(user=self.request.user)
+
     def retrieve(self, request, *args, **kwargs):
         """Override retrieve to return subclass-specific serialized data"""
         instance = self.get_object()

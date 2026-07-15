@@ -148,6 +148,26 @@ class EntityAPITestCase(TestCase):
         response = self.client.post('/api/notes/', data, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['display'], 'Meeting Notes')
+
+    def test_create_entity_via_generic_endpoint_assigns_user(self):
+        """Creating via /api/entities/ should bind the row to the authenticated user."""
+        data = {
+            'type': 'Note',
+            'display': 'Generic Endpoint Note',
+            'description': 'Created via /api/entities/',
+            'tags': ['smoke-regression']
+        }
+
+        create_resp = self.client.post('/api/entities/', data, format='json')
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        entity_id = create_resp.data['id']
+
+        note = Note.objects.get(id=entity_id)
+        self.assertEqual(note.user, self.user)
+
+        read_resp = self.client.get(f'/api/entities/{entity_id}/')
+        self.assertEqual(read_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(read_resp.data['display'], 'Generic Endpoint Note')
     
     def test_list_entities(self):
         """Test listing entities via search endpoint"""
