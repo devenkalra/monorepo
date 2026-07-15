@@ -83,8 +83,8 @@ def serve_spa_or_asset(request, path=""):
 urlpatterns = [
     path('admin', RedirectView.as_view(url='/admin/', permanent=False)),
     path('admin/', admin.site.urls),
-    path('api/', include('core.urls')),
     re_path(r'^api/media/(?P<path>.*)$', serve_media_with_db_fallback),
+    path('api/', include('core.urls')),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     re_path(r'^(?P<path>.*)$', serve_spa_or_asset),
 ]
