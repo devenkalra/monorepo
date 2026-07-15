@@ -1152,6 +1152,28 @@ class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
         }
         # For list view, we need to handle mixed types
         return EntitySerializer
+
+    def _serialize_recent_entity(self, entity: Entity) -> dict:
+        """Serialize with type-specific serializer when subtype row exists, else fall back."""
+        serializer_map = {
+            'Person': (Person, PersonSerializer),
+            'Note': (Note, NoteSerializer),
+            'Location': (Location, LocationSerializer),
+            'Movie': (Movie, MovieSerializer),
+            'Book': (Book, BookSerializer),
+            'Container': (Container, ContainerSerializer),
+            'Asset': (Asset, AssetSerializer),
+            'Org': (Org, OrgSerializer),
+        }
+
+        type_info = serializer_map.get(entity.type)
+        if type_info:
+            model_cls, serializer_cls = type_info
+            typed = model_cls.objects.filter(id=entity.id, user=self.request.user).first()
+            if typed is not None:
+                return serializer_cls(typed).data
+
+        return EntitySerializer(entity).data
     
     def list(self, request, *args, **kwargs):
         """Override list to return type-specific serialized data with pagination"""
@@ -1182,37 +1204,7 @@ class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
             # Serialize each entity with its type-specific serializer
             serialized_data = []
             for entity in queryset:
-                serializer_class = {
-                    'Person': PersonSerializer,
-                    'Note': NoteSerializer,
-                    'Location': LocationSerializer,
-                    'Movie': MovieSerializer,
-                    'Book': BookSerializer,
-                    'Container': ContainerSerializer,
-                    'Asset': AssetSerializer,
-                    'Org': OrgSerializer,
-                }.get(entity.type, EntitySerializer)
-                
-                # Cast to the specific type if needed
-                if entity.type == 'Person':
-                    entity = Person.objects.get(id=entity.id)
-                elif entity.type == 'Note':
-                    entity = Note.objects.get(id=entity.id)
-                elif entity.type == 'Location':
-                    entity = Location.objects.get(id=entity.id)
-                elif entity.type == 'Movie':
-                    entity = Movie.objects.get(id=entity.id)
-                elif entity.type == 'Book':
-                    entity = Book.objects.get(id=entity.id)
-                elif entity.type == 'Container':
-                    entity = Container.objects.get(id=entity.id)
-                elif entity.type == 'Asset':
-                    entity = Asset.objects.get(id=entity.id)
-                elif entity.type == 'Org':
-                    entity = Org.objects.get(id=entity.id)
-                
-                serializer = serializer_class(entity)
-                serialized_data.append(serializer.data)
+                serialized_data.append(self._serialize_recent_entity(entity))
             
             return Response({
                 'results': serialized_data,
@@ -1225,37 +1217,7 @@ class RecentEntityViewSet(viewsets.ReadOnlyModelViewSet):
             # Legacy mode - return simple array
             serialized_data = []
             for entity in queryset:
-                serializer_class = {
-                    'Person': PersonSerializer,
-                    'Note': NoteSerializer,
-                    'Location': LocationSerializer,
-                    'Movie': MovieSerializer,
-                    'Book': BookSerializer,
-                    'Container': ContainerSerializer,
-                    'Asset': AssetSerializer,
-                    'Org': OrgSerializer,
-                }.get(entity.type, EntitySerializer)
-                
-                # Cast to the specific type if needed
-                if entity.type == 'Person':
-                    entity = Person.objects.get(id=entity.id)
-                elif entity.type == 'Note':
-                    entity = Note.objects.get(id=entity.id)
-                elif entity.type == 'Location':
-                    entity = Location.objects.get(id=entity.id)
-                elif entity.type == 'Movie':
-                    entity = Movie.objects.get(id=entity.id)
-                elif entity.type == 'Book':
-                    entity = Book.objects.get(id=entity.id)
-                elif entity.type == 'Container':
-                    entity = Container.objects.get(id=entity.id)
-                elif entity.type == 'Asset':
-                    entity = Asset.objects.get(id=entity.id)
-                elif entity.type == 'Org':
-                    entity = Org.objects.get(id=entity.id)
-                
-                serializer = serializer_class(entity)
-                serialized_data.append(serializer.data)
+                serialized_data.append(self._serialize_recent_entity(entity))
             
             return Response(serialized_data)
 
