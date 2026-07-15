@@ -211,9 +211,6 @@ services:
       dockerfile: frontend/Dockerfile
     container_name: bldrdojo-frontend
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
     volumes:
       - static_volume:/app/staticfiles:ro
       - /var/lib/bldrdojo/media:/app/media

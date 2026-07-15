@@ -55,27 +55,36 @@ services:
 volumes:
   postgres_data:
     name: bldrdojo-postgres-data
+    external: true
   redis_data:
     name: bldrdojo-redis-data
+    external: true
   meilisearch_data:
     name: bldrdojo-meilisearch-data
+    external: true
   neo4j_data:
     name: bldrdojo-neo4j-data
+    external: true
   neo4j_logs:
     name: bldrdojo-neo4j-logs
+    external: true
   cad_render_cache:
     name: bldrdojo-cad-render-cache
+    external: true
   cad_textures:
     name: bldrdojo-cad-textures
+    external: true
   cad_env:
     name: bldrdojo-cad-env
+    external: true
   static_volume:
     name: bldrdojo-static
+    external: true
 
 networks:
   backend-network:
     name: bldrdojo-backend-network
-    driver: bridge
+    external: true
   frontend-network:
     name: bldrdojo-frontend-network
-    driver: bridge
+    external: true
