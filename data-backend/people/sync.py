@@ -346,6 +346,8 @@ class MeiliSync:
         limit=None,
     ):
         if not self.helper: return []
+        # If the connected MeiliSearch version does not support newer search
+        # parameters (for example "hybrid"), transparently retry without them.
         try:
             # Basic search
             params = {}
@@ -368,6 +370,19 @@ class MeiliSync:
             result = self.helper.client.index(self.index_name).search(search_query, params)
             return result.get('hits', [])
         except Exception as e:
+            error_text = str(e)
+            if 'hybrid' in params and 'Unknown field `hybrid`' in error_text:
+                logger.warning(
+                    "MeiliSearch does not support 'hybrid' in this environment; retrying without it"
+                )
+                try:
+                    retry_params = dict(params)
+                    retry_params.pop('hybrid', None)
+                    result = self.helper.client.index(self.index_name).search(search_query, retry_params)
+                    return result.get('hits', [])
+                except Exception as retry_error:
+                    logger.error(f"Error searching MeiliSearch after retry without hybrid: {retry_error}")
+                    return []
             logger.error(f"Error searching MeiliSearch: {e}")
             return []
 
