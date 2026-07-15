@@ -1,0 +1,89 @@
+
+tion.*
+
+* **[Die With Zero](./die-with-zero)** ... *Die with Zero.*
+
+* **[Thinking Fast and Slow](./thinking-fast-and-slow)** ... *Die with Zero.*2026-06-02 06:44:11.2413682026-06-02 06:58:59.714893.....--.}.AA.
+Technical Paperstechnical-papers# Technical Papers
+
+A collection of technical papers, patents, and articles I have written or co-authored during my career.
+
+* **Distributed State Management in Low-Latency Systems (2018)** ... *Explores architectural patterns for maintaining high availability in geo-distributed microservices.*
+* **Metadata Extraction Frameworks for Large Scale E-Discovery (2010)** ... *Discusses indexing structures for petabyte-scale document stores.*
+2026-06-02 06:44:11.2403692026-06-02 06:44:11.240369.....//.o.AA.
+Video Transcriptsvideo-transcripts# Video Transcripts
+
+Below you will find fully indexed and searchable transcripts of my talks, lectures, and interviews.
+
+* [2024 Tech Summit: Scalable Engineering Teams](/p/video-transcripts#tech-summit-2024)
+* [2022 Interview: Transitioning from Code to Management](/p/video-transcripts#interview-2022)
+2026-06-02 06:44:11.2383692026-06-02 06:44:11.238369.b...//...AA.
+Professional Lifeprofessional-life# Professional Life
+
+An overview of my professional career, engineering leadership roles, and technical contributions over the years.
+
+## Career Timeline
+
+### Google ... Engineering Director
+*Led engineering teams working on planetary-scale infrastructure and developer tools.*
+
+### AtHoc ... VP of Engineering
+*Scaled the engineering organization and drove the technology strategy for crisis communication platforms (acquired by BlackBerry).*
+
+### Stratify / Iron Mountain ... VP of Engineering
+*Managed software development for enterprise e-discovery platforms.*
+
+### VeriSign ... Director of Engineering
+*Architected registry and security infrastructure.*
+
+### Adaptive Media / Vuent ... Founding Engineer
+*Developed rich media streaming and graphics rendering technologies.*
+
+### Hewlett-Packard ... Member of Technical Staff
+*Contributed to operating system kernels and systems performance.*
+2026-06-02 06:44:11.2363682026-06-02 06:44:11.236368.0......M.AA.
+Who Am I?who-am-i# Who Am I?
+
+I am an (early retired) engineering executive being fortunate for having worked on a number of cutting edge and high impact technologies at companies like **Hewlett-Packard**, **Adaptive Media/Vuent**, **Langoo**, **VeriSign**, **Stratify/Iron Mountain**, **AtHoc** and **Google**.
+
+I am interested in many things including photography, writing, woodworking, traveling and more! In this site I share a few of my interests and creations. 
+
+Feel free to browse around!
+2026-06-02 06:44:11.2339062026-06-02 06:44:11.233906
+........K.)........................................................................................................................................................................................................<...-).K.AA.
+Cooking (Snacks)cooking-snacks# Cooking: Snacks & Savories
+
+A collection of recipes for high-quality tea-time snacks, quick bites, and regional Indian delicacies. Woodworking and coding always pair well with a warm cup of masala chai and fresh pakoras!
+2026-06-02 06:44:11.2489662026-06-02 06:44:11.248966.....%%...AA.
+Indian Musicindian-music# Indian Music
+
+My exploration of Hindustani Classical Music. I collect recordings, document raga scales (arohana/avarohana), and write short notes on different bandishes and compositions.
+2026-06-02 06:44:11.2469662026-06-02 06:44:11.246966.....5%.
+.AA.
+Book Lists & Reviewsbook-reviews# Book Lists & Reviews
+
+Here is a live database of books I have read, along with my ratings, reviews, and short summaries. You can find technical literature, history, philosophy, and fiction.
+2026-06-02 06:44:11.2449622026-06-02 06:44:11.244962..e...//....AA.
+Rich Dad Poor Dadrich-dad-poor-dad<style>
+
+.title {
+
+        font-size: 2rem;
+
+        font-weight: bold;
+
+        color: #2c3e50; /* Dark but modern color */
+
+        text-align: center;
+
+    }
+
+
+
+    .author {
+
+        font-size: 1.5rem;
+
+        color: #2c3e50; /* Dark but modern color */
+
+        text

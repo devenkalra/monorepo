@@ -1,0 +1,247 @@
+{% extends "admin/base.html" %}
+{% load i18n %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block branding %}
+<h1 id="site-name"><a href="{% url 'admin:index' %}">{{ site_header|default:_('Django administration') }}</a></h1>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}
+
+{% block extrahead %}
+{{ block.super }}
+<!-- Script to preserve scroll and cursor position on 'Save and continue editing' using XHR -->
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Track the last focused input/textarea/select element (excluding submit buttons)
+        let lastFocusedElement = null;
+
+        document.addEventListener("focusin", function(e) {
+            const el = e.target;
+            if (el && el.tagName) {
+                const isSubmit = el.type === "submit" || el.type === "button" || el.tagName === "BUTTON";
+                if (!isSubmit) {
+                    lastFocusedElement = el;
+                }
+            }
+        });
+
+        document.addEventListener("click", function(e) {
+            const el = e.target;
+            if (el && el.tagName) {
+                const isSubmit = el.type === "submit" || el.type === "button" || el.tagName === "BUTTON";
+                if (!isSubmit) {
+                    const inputEl = el.closest("input, textarea, select, [contenteditable]");
+                    if (inputEl) {
+                        lastFocusedElement = inputEl;
+                    }
+                }
+            }
+        });
+
+        const form = document.querySelector('form[id$="_form"]');
+        
+        const addShortcutHint = (name, shortcutText) => {
+            if (!form) return;
+            const btn = form.querySelector(`input[name="${name}"], button[name="${name}"]`);
+            if (btn) {
+                if (btn.tagName === 'INPUT') {
+                    if (!btn.value.includes('(')) {
+                        btn.value = `${btn.value} (${shortcutText})`;
+                    }
+                } else {
+                    if (!btn.innerText.includes('(')) {
+                        btn.innerText = `${btn.innerText} (${shortcutText})`;
+                    }
+                }
+                btn.title = `Keyboard Shortcut: ${shortcutText}`;
+            }
+        };
+
+        const applyAllShortcutHints = () => {
+            addShortcutHint('_save', 'Ctrl+S');
+            addShortcutHint('_continue', 'Ctrl+Shift+S');
+            addShortcutHint('_addanother', 'Ctrl+Alt+S');
+        };
+
+        // Keyboard Accelerators for Save, Save and Add Another, Save and Continue Editing
+        if (form) {
+            applyAllShortcutHints();
+
+            document.addEventListener('keydown', function(e) {
+                const isCtrl = e.ctrlKey || e.metaKey;
+                if (isCtrl && e.key.toLowerCase() === 's') {
+                    if (e.shiftKey) {
+                        // Ctrl + Shift + S -> Save and Continue Editing
+                        const btn = form.querySelector('input[name="_continue"], button[name="_continue"]');
+                        if (btn) {
+                            e.preventDefault();
+                            btn.click();
+                        }
+                    } else if (e.altKey) {
+                        // Ctrl + Alt + S -> Save and Add Another
+                        const btn = form.querySelector('input[name="_addanother"], button[name="_addanother"]');
+                        if (btn) {
+                            e.preventDefault();
+                            btn.click();
+                        }
+                    } else {
+                        // Ctrl + S -> Save
+                        const btn = form.querySelector('input[name="_save"], button[name="_save"]');
+                        if (btn) {
+                            e.preventDefault();
+                            btn.click();
+                        }
+                    }
+                }
+            });
+        }
+
+        // Only intercept if the form contains a textarea (editorial/text-heavy editing screens)
+        if (form && form.querySelector('textarea')) {
+            form.addEventListener('submit', async function(e) {
+                const submitter = e.submitter || document.activeElement;
+                const submitName = submitter ? submitter.name : "";
+                
+                if (submitName === "_continue") {
+                    e.preventDefault();
+                    
+                    // Show visual saving indicator on the clicked button
+                    const originalValue = submitter.value;
+                    submitter.value = "Saving...";
+                    submitter.disabled = true;
+                    
+                    // Disable other submit inputs to prevent double-submits
+                    const otherSubmitters = form.querySelectorAll('input[type=submit], button[type=submit]');
+                    otherSubmitters.forEach(btn => { if (btn !== submitter) btn.disabled = true; });
+                    
+                    const formData = new FormData(form);
+                    formData.append('_continue', originalValue);
+                    
+                    try {
+                        const response = await fetch(form.action || window.location.href, {
+                            method: 'POST',
+                            body: formData,
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+                        
+                        // Handle session expiry / redirects to login
+                        if (response.url && response.url.includes('/admin/login/')) {
+                            window.location.href = response.url;
+                            return;
+                        }
+                        
+                        const responseText = await response.text();
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(responseText, 'text/html');
+                        
+                        // Check for form validation errors
+                        const hasErrors = doc.querySelector('.errornote, .errorlist');
+                        if (hasErrors) {
+                            // Re-enable buttons and submit normally to trigger standard Django reload with error messages
+                            submitter.value = originalValue;
+                            otherSubmitters.forEach(btn => btn.disabled = false);
+                            form.submit();
+                            return;
+                        }
+                        
+                        // Success! Update window URL and form action
+                        window.history.replaceState(null, '', response.url);
+                        form.action = response.url;
+                        document.title = doc.title;
+                        
+                        // Update content headers/title
+                        const oldH1 = document.querySelector('#content-start h1, #content h1');
+                        const newH1 = doc.querySelector('#content-start h1, #content h1');
+                        if (oldH1 && newH1) oldH1.innerHTML = newH1.innerHTML;
+                        
+                        // Update breadcrumbs
+                        const oldBreadcrumbs = document.querySelector('.breadcrumbs');
+                        const newBreadcrumbs = doc.querySelector('.breadcrumbs');
+                        if (oldBreadcrumbs && newBreadcrumbs) oldBreadcrumbs.innerHTML = newBreadcrumbs.innerHTML;
+                        
+                        // Update success message container
+                        const oldMessages = document.querySelector('.messagelist');
+                        const newMessages = doc.querySelector('.messagelist');
+                        if (newMessages) {
+                            if (oldMessages) oldMessages.replaceWith(newMessages);
+                            else {
+                                const contentDiv = document.getElementById('content') || document.querySelector('.content');
+                                if (contentDiv) contentDiv.insertBefore(newMessages, contentDiv.firstChild);
+                            }
+                        } else if (oldMessages) {
+                            oldMessages.remove();
+                        }
+                        
+                        // Update submit row (to show delete buttons if it was add page)
+                        const oldSubmitRow = document.querySelector('.submit-row');
+                        const newSubmitRow = doc.querySelector('.submit-row');
+                        if (oldSubmitRow && newSubmitRow) {
+                            oldSubmitRow.innerHTML = newSubmitRow.innerHTML;
+                            // Re-apply shortcut hints to the new buttons
+                            applyAllShortcutHints();
+                        }
+                        
+                        // Update CSRF token
+                        const oldCsrf = form.querySelector('[name=csrfmiddlewaretoken]');
+                        const newCsrf = doc.querySelector('[name=csrfmiddlewaretoken]');
+                        if (oldCsrf && newCsrf) oldCsrf.value = newCsrf.value;
+                        
+                        // Update other form rows (except the currently active one to preserve focus/cursor)
+                        const newForm = doc.querySelector('form[id$="_form"]');
+                        if (newForm) {
+                            const oldRows = form.querySelectorAll('.form-row');
+                            const newRows = newForm.querySelectorAll('.form-row');
+                            
+                            oldRows.forEach((oldRow, idx) => {
+                                const newRow = newRows[idx];
+                                if (newRow) {
+                                    const hasActiveElement = lastFocusedElement && oldRow.contains(lastFocusedElement);
+                                    if (!hasActiveElement) {
+                                        oldRow.replaceWith(newRow.cloneNode(true));
+                                    }
+                                }
+                            });
+                            
+                            // Update hidden inputs (except csrf)
+                            const oldHiddens = form.querySelectorAll('input[type=hidden]');
+                            const newHiddens = newForm.querySelectorAll('input[type=hidden]');
+                            oldHiddens.forEach((oldHidden) => {
+                                const name = oldHidden.name;
+                                if (name && name !== 'csrfmiddlewaretoken') {
+                                    const newHidden = Array.from(newHiddens).find(h => h.name === name);
+                                    if (newHidden) {
+                                        oldHidden.value = newHidden.value;
+                                    }
+                                }
+                            });
+                        }
+                        
+                        // Re-enable submit buttons
+                        submitter.value = originalValue;
+                        otherSubmitters.forEach(btn => btn.disabled = false);
+                        
+                        // Brief success flash effect on the active element
+                        if (lastFocusedElement) {
+                            const origBg = lastFocusedElement.style.backgroundColor;
+                            lastFocusedElement.style.transition = "background-color 0.25s ease";
+                            lastFocusedElement.style.backgroundColor = "rgba(46, 204, 113, 0.15)";
+                            setTimeout(() => {
+                                lastFocusedElement.style.backgroundColor = origBg;
+                            }, 500);
+                        }
+                    } catch (err) {
+                        console.error("AJAX save failed, falling back to standard submission:", err);
+                        submitter.value = originalValue;
+                        otherSubmitters.forEach(btn => btn.disabled = false);
+                        form.submit();
+                    }
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

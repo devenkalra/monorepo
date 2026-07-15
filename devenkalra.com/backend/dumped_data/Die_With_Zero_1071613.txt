@@ -1,0 +1,92 @@
+
+de="">
+
+                                        Chapter 4 of <em data-start="7197" data-end="7214">"Die With Zero"</em> is a
+
+                                        call to action to use time wisely and focus on the experiences that matter most.
+
+                                        Perkins urges readers to stop deferring happiness for a future that may never
+
+                                        come and instead prioritize making the most of their time in the present. By
+
+                                        balancing both time affluence and money affluence, planning for the right
+
+                                        experiences at the right time, and avoiding the trap of waiting for the "perfect
+
+                                        moment," individuals can lead more fulfilling and enriched lives.</p></div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</article>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message-id="334c275c-eb77-4e2a-9e7c-65d2fff696bc"
+
+                            .... dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><h3
+
+                                        data-start="0" data-end="38"><strong data-start="4" data-end="38">Chapter 5: The
+
+                                    Experience Fund</strong></h3>
+
+                                    <p data-start="40" data-end="480">In <strong data-start="43" data-end="56">Chapter
+
+                                        5</strong> of <em data-start="60" data-end="78">"Die With Zero,"</em> Bill
+
+                                        Perkins discusses the concept of the <em data-start="121" data-end="138">Experience
+
+                                            Fund</em>, a powerful idea designed to help you maximize your life...s most
+
+                                        valuable resource...time...by focusing on experiences rather than accumulating
+
+                                        wealth for its own sake. The chapter emphasizes the importance of planning,
+
+                                        saving, and spending money in a way that allows you to fully enjoy life...s
+
+                                        experiences while you are still capable of doing so.</p><h4 data-start="482"
+
+                                                                                                    data-end="530">
+
+                                        <strong data-start="487" data-end="530">1. The Problem with Traditional
+
+                                            Saving:</strong></h4>
+
+                                    <p data-start="531" data-end="1124">Perkins starts the chapter by addressing the
+
+                                        common mindset of saving money for the future. In traditional financial advice,
+
+                                        people are encouraged to save for retirement or for a "rainy day." While it is
+
+                                        important to prepare for the future, Perkins argues that the traditional
+
+                                        approach often leaves people sacrificing their happiness

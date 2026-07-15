@@ -45,12 +45,25 @@ services:
       file: data-backend/docker-compose.yml
       service: frontend
     ports:
-      - "127.0.0.1:8080:80"
+      - "8080:80"
     build:
       context: .
       dockerfile: frontend/Dockerfile
       args:
         BUILD_ENV: proxy
+
+  devenkalra-app:
+    build:
+      context: .
+      dockerfile: devenkalra.com/Dockerfile
+    env_file:
+      - devenkalra.com/backend/.env
+    volumes:
+      - ./devenkalra.com/backend/db.sqlite3:/app/db.sqlite3
+      - ./devenkalra.com/backend/media:/app/media
+    ports:
+      - "8090:8000"
+    restart: unless-stopped
 
 volumes:
   postgres_data:

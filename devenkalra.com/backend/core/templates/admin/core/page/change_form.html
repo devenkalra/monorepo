@@ -1,0 +1,586 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_modify %}
+
+{% block extrahead %}
+{{ block.super }}
+<!-- Load Marked library for markdown parsing -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<!-- Load GitHub Markdown styling for markdown mode -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.1/github-markdown.min.css">
+
+<style>
+    /* Split layout container */
+    .editor-preview-container {
+        display: flex;
+        gap: 0; /* No gaps so the resizer handles the spacing */
+        align-items: flex-start;
+        width: 100%;
+        margin-top: 15px;
+        position: relative;
+    }
+    
+    .editor-pane {
+        flex: 1;
+        min-width: 200px;
+        padding-right: 10px;
+        box-sizing: border-box;
+    }
+    
+    /* Resizer Bar styling */
+    .resizer-bar {
+        width: 12px;
+        cursor: col-resize;
+        background: transparent;
+        align-self: stretch;
+        position: relative;
+        flex-shrink: 0;
+        transition: background-color 0.2s ease;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        user-select: none;
+    }
+    
+    .resizer-bar:hover, .resizer-bar.dragging {
+        background-color: var(--border-color, #e0e0e0);
+    }
+    
+    .resizer-handle {
+        width: 4px;
+        height: 50px;
+        background-color: var(--border-dark, #b8b5ad);
+        border-radius: 2px;
+        transition: background-color 0.2s ease;
+    }
+    
+    .resizer-bar:hover .resizer-handle, .resizer-bar.dragging .resizer-handle {
+        background-color: var(--primary, #79aec8);
+        height: 70px;
+    }
+    
+    .preview-pane {
+        width: 40%; /* Initial width */
+        min-width: 250px;
+        flex-shrink: 0;
+        padding-left: 10px;
+        position: sticky;
+        top: 20px;
+        height: calc(100vh - 120px);
+        display: flex;
+        flex-direction: column;
+        background: var(--body-bg, #ffffff);
+        border: 1px solid var(--border-color, #ccc);
+        border-radius: 6px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+        box-sizing: border-box;
+    }
+    
+    .preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 16px;
+        background: var(--darkened-bg, #f8f9fa);
+        border-bottom: 1px solid var(--border-color, #ccc);
+        font-family: var(--font-sans, "Roboto", "Helvetica Neue", sans-serif);
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: var(--body-fg, #333);
+        user-select: none;
+    }
+    
+    .preview-title-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    .preview-mode-badge {
+        font-size: 0.72rem;
+        padding: 2px 7px;
+        border-radius: 10px;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    
+    .preview-mode-badge.markdown {
+        background-color: rgba(52, 152, 219, 0.15);
+        color: #2980b9;
+        border: 1px solid rgba(52, 152, 219, 0.3);
+    }
+    
+    .preview-mode-badge.html {
+        background-color: rgba(46, 204, 113, 0.15);
+        color: #27ae60;
+        border: 1px solid rgba(46, 204, 113, 0.3);
+    }
+    
+    .preview-controls {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+    }
+    
+    .ctrl-btn {
+        background: transparent;
+        border: 1px solid var(--border-color, #ccc);
+        color: var(--body-fg, #666);
+        border-radius: 4px;
+        width: 26px;
+        height: 26px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.85rem;
+        padding: 0;
+    }
+    
+    .ctrl-btn:hover {
+        background: rgba(0, 0, 0, 0.05);
+        border-color: var(--border-dark, #b8b5ad);
+        color: var(--body-fg, #333);
+    }
+    
+    .preview-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        box-sizing: border-box;
+    }
+    
+    .preview-iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        background: transparent;
+    }
+    
+    /* Floating Restore Buttons */
+    .floating-restore-btn {
+        position: fixed;
+        z-index: 1001;
+        background: var(--primary, #79aec8);
+        color: var(--primary-fg, #fff);
+        border: none;
+        border-radius: 20px;
+        padding: 10px 18px;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--font-sans, "Roboto", "Helvetica Neue", sans-serif);
+        font-size: 0.85rem;
+        transition: all 0.2s ease;
+    }
+    
+    .floating-restore-btn:hover {
+        background: var(--primary-dark, #5c8ca3);
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+    
+    .floating-restore-btn.preview-restore {
+        right: 30px;
+        bottom: 30px;
+    }
+    
+    .floating-restore-btn.editor-restore {
+        left: 30px;
+        bottom: 30px;
+    }
+    
+    /* Variables & dark mode theme adaptations */
+    :root {
+        --darkened-bg: #f8f9fa;
+        --primary-dark: #6296b0;
+    }
+    
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --darkened-bg: #202020;
+            --primary-dark: #97c2d9;
+        }
+        .preview-pane {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        .ctrl-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-preview-container">
+    <div class="editor-pane" id="editor-pane">
+        {{ block.super }}
+    </div>
+    
+    <div class="resizer-bar" id="resizer-bar">
+        <div class="resizer-handle"></div>
+    </div>
+    
+    <div class="preview-pane" id="preview-pane">
+        <div class="preview-header">
+            <div class="preview-title-group">
+                <span>✨ Live Preview</span>
+                <span id="preview-badge" class="preview-mode-badge markdown">Markdown</span>
+            </div>
+            <div class="preview-controls">
+                <button type="button" class="ctrl-btn" id="btn-collapse-editor" title="Expand Preview (Hide Editor)">
+                    ⇠
+                </button>
+                <button type="button" class="ctrl-btn" id="btn-collapse-preview" title="Hide Preview">
+                    ✕
+                </button>
+            </div>
+        </div>
+        <div class="preview-content" id="preview-container">
+            <!-- Content gets rendered dynamically here -->
+        </div>
+    </div>
+</div>
+
+<!-- Floating Action Buttons for restoration -->
+<button type="button" id="btn-restore-preview" class="floating-restore-btn preview-restore" style="display: none;">
+    ✨ Show Preview
+</button>
+<button type="button" id="btn-restore-editor" class="floating-restore-btn editor-restore" style="display: none;">
+    📝 Show Editor
+</button>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const contentInput = document.getElementById("id_content");
+        const renderHtmlCheckbox = document.getElementById("id_render_as_html");
+        const previewContainer = document.getElementById("preview-container");
+        const previewBadge = document.getElementById("preview-badge");
+        
+        const resizer = document.getElementById("resizer-bar");
+        const editorPane = document.getElementById("editor-pane");
+        const previewPane = document.getElementById("preview-pane");
+        const container = document.querySelector(".editor-preview-container");
+
+        const btnCollapseEditor = document.getElementById("btn-collapse-editor");
+        const btnCollapsePreview = document.getElementById("btn-collapse-preview");
+        const btnRestoreEditor = document.getElementById("btn-restore-editor");
+        const btnRestorePreview = document.getElementById("btn-restore-preview");
+
+        if (!contentInput) {
+            console.warn("Live Preview: Content field not found.");
+            return;
+        }
+
+        // --- Drag to Resize Functionality ---
+        let isDragging = false;
+
+        function startDrag(e) {
+            isDragging = true;
+            document.body.style.cursor = "col-resize";
+            resizer.classList.add("dragging");
+            document.body.style.userSelect = "none";
+            
+            // Disable events on iframe during dragging to prevent lag
+            const iframe = previewPane.querySelector("iframe");
+            if (iframe) iframe.style.pointerEvents = "none";
+        }
+
+        function doDrag(clientX) {
+            if (!isDragging) return;
+            const containerRect = container.getBoundingClientRect();
+            
+            // Width of the preview pane from the right edge
+            const previewWidth = containerRect.right - clientX - 6; // offset half of resizer padding
+            const previewPercent = (previewWidth / containerRect.width) * 100;
+            
+            // Limit boundaries between 15% and 80%
+            if (previewPercent >= 15 && previewPercent <= 80) {
+                previewPane.style.width = `${previewPercent}%`;
+            }
+        }
+
+        function endDrag() {
+            if (isDragging) {
+                isDragging = false;
+                document.body.style.cursor = "";
+                resizer.classList.remove("dragging");
+                document.body.style.userSelect = "";
+                
+                const iframe = previewPane.querySelector("iframe");
+                if (iframe) iframe.style.pointerEvents = "";
+            }
+        }
+
+        // Mouse listeners
+        resizer.addEventListener("mousedown", startDrag);
+        document.addEventListener("mousemove", function(e) { doDrag(e.clientX); });
+        document.addEventListener("mouseup", endDrag);
+
+        // Touch listeners for mobile devices
+        resizer.addEventListener("touchstart", startDrag);
+        document.addEventListener("touchmove", function(e) {
+            if (e.touches && e.touches[0]) {
+                doDrag(e.touches[0].clientX);
+            }
+        });
+        document.addEventListener("touchend", endDrag);
+
+
+        // --- Collapse & Expand Panel Controls ---
+        let lastWidth = "40%"; // Store last customized width of the preview pane
+
+        function collapseEditor() {
+            // Store current custom width before collapsing
+            if (previewPane.style.width && previewPane.style.width !== "100%") {
+                lastWidth = previewPane.style.width;
+            }
+            editorPane.style.display = "none";
+            resizer.style.display = "none";
+            previewPane.style.width = "100%";
+            previewPane.style.paddingLeft = "0";
+            
+            btnRestoreEditor.style.display = "flex";
+            btnRestorePreview.style.display = "none";
+        }
+
+        function collapsePreview() {
+            if (previewPane.style.width && previewPane.style.width !== "100%") {
+                lastWidth = previewPane.style.width;
+            }
+            previewPane.style.display = "none";
+            resizer.style.display = "none";
+            
+            btnRestorePreview.style.display = "flex";
+            btnRestoreEditor.style.display = "none";
+        }
+
+        function restoreLayout() {
+            editorPane.style.display = "";
+            previewPane.style.display = "";
+            resizer.style.display = "";
+            
+            previewPane.style.width = lastWidth;
+            previewPane.style.paddingLeft = "10px";
+            
+            btnRestoreEditor.style.display = "none";
+            btnRestorePreview.style.display = "none";
+        }
+
+        btnCollapseEditor.addEventListener("click", collapseEditor);
+        btnCollapsePreview.addEventListener("click", collapsePreview);
+        btnRestoreEditor.addEventListener("click", restoreLayout);
+        btnRestorePreview.addEventListener("click", restoreLayout);
+
+
+        // --- Live Preview Compiler (Markdown & HTML) ---
+        
+        // Inline CSS for the HTML iframe preview to replicate frontend layout
+        const iframeStyles = `
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+            
+            :root {
+              --bg-color: #fbfaf7;
+              --text-color: #2b2b2a;
+              --text-muted: #6e6d6a;
+              --border-color: #e6e3dd;
+              --border-dark: #b8b5ad;
+              --accent-color: #a27b5c;
+              --accent-light: #f4efe6;
+              --font-serif: 'Lora', Georgia, serif;
+              --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+            }
+            
+            body {
+              background-color: var(--bg-color);
+              color: var(--text-color);
+              font-family: var(--font-serif);
+              line-height: 1.7;
+              padding: 1rem;
+              margin: 0;
+              -webkit-font-smoothing: antialiased;
+            }
+            
+            h1 {
+              font-family: var(--font-serif);
+              font-size: 2.2rem;
+              font-weight: 400;
+              line-height: 1.2;
+              margin-top: 1rem;
+              margin-bottom: 1.5rem;
+              letter-spacing: -0.01em;
+            }
+            
+            h2 {
+              font-family: var(--font-serif);
+              font-size: 1.6rem;
+              font-weight: 400;
+              line-height: 1.3;
+              margin-top: 2rem;
+              margin-bottom: 1rem;
+              border-bottom: 1px solid var(--border-color);
+              padding-bottom: 0.5rem;
+            }
+            
+            h3 {
+              font-family: var(--font-serif);
+              font-size: 1.25rem;
+              font-weight: 500;
+              margin-top: 1.5rem;
+              margin-bottom: 0.5rem;
+            }
+            
+            p {
+              margin-bottom: 1.5rem;
+              font-size: 1.05rem;
+            }
+            
+            a {
+              color: var(--accent-color);
+              text-decoration: underline;
+              transition: color 0.2s ease;
+            }
+            
+            a:hover {
+              color: var(--text-color);
+            }
+            
+            ul, ol {
+              margin-left: 1.5rem;
+              margin-bottom: 1.5rem;
+            }
+            
+            li {
+              margin-bottom: 0.5rem;
+              font-size: 1.05rem;
+            }
+            
+            blockquote {
+              border-left: 3px solid var(--accent-color);
+              padding-left: 1.2rem;
+              font-style: italic;
+              color: var(--text-muted);
+              margin: 1.5rem 0;
+              background-color: var(--accent-light);
+              padding: 0.75rem 0.75rem 0.75rem 1.2rem;
+            }
+            
+            pre {
+              background-color: #f5f4f0;
+              border: 1px solid var(--border-color);
+              padding: 1rem;
+              overflow-x: auto;
+              font-family: monospace;
+              font-size: 0.9rem;
+              margin-bottom: 1.5rem;
+            }
+            
+            code {
+              font-family: monospace;
+              background-color: #f5f4f0;
+              padding: 0.1rem 0.3rem;
+              font-size: 0.9rem;
+            }
+            
+            button, input, select {
+              font-family: var(--font-sans);
+            }
+            
+            .editorial-btn {
+              padding: 0.5rem 1rem;
+              background-color: var(--text-color);
+              color: var(--bg-color);
+              border: none;
+              font-family: var(--font-sans);
+              font-size: 0.85rem;
+              text-transform: uppercase;
+              letter-spacing: 0.05em;
+              cursor: pointer;
+              transition: all 0.2s ease;
+            }
+            
+            .editorial-btn:hover {
+              background-color: var(--accent-color);
+            }
+        `;
+
+        function updatePreview() {
+            const rawContent = contentInput.value;
+            const renderAsHtml = renderHtmlCheckbox ? renderHtmlCheckbox.checked : false;
+
+            if (renderAsHtml) {
+                // Update badge to HTML Mode
+                previewBadge.innerText = "HTML Mode";
+                previewBadge.className = "preview-mode-badge html";
+                
+                // Clear any markdown classes on container
+                previewContainer.className = "preview-content";
+
+                // Recreate iframe to avoid session history nesting or other script lock issues
+                previewContainer.innerHTML = '';
+                const iframe = document.createElement("iframe");
+                iframe.className = "preview-iframe";
+                iframe.sandbox = "allow-scripts allow-same-origin allow-downloads allow-modals allow-forms";
+                previewContainer.appendChild(iframe);
+
+                // Inject CSS + user content
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                
+                // Construct the HTML to inject
+                let finalHtml = '';
+                const lowerContent = rawContent.toLowerCase();
+                
+                const injectHead = `<style>${iframeStyles}</style>`;
+                
+                if (lowerContent.includes('<html')) {
+                    // Inject style into head of existing html structure
+                    if (lowerContent.includes('<head>')) {
+                        const headIndex = lowerContent.indexOf('<head>');
+                        finalHtml = rawContent.slice(0, headIndex + 6) + injectHead + rawContent.slice(headIndex + 6);
+                    } else {
+                        // Insert head tag
+                        const htmlIndex = lowerContent.indexOf('<html>');
+                        finalHtml = rawContent.slice(0, htmlIndex + 6) + `<head>${injectHead}</head>` + rawContent.slice(htmlIndex + 6);
+                    }
+                } else {
+                    // Wrap user content with style
+                    finalHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">${injectHead}</head><body>${rawContent}</body></html>`;
+                }
+
+                iframeDoc.open();
+                iframeDoc.write(finalHtml);
+                iframeDoc.close();
+            } else {
+                // Update badge to Markdown Mode
+                previewBadge.innerText = "Markdown Mode";
+                previewBadge.className = "preview-mode-badge markdown";
+
+                // Use github-markdown container style
+                previewContainer.className = "preview-content markdown-body";
+
+                // Parse and update HTML using marked library
+                try {
+                    previewContainer.innerHTML = marked.parse(rawContent || "");
+                } catch (e) {
+                    console.error("Marked parsing error:", e);
+                    previewContainer.innerText = rawContent;
+                }
+            }
+        }
+
+        // Add event listeners for dynamic updates
+        contentInput.addEventListener("input", updatePreview);
+        if (renderHtmlCheckbox) {
+            renderHtmlCheckbox.addEventListener("change", updatePreview);
+        }
+
+        // Initialize preview on load
+        updatePreview();
+    });
+</script>
+{% endblock %}

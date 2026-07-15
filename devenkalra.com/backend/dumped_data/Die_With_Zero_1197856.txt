@@ -1,0 +1,94 @@
+
+um up, Chapter 11 of
+
+                                        <em data-start="6738" data-end="6753">Die With Zero</em> emphasizes the
+
+                                        importance of understanding how human memory works through the Peak-End Rule.
+
+                                        Perkins argues that to lead a truly fulfilling life, we should carefully design
+
+                                        our experiences to include powerful emotional peaks and satisfying endings. By
+
+                                        understanding how memories are formed and how the peak and end moments of
+
+                                        experiences shape our perceptions, we can create richer, more meaningful lives.
+
+                                        This approach encourages us to focus on maximizing the moments that truly
+
+                                        matter, ultimately leading to a life that is rich with joyful memories rather
+
+                                        than accumulated wealth.</p></div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</article>
+
+<h1>undefined</h1>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message-id="e5f35d6d-546e-4188-98c3-5ad24a455efc"
+
+                             dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><h3
+
+                                        data-start...'="0" data-end="55"><strong data-start="4" data-end="55">Chapter 12:
+
+                                    "The Time You Have is All You Have"</strong></h3>
+
+                                    <p data-start="57" data-end="580">In <strong data-start="60" data-end="74">Chapter
+
+                                        12</strong> of <em data-start="78" data-end="96">"Die With Zero,"</em> Bill
+
+                                        Perkins explores the central concept that <strong data-start="144"
+
+                                                                                          data-end="182">time is the
+
+                                            most precious resource</strong> we have. He emphasizes that time, unlike
+
+                                        money, cannot be replenished or saved for later...it is finite and irreversible.
+
+                                        This chapter discusses how we often mismanage our time, mistakenly thinking that
+
+                                        we can always work, save, or do things "later," but the reality is that our time
+
+                                        is constantly ticking away, and the way we choose to spend it determines the
+
+                                        richness and fulfillment of our lives.</p><h4 data-start="582" data-end="635">
+
+                                        <strong data-start="587" data-end="635">1. The Reality of Time as a Finite
+
+                                            Resource:</strong></h4>
+
+                                    <p data-start="636" data-end="909">Perkins begins by reminding readers that time is
+
+                                        the one thing that we cannot get back. While money

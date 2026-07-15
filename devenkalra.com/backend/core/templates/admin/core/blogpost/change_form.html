@@ -1,0 +1,158 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_modify %}
+
+{% block content %}
+<!-- Substack Import Section -->
+<style>
+    .substack-import-container {
+        background: #fdfdfd;
+        border: 2px dashed #ff9100;
+        border-radius: 6px;
+        padding: 1.5rem;
+        margin: 20px 0;
+        font-family: var(--font-sans, "Roboto", "Helvetica Neue", sans-serif);
+    }
+    .substack-import-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: #e65100;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .substack-import-row {
+        display: flex;
+        gap: 10px;
+        margin-top: 0.8rem;
+    }
+    .substack-import-input {
+        flex: 1;
+        padding: 8px 12px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 0.95rem;
+    }
+    .substack-import-btn {
+        background: #e65100;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: background 0.15s ease;
+    }
+    .substack-import-btn:hover {
+        background: #ef6c00;
+    }
+    .substack-import-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+    .substack-import-status {
+        margin-top: 0.8rem;
+        font-size: 0.9rem;
+        font-weight: bold;
+        color: #666;
+    }
+</style>
+
+<div class="substack-import-container">
+    <div class="substack-import-title">
+        🧡 Import from SubStack
+    </div>
+    <div style="font-size: 0.85rem; color: #555;">
+        Paste a SubStack article URL here to pull in its title, summary, cover image, and body content automatically. Embedded images will be downloaded and saved locally on your site.
+    </div>
+    <div class="substack-import-row">
+        <input type="url" id="substack-url" class="substack-import-input" placeholder="https://yournewsletter.substack.com/p/your-post-title" />
+        <button type="button" id="substack-import-btn" class="substack-import-btn">Import Content</button>
+    </div>
+    <div id="substack-status" class="substack-import-status" style="display: none;"></div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        const importBtn = document.getElementById("substack-import-btn");
+        const urlInput = document.getElementById("substack-url");
+        const statusDiv = document.getElementById("substack-status");
+
+        // Locate input elements on the django blog post form
+        const titleInput = document.getElementById("id_title");
+        const slugInput = document.getElementById("id_slug");
+        const contentInput = document.getElementById("id_content");
+        const summaryInput = document.getElementById("id_summary");
+        const coverImageInput = document.getElementById("id_cover_image");
+        const renderHtmlCheckbox = document.getElementById("id_render_as_html");
+
+        importBtn.addEventListener("click", function() {
+            const urlVal = urlInput.value.trim();
+            if (!urlVal) {
+                alert("Please enter a valid Substack URL.");
+                return;
+            }
+
+            importBtn.disabled = true;
+            statusDiv.style.display = "block";
+            statusDiv.style.color = "#fb8c00";
+            statusDiv.innerText = "⏳ Fetching page, downloading images, and rewriting links... please wait...";
+
+            // Retrieve Django's CSRF token
+            const csrfTokenElement = document.querySelector('[name=csrfmiddlewaretoken]');
+            const csrfToken = csrfTokenElement ? csrfTokenElement.value : '';
+
+            // Make POST request to custom admin endpoint
+            fetch('/admin/core/blogpost/import-substack/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': csrfToken
+                },
+                body: new URLSearchParams({
+                    'url': urlVal
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                importBtn.disabled = false;
+                if (data.error) {
+                    statusDiv.style.color = "#d32f2f";
+                    statusDiv.innerText = "❌ Error: " + data.error;
+                } else {
+                    statusDiv.style.color = "#2e7d32";
+                    statusDiv.innerText = "✅ Successfully imported blog post from SubStack!";
+                    
+                    // Populate fields
+                    if (titleInput && data.title) {
+                        titleInput.value = data.title;
+                        // Trigger change / keyup events to trigger Django's slug prepopulate logic
+                        titleInput.dispatchEvent(new Event('change'));
+                        titleInput.dispatchEvent(new Event('keyup'));
+                        titleInput.dispatchEvent(new Event('blur'));
+                    }
+                    if (summaryInput && data.summary) {
+                        summaryInput.value = data.summary;
+                    }
+                    if (contentInput && data.content) {
+                        contentInput.value = data.content;
+                    }
+                    if (coverImageInput && data.cover_image) {
+                        coverImageInput.value = data.cover_image;
+                    }
+                    if (renderHtmlCheckbox) {
+                        renderHtmlCheckbox.checked = !!data.render_as_html;
+                    }
+                }
+            })
+            .catch(err => {
+                importBtn.disabled = false;
+                statusDiv.style.color = "#d32f2f";
+                statusDiv.innerText = "❌ Connection error: " + err.message;
+            });
+        });
+    });
+</script>
+
+{{ block.super }}
+{% endblock %}

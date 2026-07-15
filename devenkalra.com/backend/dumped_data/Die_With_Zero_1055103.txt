@@ -1,0 +1,94 @@
+
+="">In
+
+                                        Chapter 3 of <em data-start="7882" data-end="7900">"Die With Zero,"</em> Perkins
+
+                                        expands on the idea that life should be approached as a portfolio of
+
+                                        experiences. By diversifying and planning for different types of experiences at
+
+                                        different stages of life, you can create a more fulfilling and well-rounded
+
+                                        existence. The chapter emphasizes that the goal should not be to accumulate
+
+                                        wealth or material possessions, but to focus on creating meaningful memories
+
+                                        that will bring long-lasting joy and personal growth. Through careful
+
+                                        "experience budgeting" and prioritizing health, you can maximize the emotional
+
+                                        dividends from your life...s experiences.</p></div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</article>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message....-id="16af62a9-df9b-4525-ae5f-32b8c10fc93e"
+
+                             dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><h3
+
+                                        data-start="0" data-end="45"><strong data-start="4" data-end="45">Chapter 4:
+
+                                    Make the Most of Your Time</strong></h3>
+
+                                    <p data-start="47" data-end="445">In <strong data-start="50" data-end="63">Chapter
+
+                                        4</strong> of <em data-start="67" data-end="85">"Die With Zero,"</em> Bill
+
+                                        Perkins focuses on one of the most crucial resources in life: time. While money
+
+                                        can be earned and saved, time is the one thing you can never get back once it...s
+
+                                        gone. In this chapter, Perkins stresses the importance of managing your time
+
+                                        wisely, making conscious decisions about how to spend it, and aligning it with
+
+                                        the life experiences you want to have.</p><h4 data-start="447" data-end="492">
+
+                                        <strong data-start="452" data-end="492">1. Time is Your Most Valuable
+
+                                            Asset:</strong></h4>
+
+                                    <p data-start="493" data-end="935">Perkins opens by making a strong case that time
+
+                                        is more precious than money. Unlike money, time is finite ... you only have a
+
+                                        limited number of hours, days, and years to live. Once time is spent, you cannot
+
+                                        reclaim it. This makes it essential to spend time on activities that truly
+
+                                        enrich your life. Perkins emphasizes that you need to focus on time, not just in
+
+ 

@@ -1,0 +1,94 @@
+
+he
+
+                                        final chapter of <em data-start="7479" data-end="7496">"Die With Zero"</em>
+
+                                        calls for a shift in mindset...from hoarding wealth for a distant future to
+
+                                        spending intentionally to create a life filled with experiences, joy, and
+
+                                        fulfillment. Perkins encourages readers to live fully, give generously, and use
+
+                                        their resource....s wisely to ensure they have the most enriching life possible. The
+
+                                        ultimate goal is to create a life where, when the time comes to pass on, you
+
+                                        leave behind a rich legacy of experiences and memories, rather than an untapped
+
+                                        fortune.</p></div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</article>
+
+<h1>undefined</h1>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message-id="d1d25b76-b250-47d2-85b8-c458470255fb"
+
+                             dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><h3
+
+                                        data-start="0" data-end="48"><strong data-start="4" data-end="48">Chapter 10:
+
+                                    "Maximizing Time, Not Money"</strong></h3>
+
+                                    <p data-start="50" data-end="505">In <strong data-start="53" data-end="67">Chapter
+
+                                        10</strong> of <em data-start="71" data-end="89">"Die With Zero,"</em> Bill
+
+                                        Perkins shifts the focus from financial resources to the most valuable resource
+
+                                        we all have: time. While money can be saved, invested, and passed on, time is
+
+                                        finite, and once it...s gone, it can never be reclaimed. Perkins argues that in
+
+                                        order to lead a fulfilling life, we must maximize how we spend our time,
+
+                                        ensuring it aligns with what matters most to us, rather than solely focusing on
+
+                                        accumulating wealth.</p><h4 data-start="507" data-end="536"><strong
+
+                                            data-start="512" data-end="536">1. The Central Idea:</strong></h4>
+
+                                    <p data-start="537" data-end="991">Perkins' central argument in this chapter is
+
+                                        that, as we accumulate wealth throughout our lives, we must also recognize the
+
+                                        diminishing returns of saving too much money at the expense of using time
+
+                                        wisely. While saving is important, it should not come at the cost of using our
+
+                                        time to live, experience, and enjoy life to the fullest. The chapter stresses
+
+                                        that the true purpose of money is to allow us to 

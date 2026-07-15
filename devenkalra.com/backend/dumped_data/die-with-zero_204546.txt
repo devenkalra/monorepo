@@ -1,0 +1,230 @@
+
+...............................................................ideas...9.thinking-fast-and-slow...'.die-with-zero...5.video-ai-internships...9.highschool-photography...#.track-ideas...).cooking-snacks...%.indian-music...%.book-reviews.../.rich-dad-poor-dad...).book-summaries...-.technical-papers.../.video-transcripts.../.professional-life.....who-am-i....4nd: #ffffff;
+
+            padding: 20px;
+
+           float: left; 
+
+          width: 100px;
+
+           margin-bottom: 20px;
+
+            border-radius: 8px;
+
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+
+            border-left: 4px solid #3498db;
+
+        }
+
+        .step-list {
+
+            list-style-type: none;
+
+            padding-left: 0;
+
+        }
+
+        .step-list li {
+
+            position: relative;
+
+            padding-left: 35px;
+
+            margin-bottom: 15px;
+
+        }
+
+        .step-list li::before {
+
+            content: counter(step-counter);
+
+            counter-increment: step-counter;
+
+            position: absolute;
+
+            left: 0;
+
+            top: 2px;
+
+            background-color: #3498db;
+
+            color: white;
+
+            width: 22px;
+
+            height: 22px;
+
+            border-radius: 50%;
+
+            text-align: center;
+
+            font-size: 0.85rem;
+
+            line-height: 22px;
+
+            font-weight: bold;
+
+        }
+
+        .step-list {
+
+            counter-reset: step-counter;
+
+        }
+
+        .note-box {
+
+            background-color: #fff3cd;
+
+            border-left: 4px solid #ffc107;
+
+            padding: 15px;
+
+            margin: 25px 0;
+
+            border-radius: 4px;
+
+        }
+
+        .tip-list {
+
+            background-color: #e8f4fd;
+
+            padding: 20px 20px 20px 40px;
+
+            border-radius: 8px;
+
+        }
+
+        code {
+
+            background-color: #f1f1f1;
+
+            padding: 2px 6px;
+
+            border-radius: 4px;
+
+            font-family: monospace;
+
+        }
+
+    </style>
+
+ <script>
+
+    class ExLine extends HTMLElement {
+
+      connectedCallback() {
+
+        const title = this.getAttribute('title') || '';
+
+        const value = this.getAttribute('value') || '';
+
+        this.innerHTML = `<div><b>${title}: </b>${value}</div>`;
+
+      }
+
+    }
+
+
+
+    // Register the component (Must include a hyphen)
+
+    customElements.define('ex-line', ExLine);
+
+  </script>
+
+</head>
+
+<body>
+
+
+
+    <header>
+
+        <h1>Knee & Leg Strengthening Guide for Photographers</h1>
+
+        <p>Exercises and techniques to rise easily from a kneeling shooting position</p>
+
+    </header>
+
+
+
+    <p>Getting low to capture the perfect shot puts an immense amount of demand on your lower body. Rising from a kneel requires a combination of quadriceps strength (the front of your thighs), glute drive, hip mobility, and core stability. Shifting the load off the joints and back onto the muscles makes standing up much smoother.</p>
+
+
+
+<div>
+
+ <div class="top-card">
+
+       <div><b>Quad Sets</b></div>
+
+      <ex-line title="Hold" value="5sec"></ex-line>
+
+      <ex-line title="Sets" value="2"></ex-line>
+
+      <ex-line title="Reps" value="10"></ex-line>
+
+    </div>
+
+ <div class="top-card">
+
+       <div><b>Str Leg Raise</b></div>
+
+      <ex-line title="Hold" value="1sec"></ex-line>
+
+      <ex-line title="Sets" value="2"></ex-line>
+
+      <ex-line title="Reps" value="10-12"></ex-line>
+
+  
+
+    </div>
+
+<div class="top-card">
+
+       <div><b>Glute Bridge</b></div>
+
+      <ex-line title="Hold" value="None"></ex-line>
+
+      <ex-line title="Sets" value="2"></ex-line>
+
+      <ex-line title="Reps" value="10-12"></ex-line>
+
+  
+
+    </div>
+
+<div class="top-card">
+
+       <div><b>Chair Squat</b></div>
+
+      <ex-line title="Hold" value="None"></ex-line>
+
+      <ex-line title="Sets" value="2"></ex-line>
+
+      <ex-line title="Reps" value="8-10"></ex-line>
+
+  
+
+    </div>
+
+<div style="clear:both"></div>
+
+</div>
+
+
+
+    <h2>1. Low-Impact Knee Strengthening</h2>
+
+    <p>Activate the quadriceps and stabilize the knee joint without heavy compression.</p>
+
+    
+
+    <div class="exercise-card">
+
+        <h3>Quad Sets</h3>
+
+      <img src

@@ -1,0 +1,274 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_modify %}
+
+{% block content %}
+{{ block.super }}
+
+<!-- Drag and Drop Area -->
+<style>
+    .drop-zone {
+        border: 2px dashed #0288d1;
+        border-radius: 6px;
+        padding: 2rem 1.5rem;
+        text-align: center;
+        background: #f4fafd;
+        color: #01579b;
+        font-family: var(--font-sans, "Roboto", "Helvetica Neue", sans-serif);
+        margin: 20px 0;
+        cursor: pointer;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .drop-zone.dragover {
+        background: #e1f5fe;
+        border-color: #01579b;
+        color: #004d40;
+    }
+    .drop-zone-text {
+        font-size: 1.1rem;
+        font-weight: 500;
+        margin-bottom: 0.4rem;
+    }
+    .drop-zone-subtext {
+        font-size: 0.85rem;
+        color: #555;
+    }
+    .drop-preview {
+        margin-top: 1rem;
+        font-weight: bold;
+        font-size: 0.95rem;
+        color: #0288d1;
+        background: #fff;
+        border: 1px solid #b3e5fc;
+        padding: 6px 12px;
+        display: inline-block;
+        border-radius: 4px;
+    }
+</style>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function() {
+        // Create the drop zone container
+        const dropZone = document.createElement("div");
+        dropZone.className = "drop-zone";
+        dropZone.innerHTML = `
+            <div class="drop-zone-text">📂 Drag & Drop File Here</div>
+            <div class="drop-zone-subtext">Drop a file from your local machine, or drag and drop a link/URL from another website</div>
+            <div class="drop-preview" id="drop-preview">No file selected</div>
+        `;
+        
+        // Find the form and insert the drop zone at the top of the fieldsets
+        const form = document.getElementById("staticfile_form");
+        if (form) {
+            const firstFieldset = form.querySelector("fieldset");
+            if (firstFieldset) {
+                firstFieldset.parentNode.insertBefore(dropZone, firstFieldset);
+            }
+        }
+
+        const fileInput = document.getElementById("id_file");
+        const urlInput = document.getElementById("id_file_url");
+        const filenameInput = document.getElementById("id_filename");
+        const localCopyCheckbox = document.getElementById("id_make_local_copy");
+        const preview = document.getElementById("drop-preview");
+
+        // Helper to generate filename based on file name or URL
+        function generateAndSetFilename(nameOrUrl) {
+            if (!filenameInput) return;
+            
+            let basename = "";
+            try {
+                const urlObj = new URL(nameOrUrl);
+                let pathname = urlObj.pathname;
+                if (pathname.endsWith('/')) {
+                    pathname = pathname.slice(0, -1);
+                }
+                basename = pathname.substring(pathname.lastIndexOf('/') + 1);
+                basename = basename.split('?')[0].split('#')[0];
+            } catch (e) {
+                // Not a URL, treat as plain filename
+                basename = nameOrUrl.substring(nameOrUrl.lastIndexOf('/') + 1);
+                basename = basename.substring(basename.lastIndexOf('\\') + 1);
+            }
+            
+            let ext = "";
+            if (basename) {
+                const lastDot = basename.lastIndexOf('.');
+                if (lastDot !== -1) {
+                    ext = basename.substring(lastDot);
+                }
+            }
+            if (!ext) {
+                ext = ".png"; // fallback
+            }
+            
+            const shortToken = Math.random().toString(36).substring(2, 10);
+            filenameInput.value = `${shortToken}${ext}`;
+            
+            updateCopyableUrlField();
+        }
+
+        // Helper to update the Copyable URL readonly field
+        function updateCopyableUrlField() {
+            const copyableContainer = document.querySelector(".field-copyable_file_url .readonly");
+            if (!copyableContainer) return;
+            
+            let urlVal = "-";
+            const filename = filenameInput ? filenameInput.value.trim() : "";
+            const url = urlInput ? urlInput.value.trim() : "";
+            const makeLocal = localCopyCheckbox ? localCopyCheckbox.checked : true;
+            const hasLocalFile = fileInput && fileInput.files && fileInput.files.length > 0;
+            
+            if (hasLocalFile) {
+                if (filename) {
+                    urlVal = "/api/media/uploads/" + filename;
+                }
+            } else if (url) {
+                if (makeLocal && filename) {
+                    urlVal = "/api/media/uploads/" + filename;
+                } else {
+                    urlVal = url;
+                }
+            } else {
+                // Check if there is an existing file link in the Django Admin page
+                const fileAnchor = document.querySelector(".field-file a");
+                if (fileAnchor) {
+                    urlVal = fileAnchor.getAttribute("href");
+                }
+            }
+            
+            if (urlVal && urlVal !== "-") {
+                copyableContainer.innerHTML = `<input type="text" readonly value="${urlVal}" style="width: 350px; font-family: monospace; font-size: 11px;" onclick="this.select();" />`;
+            } else {
+                copyableContainer.innerHTML = "-";
+            }
+        }
+
+        // Click zone to trigger file input click
+        dropZone.addEventListener("click", () => {
+            fileInput.click();
+        });
+
+        // Update preview text and filename when file input changes (manual click select)
+        fileInput.addEventListener("change", () => {
+            if (fileInput.files.length > 0) {
+                preview.innerHTML = "📝 Selected Local File: <code>" + fileInput.files[0].name + "</code>";
+                if (urlInput) urlInput.value = ""; // Clear URL field if local file selected
+                generateAndSetFilename(fileInput.files[0].name);
+            }
+        });
+
+        // Watch manual changes to URL Input
+        if (urlInput) {
+            urlInput.addEventListener("change", () => {
+                if (urlInput.value.trim()) {
+                    fileInput.value = ""; // Clear local file selection
+                    preview.innerHTML = "🌐 Selected Internet URL: <code style='word-break: break-all;'>" + urlInput.value + "</code>";
+                    generateAndSetFilename(urlInput.value.trim());
+                } else {
+                    updateCopyableUrlField();
+                }
+            });
+            urlInput.addEventListener("input", () => {
+                if (!urlInput.value.trim()) {
+                    updateCopyableUrlField();
+                }
+            });
+        }
+
+        // Watch manual changes to make_local_copy and filename inputs
+        if (localCopyCheckbox) {
+            localCopyCheckbox.addEventListener("change", updateCopyableUrlField);
+        }
+        if (filenameInput) {
+            filenameInput.addEventListener("input", updateCopyableUrlField);
+        }
+
+        // Drag and drop event listeners
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.add("dragover");
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                dropZone.classList.remove("dragover");
+            }, false);
+        });
+
+        function extractUrl(dt) {
+            const htmlText = dt.getData("text/html");
+            if (htmlText) {
+                try {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlText, "text/html");
+                    const img = doc.querySelector("img");
+                    if (img && img.src && (img.src.startsWith("http://") || img.src.startsWith("https://"))) {
+                        return img.src;
+                    }
+                    const link = doc.querySelector("a");
+                    if (link && link.href && (link.href.startsWith("http://") || link.href.startsWith("https://"))) {
+                        return link.href;
+                    }
+                } catch (e) {
+                    console.error("Error parsing dropped HTML:", e);
+                }
+            }
+
+            const uriList = dt.getData("text/uri-list");
+            if (uriList) {
+                const lines = uriList.split(/[\r\n]+/);
+                for (let line of lines) {
+                    line = line.trim();
+                    if (line && !line.startsWith("#") && (line.startsWith("http://") || line.startsWith("https://"))) {
+                        return line;
+                    }
+                }
+            }
+
+            const plainText = dt.getData("text/plain");
+            if (plainText) {
+                const trimmed = plainText.trim();
+                if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                    return trimmed;
+                }
+            }
+
+            return null;
+        }
+
+        // Handling drops
+        dropZone.addEventListener("drop", (e) => {
+            const dt = e.dataTransfer;
+
+            // 1. Try to get dropped URL from another tab or website
+            const urlData = extractUrl(dt);
+            if (urlData) {
+                if (urlInput) {
+                    urlInput.value = urlData;
+                    fileInput.value = ""; // Clear any local file selection
+                    preview.innerHTML = "🌐 Selected Internet URL: <code style='word-break: break-all;'>" + urlData + "</code>";
+                    generateAndSetFilename(urlData);
+                }
+                return;
+            }
+
+            // 2. Try to get dropped local files
+            const files = dt.files;
+            if (files && files.length > 0) {
+                fileInput.files = files;
+                if (urlInput) urlInput.value = ""; // Clear URL field
+                preview.innerHTML = "📝 Dropped Local File: <code>" + files[0].name + "</code>";
+                generateAndSetFilename(files[0].name);
+            }
+        });
+
+        // Initialize Copyable URL field on load
+        updateCopyableUrlField();
+    });
+</script>
+{% endblock %}

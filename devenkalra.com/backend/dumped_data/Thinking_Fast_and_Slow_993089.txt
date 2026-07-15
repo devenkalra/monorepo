@@ -1,0 +1,146 @@
+
+#2c3e50; /* Dark but modern color */
+
+
+
+    }
+
+
+
+</style>
+
+
+
+<div id="my-body">
+
+<div class="title">Thinking Fast and Slow</div>
+
+
+
+<div class="author">Daniel Kahneman</div>
+
+<h1>Summary</h1>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-mess...1......''....AA.
+Die With Zerodie-with-zero<style>
+
+    #my-body  .title {
+
+
+
+        font-size: 2rem;
+
+        font-weight: bold;
+
+        color: #2c3e50; /* Dark but modern color */
+
+        text-align: center;
+
+    }
+
+
+
+    #my-body .author {
+
+        font-family: Roboto, sans-serif;
+
+        font-size: 1.5rem;
+
+        color: #2c3e50; /* Dark but modern color */
+
+        text-align: center;
+
+    }
+
+
+
+    #my-body  h1 {
+
+
+
+        font-size: 1.5rem;
+
+        font-weight: bold;
+
+        .........55.=.AA.
+Video AI Internshipsvideo-ai-internships# Ongoing Project: Video AI Internships
+
+> [!NOTE]
+> This page is password protected.
+
+Log of my research and coaching for Video AI internships. Tracks candidate progress, interview prep materials, project suggestions, and coding challenges in deep learning and video processing.
+2026-06-02 06:44:11.2549672026-06-02 06:44:11.254967.v...99.#.AA.
+Highschool Photographyhighschool-photography# Ongoing Project: Highschool Photography
+
+> [!NOTE]
+> This page is password protected.
+
+A project tracking my photography mentoring, highschool portfolios, and camera equipment tests. I share galleries and technical notes on lenses, exposure, and editing workflows.
+2026-06-02 06:44:11.2529692026-06-02 06:44:11.252969.N...##...AA.
+Track Ideastrack-ideas# Workflow Ideas Board
+
+> [!NOTE]
+> This page is password protected as it contains personal logs, pending patents, and early-stage project brainstorming.
+
+Here is a list of active concepts, side projects, and writing topics I am currently tracking.
+2026-06-02 06:44:11.2509672026-06-02 06:44:11.250967....color: #2c3e50; /* Dark but modern color */
+
+    }
+
+</style>
+
+
+
+<div id="my-body">
+
+<div class="title">Die With Zero</div>
+
+<div class="author">Bill Perkins</div>
+
+<h1>Summary</h1>
+
+
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message-id="f431afa1-bf17-4040-bd1e-b1e4fe85df85"
+
+                             dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><p data-start="0"
+
+                                                                                                          data-end="354">
+
+                                    <strong data-start="0" data-end="70">"Die With Zero: Getting All You Can from Your
+
+                                        Money and Your Life"</strong> by Bill Perkins is a book that challenges the
+
+                                    conventional wisdom of saving and accumulating wealth for retirement. Instead,
+
+                                   

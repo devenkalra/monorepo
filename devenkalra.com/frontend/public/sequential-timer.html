@@ -1,0 +1,1866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sequential Timer Sequencer</title>
+  <link rel="stylesheet" href="/iframe-editorial.css">
+  <style>
+    /* Reset and custom variables matching the premium look */
+    :root {
+      --bg-color: #0c0c0d;
+      --panel-bg: rgba(255, 255, 255, 0.02);
+      --panel-hover: rgba(255, 255, 255, 0.04);
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-focus: rgba(255, 255, 255, 0.2);
+      --text-main: #f3f4f6;
+      --text-sub: #9ca3af;
+      --accent: #a27b5c;
+      --accent-glow: rgba(162, 123, 92, 0.4);
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --info: #0ea5e9;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-serif: 'Lora', Georgia, serif;
+    }
+
+    body.light-theme {
+      --bg-color: #fbfaf7;
+      --panel-bg: rgba(0, 0, 0, 0.02);
+      --panel-hover: rgba(0, 0, 0, 0.04);
+      --border-color: rgba(0, 0, 0, 0.08);
+      --border-focus: rgba(0, 0, 0, 0.2);
+      --text-main: #2b2b2a;
+      --text-sub: #6e6d6a;
+      --accent-glow: rgba(162, 123, 92, 0.15);
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      box-sizing: border-box;
+      -webkit-font-smoothing: antialiased;
+      transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 1000px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      box-sizing: border-box;
+    }
+
+    /* Sidebar styles */
+    .sidebar {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .sidebar h2 {
+      font-family: var(--font-serif);
+      font-size: 1.4rem;
+      margin: 0 0 0.5rem 0;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.5rem;
+      font-weight: 400;
+    }
+
+    .sequence-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 0.75rem;
+    }
+
+
+    .sequence-item {
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s ease;
+      background: transparent;
+      color: var(--text-main);
+      text-align: left;
+      width: 100%;
+      font-size: 0.95rem;
+    }
+
+    .sequence-item:hover {
+      background: var(--panel-hover);
+      border-color: var(--border-focus);
+    }
+
+    .sequence-item.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      font-weight: 600;
+    }
+
+    .sequence-item .action-btn {
+      color: var(--text-sub);
+      cursor: pointer;
+      opacity: 0.5;
+      transition: opacity 0.2s ease, transform 0.1s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.9rem;
+      padding: 0.25rem;
+      border-radius: 4px;
+    }
+
+    .sequence-item .action-btn:hover {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+
+    .sequence-item .delete-btn:hover {
+      color: var(--danger);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .sequence-item .edit-btn:hover {
+      color: var(--accent);
+      background: rgba(162, 123, 92, 0.1);
+    }
+
+    /* Primary layout controls */
+    .header-bar {
+      grid-column: 1 / -1;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      width: 100%;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .header-bar h1 {
+      font-family: var(--font-serif);
+      font-size: 2.2rem;
+      margin: 0;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+    }
+
+    .theme-toggle-btn {
+      background: none;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: all 0.2s ease;
+    }
+
+    .theme-toggle-btn:hover {
+      background: var(--panel-hover);
+      border-color: var(--border-focus);
+    }
+
+    /* Main countdown layout */
+    .main-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .timer-card {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 2.5rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      min-height: 400px;
+    }
+
+    /* Circular dial */
+    .dial-container {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: min(70vw, 320px);
+      height: min(70vw, 320px);
+      margin-bottom: 2rem;
+    }
+
+    .timer-dial {
+      width: 100%;
+      height: 100%;
+      transform: rotate(-90deg);
+    }
+
+    .dial-bg {
+      fill: none;
+      stroke: var(--border-color);
+      stroke-width: 6px;
+    }
+
+    .dial-progress {
+      fill: none;
+      stroke: var(--step-color, var(--accent));
+      stroke-width: 6px;
+      stroke-linecap: round;
+      stroke-dasharray: 534; /* 2 * PI * 85 = 534 */
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 0.05s linear, stroke 0.3s ease;
+      filter: drop-shadow(0 0 6px var(--step-color, var(--accent)));
+    }
+
+    .dial-center {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      width: 80%;
+      pointer-events: none;
+    }
+
+    .step-label {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+      max-width: 90%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .digital-time {
+      font-family: monospace;
+      font-size: 3.8rem;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+
+    .next-label {
+      font-size: 0.85rem;
+      color: var(--text-sub);
+      margin-top: 8px;
+      opacity: 0.8;
+      max-width: 90%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .btn {
+      background: var(--text-main);
+      color: var(--bg-color);
+      border: none;
+      padding: 0.75rem 1.5rem;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border-radius: 6px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    .btn.secondary {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+    }
+
+    .btn.secondary:hover {
+      background: var(--panel-hover);
+      border-color: var(--border-focus);
+    }
+
+    .btn.active-play {
+      background: var(--success);
+      color: #ffffff;
+    }
+
+    /* Step Editor UI */
+    .editor-section {
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .editor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .editor-header h3 {
+      font-family: var(--font-serif);
+      font-size: 1.25rem;
+      margin: 0;
+      font-weight: 400;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .form-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-input {
+      background: var(--bg-color);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.6rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      transition: border-color 0.2s ease;
+      font-family: var(--font-sans);
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .step-edit-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 300px;
+      overflow-y: auto;
+      padding-right: 0.25rem;
+    }
+
+    .step-edit-row {
+      display: grid;
+      grid-template-columns: 1fr 85px 85px 85px 50px;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.5rem;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: rgba(0, 0, 0, 0.15);
+    }
+
+    body.light-theme .step-edit-row {
+      background: rgba(255, 255, 255, 0.4);
+    }
+
+    .color-select {
+      background: var(--bg-color);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.5rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .step-btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-move-btn {
+      background: none;
+      border: none;
+      color: var(--text-sub);
+      cursor: pointer;
+      padding: 1px;
+      font-size: 0.8rem;
+    }
+
+    .step-move-btn:hover {
+      color: var(--text-main);
+    }
+
+    /* Timeline visualizer */
+    .timeline-container {
+      width: 100%;
+      background: var(--panel-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-sizing: border-box;
+    }
+
+    .timeline-header {
+      font-family: var(--font-serif);
+      font-size: 1.1rem;
+      margin: 0 0 1rem 0;
+      color: var(--text-sub);
+      font-weight: 400;
+    }
+
+    .timeline-track {
+      display: flex;
+      gap: 0.5rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+    }
+
+    .timeline-node {
+      min-width: 120px;
+      flex: 1;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      position: relative;
+      background: rgba(255, 255, 255, 0.01);
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .timeline-node.completed {
+      opacity: 0.5;
+      background: rgba(255, 255, 255, 0.005);
+      border-color: var(--border-color);
+    }
+
+    .timeline-node.active {
+      border-color: var(--step-color, var(--accent));
+      background: var(--accent-glow);
+      transform: scale(1.02);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .timeline-node-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .timeline-node-time {
+      font-family: monospace;
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .timeline-node-status {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-sub);
+    }
+
+    .timeline-node.active .timeline-node-status {
+      color: var(--step-color, var(--accent));
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+
+    /* Shortcut helper styles */
+    .shortcuts-bar {
+      margin-top: 1rem;
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      display: flex;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      border-top: 1px solid var(--border-color);
+      padding-top: 1rem;
+      width: 100%;
+    }
+
+    .shortcut-key {
+      background: var(--panel-hover);
+      border: 1px solid var(--border-color);
+      padding: 0.1rem 0.4rem;
+      border-radius: 4px;
+      font-family: monospace;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Key press overlay feedback */
+    .key-toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--accent);
+      color: #ffffff;
+      padding: 0.6rem 1.2rem;
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-weight: 500;
+      font-size: 0.85rem;
+      opacity: 0;
+      transform: translateY(10px);
+      transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      z-index: 1000;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+      pointer-events: none;
+    }
+
+    .key-toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--border-focus);
+    }
+
+    /* Info banner if loaded in iframe */
+    .iframe-banner {
+      width: 100%;
+      background: rgba(162, 123, 92, 0.1);
+      border: 1px dashed var(--accent);
+      padding: 0.75rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      color: var(--text-main);
+      text-align: center;
+      margin-bottom: 1.5rem;
+      box-sizing: border-box;
+      display: none;
+    }
+
+    /* Responsive overrides for mobile screens */
+    @media (max-width: 600px) {
+      .app-container {
+        padding: 1rem;
+        gap: 1.25rem;
+      }
+      .header-bar h1 {
+        font-size: 1.6rem;
+      }
+      .timer-card {
+        padding: 1.5rem 1rem;
+        min-height: auto;
+      }
+      .dial-container {
+        width: min(75vw, 240px);
+        height: min(75vw, 240px);
+        margin-bottom: 1.25rem;
+      }
+      .digital-time {
+        font-size: 2.8rem;
+      }
+      .step-label {
+        font-size: 0.85rem;
+      }
+      .cycle-label {
+        font-size: 0.7rem;
+      }
+      .next-label {
+        font-size: 0.75rem;
+      }
+      .controls {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        width: 100%;
+      }
+      .controls .btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+        flex: 1 1 calc(50% - 0.5rem);
+        justify-content: center;
+      }
+      .controls .btn#play-pause-btn {
+        flex: 1 1 100%; /* Play/Pause full width */
+      }
+      .sequence-list {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+      }
+      .sidebar {
+        padding: 1rem;
+      }
+      .sidebar h2 {
+        font-size: 1.2rem;
+      }
+      .editor-section {
+        padding: 1rem;
+      }
+      .step-edit-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        padding: 0.5rem;
+      }
+      .step-edit-row input[type="text"] {
+        flex: 1 1 100%;
+      }
+      .step-edit-row input[type="number"] {
+        width: calc(25% - 0.4rem);
+        flex: 1 1 auto;
+      }
+      .step-edit-row select {
+        flex: 1 1 auto;
+      }
+      .step-edit-row .step-btn-group {
+        flex-direction: row;
+        gap: 0.25rem;
+      }
+      .step-edit-row .delete-btn {
+        margin-left: 0.25rem;
+      }
+    }
+
+    /* Full Screen Mode styles */
+    body.fullscreen-active {
+      overflow: hidden !important;
+      background-color: var(--bg-color);
+    }
+    body.fullscreen-active .app-container {
+      max-width: 100vw !important;
+      height: 100vh !important;
+      min-height: 100vh !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      justify-content: center !important;
+      align-items: center !important;
+    }
+    body.fullscreen-active .header-bar,
+    body.fullscreen-active .iframe-banner,
+    body.fullscreen-active .timeline-container,
+    body.fullscreen-active .editor-section,
+    body.fullscreen-active .sidebar,
+    body.fullscreen-active .shortcuts-bar,
+    body.fullscreen-active #seq-repeat-container,
+    body.fullscreen-active footer {
+      display: none !important;
+    }
+    body.fullscreen-active .main-panel {
+      width: 100% !important;
+      height: 100% !important;
+      max-width: 100% !important;
+      justify-content: center !important;
+      align-items: center !important;
+      gap: 0 !important;
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+    body.fullscreen-active .timer-card {
+      border: none !important;
+      background: transparent !important;
+      width: 100% !important;
+      height: 100vh !important;
+      max-width: 100% !important;
+      min-height: 100vh !important;
+      border-radius: 0 !important;
+      padding: 2rem !important;
+      box-shadow: none !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: center !important;
+      align-items: center !important;
+      box-sizing: border-box !important;
+    }
+    body.fullscreen-active .dial-container {
+      width: min(80vw, 70vh, 500px) !important;
+      height: min(80vw, 70vh, 500px) !important;
+      margin-bottom: 2.5rem !important;
+    }
+    body.fullscreen-active .digital-time {
+      font-size: clamp(3.5rem, 10vw, 6.5rem) !important;
+    }
+    body.fullscreen-active .step-label {
+      font-size: clamp(1.2rem, 3.5vw, 2.2rem) !important;
+    }
+    body.fullscreen-active .cycle-label {
+      font-size: clamp(0.8rem, 2vw, 1.2rem) !important;
+    }
+    body.fullscreen-active .next-label {
+      font-size: clamp(0.9rem, 2.5vw, 1.4rem) !important;
+    }
+    #floating-exit-fullscreen {
+      display: none;
+      position: fixed;
+      top: 1.5rem;
+      right: 1.5rem;
+      background: rgba(0, 0, 0, 0.4);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      font-weight: 500;
+      z-index: 10000;
+      transition: all 0.2s ease;
+    }
+    #floating-exit-fullscreen:hover {
+      background: rgba(0, 0, 0, 0.7);
+      border-color: #fff;
+    }
+    body.fullscreen-active #floating-exit-fullscreen {
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <!-- Floating exit full screen button (only visible in fullscreen mode) -->
+  <button id="floating-exit-fullscreen" onclick="toggleFullScreen()" title="Exit Full Screen (F or Esc)">✕ Close Full Screen</button>
+
+  <div class="app-container">
+    <div class="header-bar">
+      <h1>Sequential Timer</h1>
+      <div style="display: flex; gap: 0.75rem; align-items: center;">
+        <span id="sync-indicator" style="font-size: 0.8rem; font-weight: 500; color: var(--text-sub); display: none !important; align-items: center; gap: 0.35rem; border: 1px solid var(--border-color); padding: 0.35rem 0.65rem; border-radius: 6px; background: var(--panel-bg);" title="Syncing status with backend">
+          <span style="font-size: 0.95rem; line-height: 1;">☁️</span> <span id="sync-text">Connecting...</span>
+        </span>
+        <button class="theme-toggle-btn" id="fullscreen-toggle" onclick="toggleFullScreen()">⛶ Full Screen</button>
+        <button class="theme-toggle-btn" id="theme-toggle" onclick="toggleTheme()">Light Mode</button>
+      </div>
+    </div>
+
+    <!-- Collapsible iframe helper banner -->
+    <div class="iframe-banner" id="iframe-tip">
+      💡 <strong>Keyboard Shortcuts Enabled!</strong> Click anywhere inside the timer workspace first to enable keyboard controls.
+    </div>
+
+    <!-- Main timer panel -->
+    <div class="main-panel">
+      <div class="timer-card">
+        <div class="dial-container">
+          <svg class="timer-dial" viewBox="0 0 200 200">
+            <circle class="dial-bg" cx="100" cy="100" r="85"></circle>
+            <circle class="dial-progress" id="dial-progress" cx="100" cy="100" r="85"></circle>
+          </svg>
+          <div class="dial-center">
+            <span class="cycle-label" id="timer-cycle-progress" style="font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.7; margin-bottom: 2px;">Cycle 1 of 1</span>
+            <span class="step-label" id="timer-step-name">Loading...</span>
+            <span class="digital-time" id="timer-countdown">00:00</span>
+            <span class="next-label" id="timer-next-step">Up next: --</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <button class="btn secondary" onclick="restartSequence()" title="Reset to beginning of sequence (R)">
+            🔄 Reset
+          </button>
+          <button class="btn secondary" onclick="prevStep()" title="Previous step (←)">
+            ◀ Prev
+          </button>
+          <button class="btn active-play" id="play-pause-btn" onclick="togglePlayPause()" title="Play/Pause (Space)">
+            ▶ Play
+          </button>
+          <button class="btn secondary" onclick="nextStep()" title="Next step (→)">
+            Next ▶
+          </button>
+          <button class="btn secondary" onclick="editCurrentSequence()" title="Edit current sequence (E)">
+            ✏️ Edit
+          </button>
+        </div>
+
+        <div id="seq-repeat-container" style="margin-top: 1.5rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--text-sub);">
+          <span>Repeat sequence:</span>
+          <input type="number" id="seq-repeat-input" class="form-input" min="1" max="99" value="1" style="width: 60px; padding: 0.25rem 0.5rem; font-size: 0.85rem;" onchange="updateRepeatCount(this.value)">
+          <span>times</span>
+        </div>
+      </div>
+
+      <!-- Timeline tracking -->
+      <div class="timeline-container">
+        <h3 class="timeline-header">Sequence Progress Timeline</h3>
+        <div class="timeline-track" id="timeline-track">
+          <!-- Rendered via JS -->
+        </div>
+      </div>
+
+      <!-- Editor Panel (hidden by default) -->
+      <div class="editor-section" id="editor-panel" style="display: none;">
+        <div class="editor-header">
+          <h3 id="editor-title">Create Custom Sequence</h3>
+          <button class="btn secondary" style="padding: 0.3rem 0.6rem; font-size: 0.8rem;" onclick="closeEditor()">Close</button>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+          <div class="form-group">
+            <label class="form-label" for="seq-name-input">Sequence Name</label>
+            <input type="text" id="seq-name-input" class="form-input" placeholder="e.g. Tabata Extra">
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="seq-repeats-input-editor">Repeat Count</label>
+            <input type="number" id="seq-repeats-input-editor" class="form-input" min="1" max="99" value="1">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Sequence Steps</label>
+          <div class="step-edit-list" id="editor-steps-list">
+            <!-- Dynamic edit rows -->
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-top: 1rem;">
+          <button class="btn secondary" onclick="addEditorRow()">➕ Add Step</button>
+          <button class="btn" style="background: var(--success); color: #fff;" onclick="saveCustomSequence()">💾 Save Sequence</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar: list of sequences + action buttons -->
+    <div class="sidebar">
+      <h2>Timer Sequences</h2>
+      <div class="sequence-list" id="seq-list">
+        <!-- Rendered via JS -->
+      </div>
+      <button class="btn secondary" style="width: 100%; justify-content: center;" onclick="openCreator()">
+        ➕ Create Sequence
+      </button>
+
+      <div class="shortcuts-bar">
+        <div><span class="shortcut-key">Space</span> Play/Pause</div>
+        <div><span class="shortcut-key">→</span> Next Step</div>
+        <div><span class="shortcut-key">←</span> Prev Step</div>
+        <div><span class="shortcut-key">Esc</span> / <span class="shortcut-key">R</span> Reset</div>
+        <div><span class="shortcut-key">E</span> Edit Sequence</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="key-toast" id="key-toast">Key Pressed</div>
+
+  <script>
+    // Audio Context state
+    let audioCtx = null;
+
+    // Default sequences
+    const PRESETS = [
+      {
+        id: 'pomodoro',
+        name: '🍅 Pomodoro Focus',
+        repeats: 1,
+        steps: [
+          { name: 'Focus Session', duration: 1500, color: '#f43f5e' }, // Rose
+          { name: 'Short Break', duration: 300, color: '#10b981' }, // Emerald
+          { name: 'Focus Session', duration: 1500, color: '#f43f5e' },
+          { name: 'Short Break', duration: 300, color: '#10b981' },
+          { name: 'Focus Session', duration: 1500, color: '#f43f5e' },
+          { name: 'Long Break', duration: 900, color: '#0ea5e9' } // Sky
+        ]
+      },
+      {
+        id: 'tabata',
+        name: '🏋️ Tabata Intervals',
+        repeats: 1,
+        steps: [
+          { name: 'Warm Up', duration: 60, color: '#f59e0b' }, // Amber
+          { name: 'Work (High)', duration: 20, color: '#f43f5e' }, // Rose
+          { name: 'Rest', duration: 10, color: '#10b981' }, // Emerald
+          { name: 'Work (High)', duration: 20, color: '#f43f5e' },
+          { name: 'Rest', duration: 10, color: '#10b981' },
+          { name: 'Work (High)', duration: 20, color: '#f43f5e' },
+          { name: 'Rest', duration: 10, color: '#10b981' },
+          { name: 'Work (High)', duration: 20, color: '#f43f5e' },
+          { name: 'Rest', duration: 10, color: '#10b981' },
+          { name: 'Cool Down', duration: 60, color: '#8b5cf6' } // Violet
+        ]
+      },
+      {
+        id: 'run-jog',
+        name: '🏃 5K Run / Walk',
+        repeats: 1,
+        steps: [
+          { name: 'Warm Up Walk', duration: 300, color: '#f59e0b' },
+          { name: 'Jogging', duration: 120, color: '#0ea5e9' },
+          { name: 'Walking Recovery', duration: 90, color: '#10b981' },
+          { name: 'Jogging', duration: 120, color: '#0ea5e9' },
+          { name: 'Walking Recovery', duration: 90, color: '#10b981' },
+          { name: 'Jogging', duration: 120, color: '#0ea5e9' },
+          { name: 'Cool Down Walk', duration: 300, color: '#8b5cf6' }
+        ]
+      }
+    ];
+
+    // COLOR OPTIONS
+    const COLORS = [
+      { name: 'Rose', value: '#f43f5e' },
+      { name: 'Emerald', value: '#10b981' },
+      { name: 'Sky', value: '#0ea5e9' },
+      { name: 'Amber', value: '#f59e0b' },
+      { name: 'Violet', value: '#8b5cf6' },
+      { name: 'Cocoa', value: '#a27b5c' }
+    ];
+
+    // State Variables
+    let sequences = [];
+    let activeSeq = null;
+    let activeStepIdx = 0;
+    let isRunning = false;
+    let currentCycle = 1;
+
+
+    // Timer logic high precision
+    let timeRemaining = 0; // in milliseconds
+    let stepInitialTime = 0; // in milliseconds
+    let lastTickTime = 0;
+    let animationFrameId = null;
+    let editSeqId = null; // null if creating new, id if editing
+
+    // Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      // Check if inside iframe
+      if (window.self !== window.top) {
+        document.getElementById('iframe-tip').style.display = 'block';
+      }
+
+      // Sync theme with main site
+      const mainTheme = localStorage.getItem('tk_theme') || 'dark';
+      if (mainTheme === 'light') {
+        document.body.classList.add('light-theme');
+        document.getElementById('theme-toggle').textContent = 'Dark Mode';
+      }
+
+      // Load presets initially in active memory
+      sequences = [...PRESETS];
+      renderSequenceList();
+      selectSequence(sequences[0].id);
+      setupKeyboardAccelerators();
+      fetchPageData(); // Load custom sequences from database table
+    });
+
+    // Theme toggling
+    function toggleTheme() {
+      const isLight = document.body.classList.toggle('light-theme');
+      document.getElementById('theme-toggle').textContent = isLight ? 'Dark Mode' : 'Light Mode';
+      localStorage.setItem('tk_theme', isLight ? 'light' : 'dark');
+    }
+
+    // Full screen mode
+    function toggleFullScreen() {
+      document.body.classList.toggle('fullscreen-active');
+      const fsBtn = document.getElementById('fullscreen-toggle');
+      const isFS = document.body.classList.contains('fullscreen-active');
+      if (fsBtn) {
+        fsBtn.innerHTML = isFS ? 'Exit Full Screen' : '⛶ Full Screen';
+        fsBtn.title = isFS ? 'Exit Full Screen (F)' : 'Enter Full Screen (F)';
+      }
+      window.dispatchEvent(new Event('resize'));
+    }
+
+    function saveSequences() {
+      renderSequenceList();
+      syncPageData(); // Upload updated sequences to DB
+    }
+
+    // Helper to retrieve auth token from multiple sources
+    function getAuthToken() {
+      if (typeof window !== 'undefined' && window.__authToken) {
+        return window.__authToken;
+      }
+      try {
+        if (window.parent && window.parent.__authToken) {
+          return window.parent.__authToken;
+        }
+      } catch (e) {}
+      try {
+        return localStorage.getItem('authToken');
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function fetchPageData() {
+      const token = getAuthToken();
+      const indicator = document.getElementById('sync-indicator');
+      const statusText = document.getElementById('sync-text');
+
+      statusText.textContent = 'Loading...';
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Token ${token}`;
+        }
+
+        const response = await fetch('/api/page-data/sequential-timer/', { headers });
+
+        if (response.ok) {
+          const data = await response.json();
+          // If server returns valid synced sequences list, replace active sequences
+          if (data && Array.isArray(data.sequences) && data.sequences.length > 0) {
+            sequences = data.sequences;
+            // Clean/default repeats if missing
+            sequences.forEach(s => {
+              if (!s.repeats) s.repeats = 1;
+            });
+            renderSequenceList();
+            
+            // Restore current sequence if still exists in list, otherwise select first
+            if (activeSeq) {
+              const currentId = activeSeq.id;
+              const found = sequences.find(s => s.id === currentId);
+              selectSequence(found ? found.id : sequences[0].id);
+            } else {
+              selectSequence(sequences[0].id);
+            }
+            showToast('Sequences loaded from database ☁️');
+          } else {
+            // First time use or empty DB record: sync our local/preset config to DB
+            await syncPageData();
+          }
+          statusText.textContent = 'DB Connected';
+          indicator.title = 'Synced with database (Read & Write)';
+        } else {
+          if (response.status === 401 && token) {
+            // Token is stale. Clear it and retry anonymously to read database
+            try {
+              localStorage.removeItem('authToken');
+            } catch (e) {}
+            fetchPageData();
+            return;
+          }
+          statusText.textContent = 'DB Error';
+        }
+      } catch (e) {
+        console.error("Cloud fetch failed:", e);
+        statusText.textContent = 'DB Offline';
+      }
+    }
+
+    async function syncPageData() {
+      const token = getAuthToken();
+      const statusText = document.getElementById('sync-text');
+      const indicator = document.getElementById('sync-indicator');
+      
+      statusText.textContent = 'Saving...';
+      try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Token ${token}`;
+        }
+        const response = await fetch('/api/page-data/sequential-timer/', {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify({ sequences })
+        });
+
+        if (response.ok) {
+          statusText.textContent = 'DB Connected';
+          indicator.title = 'Synced with database (Read & Write)';
+          showToast('Changes saved to database ☁️');
+        } else {
+          if (response.status === 401 && token) {
+            try {
+              localStorage.removeItem('authToken');
+            } catch (e) {}
+            statusText.textContent = 'DB Connected';
+            showToast('⚠️ Session expired. Retrying anonymous save...');
+            await syncPageData();
+            return;
+          }
+          statusText.textContent = 'DB Error';
+        }
+      } catch (e) {
+        console.error("Cloud save failed:", e);
+        statusText.textContent = 'DB Offline';
+      }
+    }
+
+
+    // Render Sequence Selector
+    function renderSequenceList() {
+      const listContainer = document.getElementById('seq-list');
+      listContainer.innerHTML = '';
+
+      sequences.forEach(seq => {
+        const item = document.createElement('button');
+        item.className = `sequence-item ${activeSeq && activeSeq.id === seq.id ? 'active' : ''}`;
+        item.onclick = (e) => {
+          // Prevent action if clicking action buttons
+          if (e.target.closest('.action-btn')) return;
+          selectSequence(seq.id);
+        };
+
+        const titleSpan = document.createElement('span');
+        titleSpan.textContent = seq.name;
+        item.appendChild(titleSpan);
+
+        // Actions container
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'actions-div';
+        actionsDiv.style.display = 'flex';
+        actionsDiv.style.gap = '0.25rem';
+
+        // Edit button for all
+        const editBtn = document.createElement('span');
+        editBtn.className = 'action-btn edit-btn';
+        editBtn.innerHTML = '✏️';
+        editBtn.title = 'Edit sequence';
+        editBtn.onclick = (e) => {
+          e.stopPropagation();
+          selectSequence(seq.id);
+          editCurrentSequence();
+        };
+        actionsDiv.appendChild(editBtn);
+
+        // Delete button for all
+        const delBtn = document.createElement('span');
+        delBtn.className = 'action-btn delete-btn';
+        delBtn.innerHTML = '×';
+        delBtn.title = 'Delete sequence';
+        delBtn.onclick = (e) => {
+          e.stopPropagation();
+          deleteSequence(seq.id);
+        };
+        actionsDiv.appendChild(delBtn);
+
+        item.appendChild(actionsDiv);
+        listContainer.appendChild(item);
+      });
+    }
+
+    function deleteSequence(id) {
+      if (confirm('Are you sure you want to delete this sequence?')) {
+        sequences = sequences.filter(s => s.id !== id);
+        saveSequences();
+        if (activeSeq && activeSeq.id === id) {
+          selectSequence(sequences[0].id);
+        }
+      }
+    }
+
+    // Selection
+    function selectSequence(id) {
+      pauseTimer();
+      const match = sequences.find(s => s.id === id);
+      if (!match) return;
+
+      activeSeq = match;
+      activeStepIdx = 0;
+      currentCycle = 1;
+      
+      const activeStep = activeSeq.steps[activeStepIdx];
+      timeRemaining = activeStep.duration * 1000;
+      stepInitialTime = timeRemaining;
+
+      renderSequenceList();
+      updateTimerDisplay();
+      renderTimeline();
+      closeEditor();
+    }
+
+    // UI Updates
+    function updateTimerDisplay() {
+      if (!activeSeq) return;
+      const step = activeSeq.steps[activeStepIdx];
+      if (!step) return;
+
+      // Text names
+      document.getElementById('timer-step-name').textContent = step.name;
+      
+      const totalRepeats = activeSeq.repeats || 1;
+      document.getElementById('timer-cycle-progress').textContent = `Cycle ${currentCycle} of ${totalRepeats}`;
+      document.getElementById('seq-repeat-input').value = totalRepeats;
+      
+      const nextStep = activeSeq.steps[activeStepIdx + 1];
+      document.getElementById('timer-next-step').textContent = nextStep 
+        ? `Up next: ${nextStep.name} (${formatTime(nextStep.duration)})`
+        : 'Last step!';
+
+      // Dial progress color & stroke offset
+      const dial = document.getElementById('dial-progress');
+      dial.style.setProperty('--step-color', step.color);
+      document.documentElement.style.setProperty('--accent', step.color);
+
+      // Dash offset: stroke-dasharray is 534
+      const progress = stepInitialTime > 0 ? timeRemaining / stepInitialTime : 0;
+      const offset = 534 * (1 - progress);
+      dial.style.strokeDashoffset = offset;
+
+      // Time representation mm:ss
+      const totalSecs = Math.ceil(timeRemaining / 1000);
+      const minutes = Math.floor(totalSecs / 60);
+      const seconds = totalSecs % 60;
+      document.getElementById('timer-countdown').textContent = 
+        `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    function renderTimeline() {
+      const track = document.getElementById('timeline-track');
+      track.innerHTML = '';
+
+      if (!activeSeq) return;
+
+      activeSeq.steps.forEach((step, idx) => {
+        const node = document.createElement('div');
+        node.className = 'timeline-node';
+        node.onclick = () => jumpToStep(idx);
+        
+        if (idx < activeStepIdx) {
+          node.classList.add('completed');
+        } else if (idx === activeStepIdx) {
+          node.classList.add('active');
+          node.style.setProperty('--step-color', step.color);
+        }
+
+        const title = document.createElement('div');
+        title.className = 'timeline-node-title';
+        title.textContent = step.name;
+
+        const time = document.createElement('div');
+        time.className = 'timeline-node-time';
+        time.textContent = formatTime(step.duration);
+
+        const status = document.createElement('div');
+        status.className = 'timeline-node-status';
+        status.textContent = idx < activeStepIdx ? 'Completed' : (idx === activeStepIdx ? 'Active' : 'Queued');
+
+        node.appendChild(title);
+        node.appendChild(time);
+        node.appendChild(status);
+        track.appendChild(node);
+      });
+    }
+
+    function formatTime(secs) {
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+
+    // Audio synthesizer chimes
+    function initAudio() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+    }
+
+    function playTick() {
+      try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(1000, audioCtx.currentTime);
+        
+        gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.05);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.05);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function playTransitionChime() {
+      try {
+        initAudio();
+        // High rising double-chime
+        const now = audioCtx.currentTime;
+        const osc1 = audioCtx.createOscillator();
+        const gain1 = audioCtx.createGain();
+        
+        osc1.type = 'sine';
+        osc1.frequency.setValueAtTime(523.25, now); // C5
+        osc1.frequency.exponentialRampToValueAtTime(659.25, now + 0.2); // E5
+        
+        gain1.gain.setValueAtTime(0.12, now);
+        gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+        
+        osc1.connect(gain1);
+        gain1.connect(audioCtx.destination);
+        osc1.start();
+        osc1.stop(now + 0.3);
+
+        const osc2 = audioCtx.createOscillator();
+        const gain2 = audioCtx.createGain();
+        
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(783.99, now + 0.15); // G5
+        osc2.frequency.exponentialRampToValueAtTime(1046.50, now + 0.35); // C6
+        
+        gain2.gain.setValueAtTime(0.12, now + 0.15);
+        gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+        
+        osc2.connect(gain2);
+        gain2.connect(audioCtx.destination);
+        osc2.start(now + 0.15);
+        osc2.stop(now + 0.45);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function playVictoryChime() {
+      try {
+        initAudio();
+        const notes = [261.63, 329.63, 392.00, 523.25, 659.25, 783.99, 1046.50]; // C major chord arpeggio
+        const now = audioCtx.currentTime;
+
+        notes.forEach((freq, idx) => {
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+          
+          gain.gain.setValueAtTime(0.1, now + idx * 0.1);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.5);
+          
+          osc.connect(gain);
+          gain.connect(audioCtx.destination);
+          osc.start(now + idx * 0.1);
+          osc.stop(now + idx * 0.1 + 0.5);
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Playback Engine (High precision tick)
+    function runLoop(timestamp) {
+      if (!isRunning) return;
+
+      if (!lastTickTime) {
+        lastTickTime = timestamp;
+      }
+      
+      const elapsed = timestamp - lastTickTime;
+      lastTickTime = timestamp;
+
+      // Track seconds for tick sound
+      const secondsBefore = Math.ceil(timeRemaining / 1000);
+      
+      timeRemaining = Math.max(0, timeRemaining - elapsed);
+      
+      const secondsAfter = Math.ceil(timeRemaining / 1000);
+
+      // Sound warning at 3, 2, 1 seconds
+      if (secondsBefore !== secondsAfter && secondsAfter > 0 && secondsAfter <= 3) {
+        playTick();
+      }
+
+      updateTimerDisplay();
+
+      if (timeRemaining <= 0) {
+        // Step finished
+        if (activeStepIdx < activeSeq.steps.length - 1) {
+          // Play transition sound and jump next
+          playTransitionChime();
+          activeStepIdx++;
+          const step = activeSeq.steps[activeStepIdx];
+          timeRemaining = step.duration * 1000;
+          stepInitialTime = timeRemaining;
+          renderTimeline();
+          updateTimerDisplay();
+        } else {
+          // Check if we need to repeat the sequence
+          const totalRepeats = activeSeq.repeats || 1;
+          if (currentCycle < totalRepeats) {
+            // Start next cycle!
+            playTransitionChime();
+            currentCycle++;
+            activeStepIdx = 0;
+            const step = activeSeq.steps[activeStepIdx];
+            timeRemaining = step.duration * 1000;
+            stepInitialTime = timeRemaining;
+            showToast(`Starting Cycle ${currentCycle}`);
+            renderTimeline();
+            updateTimerDisplay();
+          } else {
+            // Sequence complete
+            isRunning = false;
+            playVictoryChime();
+            document.getElementById('play-pause-btn').textContent = '▶ Play';
+            document.getElementById('play-pause-btn').classList.remove('active-play');
+            showToast('Sequence Completed! 🎉');
+            restartSequence();
+            return;
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(runLoop);
+    }
+
+    // Playback Controls
+    function togglePlayPause() {
+      initAudio();
+      if (isRunning) {
+        pauseTimer();
+      } else {
+        startTimer();
+      }
+    }
+
+    function startTimer() {
+      if (!activeSeq || activeSeq.steps.length === 0) return;
+      isRunning = true;
+      lastTickTime = 0;
+      document.getElementById('play-pause-btn').textContent = '⏸ Pause';
+      document.getElementById('play-pause-btn').classList.add('active-play');
+      animationFrameId = requestAnimationFrame(runLoop);
+      showToast('Sequence Resumed');
+    }
+
+    function pauseTimer() {
+      isRunning = false;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
+      document.getElementById('play-pause-btn').textContent = '▶ Play';
+      document.getElementById('play-pause-btn').classList.remove('active-play');
+      showToast('Sequence Paused');
+      updateTimerDisplay();
+    }
+
+    function restartSequence() {
+      pauseTimer();
+      activeStepIdx = 0;
+      currentCycle = 1;
+      if (activeSeq) {
+        const step = activeSeq.steps[activeStepIdx];
+        timeRemaining = step.duration * 1000;
+        stepInitialTime = timeRemaining;
+      }
+      renderTimeline();
+      updateTimerDisplay();
+      showToast('Reset to Beginning');
+    }
+
+    function nextStep() {
+      if (!activeSeq) return;
+      pauseTimer();
+      if (activeStepIdx < activeSeq.steps.length - 1) {
+        activeStepIdx++;
+        const step = activeSeq.steps[activeStepIdx];
+        timeRemaining = step.duration * 1000;
+        stepInitialTime = timeRemaining;
+        showToast('Skipped Forward');
+      } else {
+        showToast('Already on last step');
+      }
+      renderTimeline();
+      updateTimerDisplay();
+    }
+
+    function prevStep() {
+      if (!activeSeq) return;
+      pauseTimer();
+      if (activeStepIdx > 0) {
+        activeStepIdx--;
+        const step = activeSeq.steps[activeStepIdx];
+        timeRemaining = step.duration * 1000;
+        stepInitialTime = timeRemaining;
+        showToast('Skipped Backward');
+      } else {
+        // restart current first step
+        const step = activeSeq.steps[activeStepIdx];
+        timeRemaining = step.duration * 1000;
+        stepInitialTime = timeRemaining;
+        showToast('Restarted First Step');
+      }
+      renderTimeline();
+      updateTimerDisplay();
+    }
+
+    function jumpToStep(idx) {
+      if (!activeSeq) return;
+      pauseTimer();
+      if (idx >= 0 && idx < activeSeq.steps.length) {
+        activeStepIdx = idx;
+        const step = activeSeq.steps[activeStepIdx];
+        timeRemaining = step.duration * 1000;
+        stepInitialTime = timeRemaining;
+        showToast(`Jumped to step ${idx + 1}`);
+      }
+      renderTimeline();
+      updateTimerDisplay();
+    }
+
+    // Keyboard Hotkey Interceptor
+    function setupKeyboardAccelerators() {
+      window.addEventListener('keydown', (e) => {
+        // If the user is typing in form inputs, do not trigger shortcuts
+        if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+          if (e.key === 'Escape') {
+            e.target.blur();
+          }
+          return;
+        }
+
+        let keyText = '';
+        let matched = false;
+
+        switch (e.key) {
+          case ' ':
+            e.preventDefault(); // prevent scroll
+            togglePlayPause();
+            keyText = 'Spacebar (Play/Pause)';
+            matched = true;
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            nextStep();
+            keyText = '→ (Next Step)';
+            matched = true;
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            prevStep();
+            keyText = '← (Previous Step)';
+            matched = true;
+            break;
+          case 'Escape':
+            e.preventDefault();
+            if (document.body.classList.contains('fullscreen-active')) {
+              toggleFullScreen();
+              keyText = 'Esc (Exit Fullscreen)';
+            } else {
+              restartSequence();
+              keyText = 'R / Esc (Reset)';
+            }
+            matched = true;
+            break;
+          case 'r':
+          case 'R':
+            e.preventDefault();
+            restartSequence();
+            keyText = 'R (Reset)';
+            matched = true;
+            break;
+          case 'e':
+          case 'E':
+            e.preventDefault();
+            editCurrentSequence();
+            keyText = 'E (Edit Sequence)';
+            matched = true;
+            break;
+          case 'f':
+          case 'F':
+            e.preventDefault();
+            toggleFullScreen();
+            keyText = 'F (Fullscreen)';
+            matched = true;
+            break;
+        }
+
+        if (matched) {
+          showToast(keyText);
+        }
+      });
+    }
+
+    // Toast alerts
+    let toastTimeout = null;
+    function showToast(text) {
+      const toast = document.getElementById('key-toast');
+      toast.textContent = text;
+      toast.classList.add('show');
+      
+      if (toastTimeout) {
+        clearTimeout(toastTimeout);
+      }
+      toastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 1500);
+    }
+
+    // CUSTOM SEQUENCE EDITOR & CREATOR
+    function openCreator() {
+      pauseTimer();
+      editSeqId = null;
+      document.getElementById('editor-title').textContent = 'Create Custom Sequence';
+      document.getElementById('seq-name-input').value = '';
+      document.getElementById('seq-repeats-input-editor').value = 1;
+      
+      const list = document.getElementById('editor-steps-list');
+      list.innerHTML = '';
+      
+      // Default to 1 blank row
+      addEditorRow();
+      document.getElementById('editor-panel').style.display = 'flex';
+      document.getElementById('editor-panel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function editCurrentSequence() {
+      if (!activeSeq) return;
+      pauseTimer();
+      
+      editSeqId = activeSeq.id;
+      document.getElementById('editor-title').textContent = `Edit Sequence: ${activeSeq.name}`;
+      document.getElementById('seq-name-input').value = activeSeq.name;
+      document.getElementById('seq-repeats-input-editor').value = activeSeq.repeats || 1;
+
+      const list = document.getElementById('editor-steps-list');
+      list.innerHTML = '';
+
+      activeSeq.steps.forEach(step => {
+        addEditorRow(step.name, step.duration, step.color);
+      });
+
+      document.getElementById('editor-panel').style.display = 'flex';
+      document.getElementById('editor-panel').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function updateRepeatCount(val) {
+      let num = parseInt(val, 10);
+      if (isNaN(num) || num < 1) num = 1;
+      
+      if (activeSeq) {
+        activeSeq.repeats = num;
+        const idx = sequences.findIndex(s => s.id === activeSeq.id);
+        if (idx !== -1) {
+          sequences[idx].repeats = num;
+          saveSequences();
+        }
+        updateTimerDisplay();
+      }
+    }
+
+
+    function closeEditor() {
+      document.getElementById('editor-panel').style.display = 'none';
+    }
+
+    function addEditorRow(name = '', durationSecs = 60, color = '#f43f5e') {
+      const list = document.getElementById('editor-steps-list');
+      const row = document.createElement('div');
+      row.className = 'step-edit-row';
+
+      // Title input
+      const titleInput = document.createElement('input');
+      titleInput.type = 'text';
+      titleInput.className = 'form-input';
+      titleInput.placeholder = 'Step Title';
+      titleInput.value = name || `Interval ${list.children.length + 1}`;
+
+      // Minute input
+      const minsVal = Math.floor(durationSecs / 60);
+      const minInput = document.createElement('input');
+      minInput.type = 'number';
+      minInput.className = 'form-input';
+      minInput.placeholder = 'Min';
+      minInput.min = '0';
+      minInput.max = '999';
+      minInput.value = minsVal;
+
+      // Second input
+      const secsVal = durationSecs % 60;
+      const secInput = document.createElement('input');
+      secInput.type = 'number';
+      secInput.className = 'form-input';
+      secInput.placeholder = 'Sec';
+      secInput.min = '0';
+      secInput.max = '59';
+      secInput.value = secsVal;
+
+      // Color select
+      const colorSelect = document.createElement('select');
+      colorSelect.className = 'color-select';
+      
+      COLORS.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.value;
+        opt.textContent = c.name;
+        if (c.value === color) {
+          opt.selected = true;
+        }
+        colorSelect.appendChild(opt);
+      });
+      colorSelect.style.borderLeft = `4px solid ${colorSelect.value}`;
+      colorSelect.onchange = () => {
+        colorSelect.style.borderLeft = `4px solid ${colorSelect.value}`;
+      };
+
+      // Actions / controls
+      const actionGroup = document.createElement('div');
+      actionGroup.className = 'step-btn-group';
+
+      const upBtn = document.createElement('button');
+      upBtn.className = 'step-move-btn';
+      upBtn.innerHTML = '▲';
+      upBtn.title = 'Move Up';
+      upBtn.onclick = () => moveRow(row, 'up');
+
+      const downBtn = document.createElement('button');
+      downBtn.className = 'step-move-btn';
+      downBtn.innerHTML = '▼';
+      downBtn.title = 'Move Down';
+      downBtn.onclick = () => moveRow(row, 'down');
+
+      actionGroup.appendChild(upBtn);
+      actionGroup.appendChild(downBtn);
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'delete-btn';
+      delBtn.innerHTML = '×';
+      delBtn.style.fontSize = '1.3rem';
+      delBtn.style.cursor = 'pointer';
+      delBtn.style.border = 'none';
+      delBtn.style.background = 'none';
+      delBtn.style.color = 'var(--text-sub)';
+      delBtn.onclick = () => {
+        row.remove();
+        if (list.children.length === 0) {
+          addEditorRow();
+        }
+      };
+
+      row.appendChild(titleInput);
+      row.appendChild(minInput);
+      row.appendChild(secInput);
+      row.appendChild(colorSelect);
+      row.appendChild(actionGroup);
+      row.appendChild(delBtn);
+
+      list.appendChild(row);
+      row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function moveRow(row, direction) {
+      const list = document.getElementById('editor-steps-list');
+      if (direction === 'up' && row.previousElementSibling) {
+        list.insertBefore(row, row.previousElementSibling);
+      } else if (direction === 'down' && row.nextElementSibling) {
+        list.insertBefore(row.nextElementSibling, row);
+      }
+    }
+
+    function saveCustomSequence() {
+      const nameInput = document.getElementById('seq-name-input').value.trim();
+      const seqName = nameInput || `Custom Sequence ${sequences.length + 1}`;
+
+      const rows = document.querySelectorAll('#editor-steps-list .step-edit-row');
+      const steps = [];
+
+      rows.forEach(row => {
+        const title = row.children[0].value.trim() || 'Interval';
+        const mins = parseInt(row.children[1].value, 10) || 0;
+        const secs = parseInt(row.children[2].value, 10) || 0;
+        const color = row.children[3].value;
+
+        const duration = (mins * 60) + secs;
+        if (duration > 0) {
+          steps.push({ name: title, duration, color });
+        }
+      });
+
+      if (steps.length === 0) {
+        alert('Please specify at least one step with a duration greater than 0 seconds.');
+        return;
+      }
+
+      const repeats = parseInt(document.getElementById('seq-repeats-input-editor').value, 10) || 1;
+
+      if (editSeqId) {
+        // Update existing custom sequence
+        const idx = sequences.findIndex(s => s.id === editSeqId);
+        if (idx !== -1) {
+          sequences[idx].name = seqName;
+          sequences[idx].steps = steps;
+          sequences[idx].repeats = repeats;
+        }
+      } else {
+        // Create new
+        const newId = 'custom_' + Date.now();
+        sequences.push({
+          id: newId,
+          name: seqName,
+          steps,
+          repeats
+        });
+        editSeqId = newId;
+      }
+
+
+      saveSequences();
+      selectSequence(editSeqId || sequences[sequences.length - 1].id);
+      closeEditor();
+      showToast('Sequence Saved! 💾');
+    }
+  </script>
+</body>
+</html>

@@ -60,5 +60,17 @@ scripts/*.db
 scripts/*.db.bak
 scripts/*.bak
 scripts/*.zip
+# Database artifacts (local/dev only; never commit)
+*.db
+*.sqlite3
+*.sqlite
+*.db-journal
+*.sqlite3-journal
+*.sqlite-wal
+*.sqlite-shm
 apps/YoutubeTranscript/venv/
+venv/
+.venv/
+**/venv/
+**/.venv/
 data-backend/tests/integration/e2e/e2e_api_calls*.md

@@ -1,0 +1,30 @@
+
+Y..A18Book Summaries.[{"changed": {"fields": ["Content"]}}]..2026-06-02 06:55:55.052372C....'.+..A26Die With Zero[{"added": {}}]..2026-06-02 06:55:21.404133_..../.Y..A19Rich Dad Poor Dad.[{"changed": {"fields": ["Content"]}}]..2026-06-02 06:53:31.781683_..../.Y..A19Rich Dad Poor Dad.[{"changed": {"fields": ["Content"]}}]..2026-06-02 06:52:04.520462_..../.Y..A19Rich Dad Poor Dad.[{"changed": {"fields": ["Content"]}}]..2026-06-02 06:50:24.299941_
+.../.Y..A19Rich Dad Poor Dad.[{"changed": {"fields": ["Content"]}}]..2026-06-02 06:49:51.474303_..../.Y..A19Rich Dad Poor Dad.[{"changed": {"fields": ["Content"]}}]..2026-06-02 06:49:15.826527q..../.}..A19Rich Dad Poor Dad.[{"changed": {"fields": ["Content", "Render as html"]}}]..2026-06-02 06:48:35.252349
+.........
+..Y
+..^........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................"*..3#...AA.
+Time Keeping Widgettime-keeper# Time Keeping Widget
+This page hosts a high-end timekeeping dashboard featuring a local Clock, a World Clock with multiple timezones, a Stopwatch, and a countdown Timer.
+
+The widgets feature circular progress visualizers that let you see values from far away, complete with sub-dials showing adjustable temporal resolutions.2026-06-03 23:31:38.5630112026-06-03 23:31:38.563011..)..55.=.AA.
+Video AI Internshipsvideo-ai-internships# Ongoing Project: Video AI Internships
+
+> [!NOTE]
+> This page is password protected.
+
+Log of my research and coaching for Video AI internships. Tracks candidate progress, interview prep materials, project suggestions, and coding challenges in deep learning and video processing.
+2026-06-03 23:22:11.2922502026-06-03 23:22:11.292250.v(..99.#.AA.
+Highschool Photographyhighschool-photography# Ongoing Project: Highschool Photography
+
+> [!NOTE]
+> This page is password protected.
+
+A project tracking my photography mentoring, highschool portfolios, and camera equipment tests. I share galleries and technical notes on lenses, exposure, and editing workflows.
+2026-06-03 23:22:11.2892502026-06-03 23:22:11.289250.N'..##...AA.
+Track Ideastrack-ideas# Workflow Ideas Board
+
+> [!NOTE]
+> This page is password protected as it contains personal logs, pending patents, and early-stage project brainstorming.
+
+Here 

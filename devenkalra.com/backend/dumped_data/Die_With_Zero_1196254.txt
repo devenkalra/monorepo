@@ -1,0 +1,94 @@
+
+ng philosophy in <em
+
+                                            data-start="5936" data-end="5951">Die With Zero</em>, Perkins argues that
+
+                                        life...s ultimate success should be measured not by how much we accumulate (in
+
+                                        terms of wealth, possessions, or achievements), but by the quality of the
+
+                                        memories we create. Experiences, memories, and how we feel about them when we
+
+                                        reflect on our lives are what truly define the richness of our lives.</p>
+
+                                    <p data-start="6273" data-end="6661">He urges readers to focus on making memories
+
+                                        that provide positive peaks and satisfying ends, because those will define how
+
+                                        we look back on our lives when we...re nearing the end of our journey. Rather than
+
+                                        accumulating wealth to pass on to future generations, Perkins suggests investing
+
+                                        in experiences that create the most joyful, meaningful, and lasting memories for
+
+                                        ourselves and others.</p><h4 data-start="6663" data-end="6712"><strong
+
+                                            data-start="6668" data-end="6712">8. Summary and Conclusion of Chapter
+
+                                        11:</strong></h4>
+
+                                    <p data-start="6713" data-end="7336" data-is-only-node="">To sum up, Chapter 11 of
+
+                                        <em data-start="6738" data-end="6753">Die With Zero</em> emphasizes the
+
+                                        importance of understanding how human memory works through the Peak-End Rule.
+
+                                        Perkins argues that to lead a truly fulfilling life, we should carefully design
+
+                                        our experiences to include powerful emotional peaks and satisfying endings. By
+
+                                        understanding how memories are formed and how the peak and end moments of
+
+                                        experiences shape our perceptions, we can create richer, more meaningful lives.
+
+                                        This approach encourages us to focus on maximizing the moments that truly
+
+                                        matter, ultimately leading to a life that is rich with joyful memories rather
+
+                                        than accumulated wealth.</p></div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</article>
+
+<h1>undefined</h1>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message-id="e5f35d6d-546e-4188-98c3-5ad24a455efc"
+
+                             dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><h3
+
+                                        data-start...'="0" data-end="55"><strong data-start="4" data-end="55">Chapter 12:
+
+                                    "The Time You Have is All You 

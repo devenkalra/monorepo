@@ -1,0 +1,267 @@
+<html>
+    <body>
+        
+        <style>
+        /* --- Base & Reset Styles --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #212529;
+            padding: 2rem 1rem;
+            line-height: 1.5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            margin-bottom: 2rem;
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: #1a1a1a;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 0.5rem;
+        }
+
+        /* --- Responsive CSS Grid Dashboard --- */
+        .grid-container {
+            display: grid;
+            /* Automatically creates columns that shrink/expand down to 280px, fitting as many as possible per row */
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        /* --- Card Styles --- */
+        .book-card {
+            background: #ffffff;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .book-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .cover-wrapper {
+            width: 100%;
+            height: 380px;
+            background-color: #e9ecef;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .book-cover {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .book-info {
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+        }
+        .book-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 0.25rem;
+            line-height: 1.3;
+        }
+        .book-author {
+            font-size: 0.95rem;
+            color: #4b5563;
+            font-style: italic;
+            margin-bottom: 1rem;
+        }
+        .book-description {
+            font-size: 0.9rem;
+            color: #6b7280;
+            display: -webkit-box;
+            -webkit-line-clamp: 4; /* Limits description text height gracefully */
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    </style>
+        
+        <div class="container">
+    <h1>Book Collection</h1>
+    <div id="cms-book-grid" class="grid-container"></div>
+</div>
+
+<template id="cms-book-template">
+    <div class="book-entry">
+        <div class="book-header">
+            <span class="custom-title"></span>
+            <span class="custom-by"> by </span>
+            <span class="custom-author"></span>
+        </div>
+        <div class="book-body">
+            <div class="book-image-container">
+                <img class="responsive-cover" src="" alt="Book Cover" height="200">
+            </div>
+            <div class="book-description-container">
+                <p class="book-description"></p>
+            </div>
+        </div>
+    </div>
+</template>
+
+<script>
+    (function() {
+        // The Book JSON array containing your extracted entries
+        const booksData = [
+  {
+    "title": "The Eight",
+    "author": "Katherine Neville",
+    "description": "A computer expert in 1972 and a pair of novices during the French Revolution in 1790 are drawn into a dangerous, globe-spanning hunt for the pieces of a legendary, ancient chess set that possesses mystical, unlimited power.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780345419088-L.jpg"
+  },
+  {
+    "title": "Into Thin Air",
+    "author": "Jon Krakauer",
+    "description": "A harrowing, firsthand journalistic account of the tragic 1996 Mount Everest disaster, detailing the deadly combination of hubris, harsh weather, and bad luck that claimed the lives of several climbers.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780385494786-L.jpg"
+  },
+  {
+    "title": "11/22/63",
+    "author": "Stephen King",
+    "description": "A high school English teacher discovers a time portal leading back to 1958 and embarks on an obsessive, suspense-filled mission to prevent the assassination of John F. Kennedy.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9781451627282-L.jpg"
+  },
+  {
+    "title": "Misery",
+    "author": "Stephen King",
+    "description": "A bestselling novelist is rescued from a severe car crash by a reclusive former nurse, only to realize he is being held captive by his deeply unhinged 'number one fan.'",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9781501156748-L.jpg"
+  },
+  {
+    "title": "The Pines Series",
+    "author": "Blake Crouch",
+    "description": "A secret service agent arrives in a mysterious, idyllic Idaho town to investigate the disappearance of two colleagues, only to discover a dark conspiracy that prevents anyone from leaving.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9781612183954-L.jpg"
+  },
+  {
+    "title": "Shutter Island",
+    "author": "Dennis Lehane",
+    "description": "Set in 1954, two U.S. Marshals travel to a remote hospital for the criminally insane on Shutter Island to investigate the impossible escape of a brilliant murderer.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780062121394-L.jpg"
+  },
+  {
+    "title": "Jurassic Park",
+    "author": "Michael Crichton",
+    "description": "An ambitious billionaire creates a theme park populated by cloned dinosaurs, but when a saboteur knocks out the island's security system, the prehistoric predators break free.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780345538987-L.jpg"
+  },
+  {
+    "title": "Sphere",
+    "author": "Michael Crichton",
+    "description": "A team of scientists sent to study a massive, alien spacecraft resting at the bottom of the Pacific Ocean discovers a mysterious sphere that brings their deepest psychological nightmares to life.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780061990557-L.jpg"
+  },
+  {
+    "title": "The Day of the Jackal",
+    "author": "Frederick Forsyth",
+    "description": "A cold, professional British assassin code-named 'Jackal' is hired to kill French President Charles de Gaulle, prompting a desperate, high-stakes manhunt by French authorities.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780451239372-L.jpg"
+  },
+  {
+    "title": "No Country for Old Men",
+    "author": "Cormac McCarthy",
+    "description": "A welder stumbles upon a botched drug deal in the Texas desert and makes off with a briefcase containing two million dollars, igniting a relentless trail of violence led by a psychopathic killer.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780307387134-L.jpg"
+  },
+  {
+    "title": "Gone Girl",
+    "author": "Gillian Flynn",
+    "description": "On his fifth wedding anniversary, Nick Dunne becomes the prime suspect in the sudden and suspicious disappearance of his beautiful wife, Amy, unveiling a twisted web of media sensationalism and deceit.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780307588371-L.jpg"
+  },
+  {
+    "title": "The Alienist",
+    "author": "Caleb Carr",
+    "description": "In 1896 New York City, an investigative journalist and a criminal psychologist (alienist) use emerging psychological profiling techniques to track down a brutal serial killer targeting street children.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780812976144-L.jpg"
+  },
+  {
+    "title": "Dark Matter",
+    "author": "Blake Crouch",
+    "description": "A brilliant physics professor is kidnapped and wakes up in an alternate reality where his life took a wildly different path, forcing him to embark on a frantic journey through the multiverse to find his true family.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9781101904244-L.jpg"
+  },
+  {
+    "title": "The Push",
+    "author": "Ashley Audrain",
+    "description": "A tense domestic thriller exploring the dark sides of motherhood through a woman who suspects something is deeply wrong with her newborn daughter, even as her husband gaslights her into believing it's all in her head.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9781984881663-L.jpg"
+  },
+  {
+    "title": "Night Film",
+    "author": "Marisha Pessl",
+    "description": "An investigative journalist dives into the dark, enigmatic world of a cult horror film director after the director's daughter is found dead in an apparent suicide.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780812979787-L.jpg"
+  },
+  {
+    "title": "The Girl with the Dragon Tattoo",
+    "author": "Stieg Larsson",
+    "description": "A disgraced journalist and a fiercely independent hacker team up to solve a forty-year-old mystery surrounding the disappearance of a wealthy industrialist's niece.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780307454546-L.jpg"
+  },
+  {
+    "title": "Intensity",
+    "author": "Dean Koontz",
+    "description": "A young woman spending the weekend at her friend's house survives a home invasion by a calculated serial killer, prompting her to follow him in a relentless, nightmarish game of survival.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780345533371-L.jpg"
+  },
+  {
+    "title": "The Silence of the Lambs",
+    "author": "Thomas Harris",
+    "description": "Young FBI trainee Clarice Starling must interview the brilliant, imprisoned cannibalistic psychiatrist Dr. Hannibal Lecter to gain insight that could help capture another active serial killer.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780312924584-L.jpg"
+  },
+  {
+    "title": "Eye of the Needle",
+    "author": "Ken Follett",
+    "description": "A masterful German spy discovers crucial intelligence about the upcoming D-Day invasion but gets shipwrecked on an isolated island inhabited by an unhappy woman and her disabled husband.",
+    "cover_photo": "https://covers.openlibrary.org/b/isbn/9780451211118-L.jpg"
+  }
+];
+
+        function renderCmsBooks() {
+            const grid = document.getElementById('cms-book-grid');
+            const template = document.getElementById('cms-book-template');
+
+            if (!grid || !template) return;
+            grid.innerHTML = ''; // Safely clear out container properties
+
+            booksData.forEach(book => {
+                const cardInstance = template.content.cloneNode(true);
+                
+                // Set the Header text values explicitly
+                cardInstance.querySelector('.custom-title').textContent = book.title;
+                cardInstance.querySelector('.custom-author').textContent = book.author;
+                
+                // Map the responsive layout properties
+                cardInstance.querySelector('.responsive-cover').src = book.cover_photo;
+                cardInstance.querySelector('.responsive-cover').alt = `Cover art for ${book.title}`;
+                cardInstance.querySelector('.book-description').textContent = book.description;
+                
+                grid.appendChild(cardInstance);
+            });
+        }
+
+        // Execute immediately upon insertion to safely bypass timing issues
+        renderCmsBooks();
+    })();
+</script>
+

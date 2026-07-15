@@ -1,0 +1,62 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static "admin/css/forms.css" %}" />
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+&rsaquo; {% translate 'Bulk update projects' %}
+</div>
+{% endblock %}
+
+{% block content %}
+<form action="" method="post">{% csrf_token %}
+    <div>
+        <p>Please specify the new values to set for the following selected projects:</p>
+        <ul>
+            {% for project in queryset %}
+                <li><strong>{{ project.title }}</strong> (Category: <em>{{ project.category|default:"None" }}</em>, Status: <em>{{ project.get_status_display }}</em>)</li>
+            {% endfor %}
+        </ul>
+        
+        <fieldset class="module aligned">
+            <h2>Specify Updates</h2>
+            <div class="form-row">
+                {{ form.status.errors }}
+                <label for="id_status">Status:</label>
+                {{ form.status }}
+                <div class="help">Select a new status to apply to all selected projects, or leave as "No Change".</div>
+            </div>
+            <div class="form-row">
+                {{ form.category_dropdown.errors }}
+                <label for="id_category_dropdown">Choose Category:</label>
+                {{ form.category_dropdown }}
+                <div class="help">Choose from existing categories.</div>
+            </div>
+            <div class="form-row">
+                {{ form.category_custom.errors }}
+                <label for="id_category_custom">Or Custom Category:</label>
+                {{ form.category_custom }}
+                <div class="help">If provided, this custom category name will be applied instead of the dropdown choice.</div>
+            </div>
+        </fieldset>
+
+        {% for project in queryset %}
+            <input type="hidden" name="{{ action_checkbox_name }}" value="{{ project.pk }}" />
+        {% endfor %}
+        <input type="hidden" name="action" value="bulk_update_projects" />
+        <input type="hidden" name="select_across" value="{{ select_across }}" />
+        
+        <div class="submit-row">
+            <input type="submit" name="apply" value="Apply bulk update" class="default" />
+            <a href="{% url opts|admin_urlname:'changelist' %}" class="button cancel-link" style="display: inline-block; padding: 10px 15px; background: #ccc; color: #333; text-decoration: none; border-radius: 4px; margin-left: 10px;">Cancel</a>
+        </div>
+    </div>
+</form>
+{% endblock %}

@@ -180,6 +180,22 @@ services:
     networks:
       - backend-network
 
+  devenkalra-app:
+    build:
+      context: .
+      dockerfile: devenkalra.com/Dockerfile
+    container_name: devenkalra-local-app
+    env_file:
+      - devenkalra.com/backend/.env
+    restart: unless-stopped
+    ports:
+      - "8090:8000"
+    volumes:
+      - ./devenkalra.com/backend/db.sqlite3:/app/db.sqlite3
+      - ./devenkalra.com/backend/media:/app/media
+    networks:
+      - backend-network
+
 volumes:
   postgres_data_local:
     name: bldrdojo-local-postgres-data

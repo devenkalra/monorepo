@@ -1,0 +1,92 @@
+
+="">In
+
+                                        Chapter 8 of <em data-start="7901" data-end="7919">"Die With Zero,"</em> Perkins
+
+                                        emphasizes that the key to a fulfilling life is not the accumulation of wealth
+
+                                        but the intentional pursuit of meaningful experiences. He encourages readers to
+
+                                        focus on maximizing their life...s experiences through optimal spending and
+
+                                        prioritizing what truly brings joy...both for themselves and for their loved ones.
+
+                                        By investing in experiences and relationships, and balancing this with financial
+
+                                        planning, individuals can create a life that is rich in memories and
+
+                                        satisfaction. The chapter highlights the importance of living fully in every
+
+                                        stage of life, from youth to retirement, and not waiting for a distant future to
+
+                                        begin living.</p></div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</article>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message-id="edaac4d5-2950-428b-959b-aebcdd4a2cc0"
+
+                             dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><h3
+
+                                        data-start="0" data-end="41"><strong data-start="4" data-end="41">Chapter 9:
+
+                                    "How to Die with Zero"</strong></h3>
+
+                                    <p data-start="43" data-end="544">In <strong data-start="46" data-end="59">Chapter
+
+                                        9</strong> of <em data-start="63" data-end="81">"Die With Zero,"</em> Bill
+
+                                        Perkins outlines the final goal of the book: the concept of dying with zero.
+
+                                        This chapter f....ocuses on practical steps that individuals can take to ensure they
+
+                                        live their life in a way that maximizes experiences, minimizes wasted resources,
+
+                                        and ultimately leads to a life that is rich in memories rather than material
+
+                                        wealth. The core message of this chapter is about striking the right balance
+
+                                        between enjoying life...s experiences and planning for the future.</p><h4
+
+                                            data-start="546" data-end="577"><strong data-start="551" data-end="577">1.
+
+                                        The Ideal End Goal:</strong></h4>
+
+                                    <p data-start="578" data-end="962">Perkins begins by framing the end goal as "dying
+
+                                        with zero" in the sense that you...ve lived a full life, used up your resources,
+
+                                        and have no money left at the time of your death because it has all been used to

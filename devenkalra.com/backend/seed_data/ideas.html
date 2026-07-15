@@ -1,0 +1,107 @@
+<h1>Tracking Ideas</h1> 
+<div id="content"></div>
+<script>
+const token = localStorage.getItem('authToken');
+let projects = [];
+let sortStates = {}; // Tracks sort state per category: { categoryName: { column, direction } }
+
+// Fetch the data from your API
+fetch('/api/projects/', {
+  method: 'GET',
+  headers: {
+    'Content-Type': 'application/json',
+    'Authorization': `Token ${token}`
+  }
+})
+.then(response => {
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
+  }
+  return response.json();
+})
+.then(data => {
+  projects = data; 
+  renderTable(); 
+})
+.catch(error => {
+  console.error('Error fetching projects:', error);
+  document.getElementById("content").innerHTML = "<p style='color: red;'>Error loading projects. Make sure you are logged in.</p>";
+});
+
+function renderTable() {
+    if (projects.length === 0) {
+        document.getElementById("content").innerHTML = "<p>No projects found.</p>";
+        return;
+    }
+
+    // Get unique categories sorted alphabetically
+    const categories = [...new Set(projects.map(p => p.category || 'Uncategorized'))].sort();
+
+    let contentHTML = '';
+
+    categories.forEach(category => {
+        // Filter projects belonging to this category
+        let categoryProjects = projects.filter(p => (p.category || 'Uncategorized') === category);
+
+        // Sort projects for this specific category if a sort column is selected
+        const sortState = sortStates[category] || { column: null, direction: 'asc' };
+        if (sortState.column) {
+            categoryProjects.sort((a, b) => {
+                let valA = (a[sortState.column] || '').toString().toLowerCase();
+                let valB = (b[sortState.column] || '').toString().toLowerCase();
+                
+                if (valA < valB) return sortState.direction === 'asc' ? -1 : 1;
+                if (valA > valB) return sortState.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
+
+        // Generate table for this category
+        contentHTML += `
+          <h3 style="margin-top: 2rem; border-bottom: 2px solid #ddd; padding-bottom: 5px; color: var(--accent-color, #2c3e50);">${category}</h3>
+          <table border="1" style="border-collapse: collapse; width: 100%; text-align: left; margin-bottom: 2rem;">
+            <thead>
+              <tr style="background-color: #f2f2f2; cursor: pointer;">
+                <th onclick="sortBy('${category}', 'title')" style="padding: 8px; width: 70%;">Title ${getSortIcon(category, 'title')}</th>
+                <th onclick="sortBy('${category}', 'status')" style="padding: 8px; width: 30%;">Status ${getSortIcon(category, 'status')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${categoryProjects.map(project => `
+                <tr>
+                  <td style="padding: 8px;">${project.title}</td>
+                  <td style="padding: 8px;">
+                    <span style="text-transform: capitalize;">${project.status.replace('_', ' ')}</span>
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `;
+    });
+    
+    document.getElementById("content").innerHTML = contentHTML;
+}
+
+function sortBy(category, key) {
+    if (!sortStates[category]) {
+        sortStates[category] = { column: null, direction: 'asc' };
+    }
+    const sortState = sortStates[category];
+    
+    if (sortState.column === key) {
+        sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+    } else {
+        sortState.column = key;
+        sortState.direction = 'asc';
+    }
+
+    renderTable();
+}
+
+function getSortIcon(category, key) {
+    const sortState = sortStates[category] || { column: null, direction: 'asc' };
+    if (sortState.column !== key) return '↕';
+    return sortState.direction === 'asc' ? '▲' : '▼';
+}
+</script>

@@ -1,0 +1,94 @@
+
+de="">
+
+                                        Chapter 2 of <em data-start="6826" data-end="6843">"Die With Zero"</em>
+
+                                        reinforces the idea that time is the most important asset in life and that our
+
+                                        use of both time and money must be strategic. By applying the "Time Bucket"
+
+                                        framework, focusing on peak experiences, and considering the diminishing returns
+
+                                        of money, we can better plan how to spend our resources at the right time for
+
+                                        maximum life satisfaction. Perkins stresses that a balance between enjoying life
+
+                                        in the present and planning for the future is essential for living fully and
+
+                                        dying with zero.</p></div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</article>
+
+<article>
+
+    <div class="text-base my-auto mx-auto py-[18px] px-6">
+
+        <div class="mx-auto flex flex-1 text-base gap-4 md:gap-5 lg:gap-6 md:max-w-3xl lg:max-w-[40rem] xl:max-w-[48rem]">
+
+            <div class="group/conversation-turn relative flex w-full min-w-0 flex-col agent-turn @xs/thread:px-0 @sm/thread:px-1.5 @md/thread:px-4">
+
+                <div class="flex-col gap-1 md:gap-3">
+
+                    <div class="flex max-w-full flex-col flex-grow">
+
+                        <div data-message-author-role="assistant" data-message-id="a899d1d6-fec7-4d38-9622-7e1b01b2d57e"
+
+                             dir="auto"
+
+                             class="min-h-8 text-message relative flex w-full flex-col items-end gap-2 whitespace-normal break-words text-start [.text-message+&amp;]:mt-5"
+
+                             data-message-model-slug="gpt-4o-mini">
+
+                            <div class="flex w-full flex-col gap-1 empty:hidden first:pt-[3px]">
+
+                                <div class="markdown prose w-full break-words dark:prose-invert light"><h3
+
+                                        data-start="0" data-end="58"><strong data-start="4" data-end="58">Chapter 3:
+
+                                    Your Life is a Portfolio of Experiences</strong></h3>
+
+                                    <p data-start="60" data-end="638">In <strong data-start="63" data-end="76">Chapter
+
+                                        3</strong> of <em data-start="80" data-end="98">"Die With Zero,"</em> Bill
+
+                                        Perkins introduces the idea that life is a portfolio ... not of stocks and bonds,
+
+                                        but of <em data-start="191" data-end="204">experiences</em>. He explains how to
+
+                                        think of your life as a carefully curated collection of meaningful experiences,
+
+                                        which, much like a financial portfolio, should be planned, diversified, and
+
+                                        managed to optimize joy and satisfaction at various stages of life. This chapter
+
+                                        provides a blueprint for thinking about your experiences in a structured way and
+
+                                        how you can allocate time, energy, and money toward them to maximize overall
+
+                                        life satisfaction.</p><h4 data-start="640" data-end="687"><strong
+
+                                            data-start="645" data-end="687">1. Life as a Portfolio of
+
+                                        Experiences:</strong></h4>
+
+                                    <p data-start="688" data-end="1108">Perkins begins by drawing a parallel between a
+
+    ...~                                    financial portfolio and the way we live our lives. Just as investors diversify
+
+                                        their portfolios to minimize risk and maximize returns, individuals can benefit
+
+             
