@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 
 export const Home = () => {
   const [page, setPage] = useState(null);
@@ -37,7 +38,7 @@ export const Home = () => {
 
   return (
     <article className="markdown-body">
-      <ReactMarkdown>{page?.content}</ReactMarkdown>
+      <ReactMarkdown rehypePlugins={[rehypeRaw]}>{page?.content}</ReactMarkdown>
     </article>
   );
 };

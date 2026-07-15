@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 import { useAuth } from '../context/AuthContext';
 
 export const BlogPostDetail = () => {
@@ -254,7 +255,7 @@ export const BlogPostDetail = () => {
         {post.render_as_html ? (
           <div dangerouslySetInnerHTML={{ __html: post.content }} />
         ) : (
-          <ReactMarkdown>{post.content}</ReactMarkdown>
+          <ReactMarkdown rehypePlugins={[rehypeRaw]}>{post.content}</ReactMarkdown>
         )}
       </section>
 

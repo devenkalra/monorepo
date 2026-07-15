@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 import { useAuth } from '../context/AuthContext';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { TimeKeeperApp } from '../components/TimeKeeperApp';
@@ -60,6 +61,7 @@ export const PageView = ({ menuItems }) => {
 
   const renderMarkdown = (content) => (
     <ReactMarkdown
+      rehypePlugins={[rehypeRaw]}
       components={{
         a: ({ href, children, ...props }) => {
           const isInternal = href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('//') && !href.startsWith('#');
@@ -3017,7 +3019,7 @@ export const ContactsApp = () => {
                 <div style={{ marginTop: '0.35rem' }}>
                   <strong>Description:</strong>
                   <div style={{ marginTop: '0.3rem', color: 'var(--text-muted)' }} className="markdown-body">
-                    <ReactMarkdown>{selectedContactMarkdown}</ReactMarkdown>
+                    <ReactMarkdown rehypePlugins={[rehypeRaw]}>{selectedContactMarkdown}</ReactMarkdown>
                   </div>
                 </div>
               )}
