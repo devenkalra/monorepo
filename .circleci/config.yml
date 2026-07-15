@@ -44,7 +44,7 @@ jobs:
       - run:
           name: Wait for service containers
           command: |
-            python - <<'PY'
+            python - \<<'PY'
             import socket
             import time
 
