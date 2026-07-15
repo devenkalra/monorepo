@@ -9,7 +9,7 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: postgres
-      - image: getmeili/meilisearch:v1.5
+      - image: getmeili/meilisearch:v1.12
         environment:
           MEILI_MASTER_KEY: test_master_key
           MEILI_ENV: development
