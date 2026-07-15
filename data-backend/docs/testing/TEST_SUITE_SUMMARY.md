@@ -143,7 +143,7 @@ docker compose -f docker-compose.local.yml exec backend \
 ```
 
 ### CI/CD:
-- CircleCI: Configured in `.circleci/continue-config.yml`
+- CircleCI: Configured in `.circleci/config.yml`
 - GitHub Actions: Configured in `.github/workflows/integration-tests.yml`
 
 ---
