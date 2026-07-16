@@ -82,6 +82,36 @@ append_unique() {
   arr_ref+=("$value")
 }
 
+ensure_local_git_excludes() {
+  local exclude_file=".git/info/exclude"
+  local pattern
+  local patterns=(
+    ".bash_history"
+    ".bash_logout"
+    ".bashrc"
+    ".docker/"
+    ".lesshst"
+    ".node_repl_history"
+    ".npm/"
+    ".profile"
+    ".ssh/"
+    ".sudo_as_admin_successful"
+    ".viminfo"
+    "deploy_production.sh"
+    "logs/"
+    "ssl-edge/"
+  )
+
+  [[ -d .git ]] || return 0
+  mkdir -p .git/info
+
+  for pattern in "${patterns[@]}"; do
+    if ! grep -Fxq "$pattern" "$exclude_file" 2>/dev/null; then
+      printf '%s\n' "$pattern" >> "$exclude_file"
+    fi
+  done
+}
+
 app_paths() {
   local app="$1"
   case "$app" in
@@ -326,6 +356,8 @@ if [[ ! -d "$REPO_DIR/.git" ]]; then
 fi
 
 cd "$REPO_DIR"
+
+ensure_local_git_excludes
 
 if [[ ! -f "$COMPOSE_FILE" ]]; then
   print_err "Missing compose file: $COMPOSE_FILE"

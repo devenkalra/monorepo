@@ -30,6 +30,36 @@ print_error()   { echo -e "${RED}✗ $1${NC}"; }
 print_info()    { echo -e "${YELLOW}ℹ $1${NC}"; }
 print_action()  { echo -e "${CYAN}→ $1${NC}"; }
 
+ensure_local_git_excludes() {
+    local exclude_file="$PROD_DIR/.git/info/exclude"
+    local pattern
+    local patterns=(
+        ".bash_history"
+        ".bash_logout"
+        ".bashrc"
+        ".docker/"
+        ".lesshst"
+        ".node_repl_history"
+        ".npm/"
+        ".profile"
+        ".ssh/"
+        ".sudo_as_admin_successful"
+        ".viminfo"
+        "deploy_production.sh"
+        "logs/"
+        "ssl-edge/"
+    )
+
+    [[ -d "$PROD_DIR/.git" ]] || return 0
+    mkdir -p "$PROD_DIR/.git/info"
+
+    for pattern in "${patterns[@]}"; do
+        if ! grep -Fxq "$pattern" "$exclude_file" 2>/dev/null; then
+            printf '%s\n' "$pattern" >> "$exclude_file"
+        fi
+    done
+}
+
 # Configuration
 PROD_DIR="${PROD_DIR:-/home/deploy}"
 STAGING_DIR="${STAGING_DIR:-/home/deploy-staging}"
@@ -75,6 +105,8 @@ else
     DEPLOY_DIR="$PROD_DIR"
     COMPOSE_FILE="docker-compose.production.yml"
 fi
+
+ensure_local_git_excludes
 
 # Directories/files to sync (relative to repo root). Excludes are applied per-path.
 SYNC_PATHS=(
