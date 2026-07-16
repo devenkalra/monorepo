@@ -31,9 +31,7 @@ export const Layout = ({ children, menuItems, menuLoading }) => {
       
       // Determine link destination
       let toPath = null;
-      if (item.title === 'Articles') {
-        toPath = '/articles';
-      } else if (item.page_slug) {
+      if (item.page_slug) {
         toPath = `/p/${item.id}/${item.page_slug}`;
       } else if (item.external_url) {
         toPath = item.external_url;
@@ -48,7 +46,7 @@ export const Layout = ({ children, menuItems, menuLoading }) => {
         }
       };
 
-      const isExternalLink = item.external_url && (item.external_url.startsWith('http://') || item.external_url.startsWith('https://') || item.external_url.startsWith('//'));
+      const isAbsoluteExternalLink = item.external_url && (item.external_url.startsWith('http://') || item.external_url.startsWith('https://') || item.external_url.startsWith('//'));
 
       return (
         <li 
@@ -56,14 +54,15 @@ export const Layout = ({ children, menuItems, menuLoading }) => {
           className={hasChildren ? 'menu-item-container dropdown-item-container' : 'menu-item-container'}
         >
           {toPath ? (
-            (item.external_url && isExternalLink) ? (
+            item.external_url ? (
               <a 
                 href={toPath} 
-                target="_blank" 
-                rel="noopener noreferrer" 
+                target={isAbsoluteExternalLink ? "_blank" : undefined}
+                rel={isAbsoluteExternalLink ? "noopener noreferrer" : undefined}
                 className="menu-link dropdown-link"
+                onClick={handleClick}
               >
-                {item.title} ↗
+                {item.title} {isAbsoluteExternalLink ? '↗' : ''}
               </a>
             ) : (
               <Link to={toPath} className="menu-link dropdown-link" onClick={handleClick}>
@@ -110,9 +109,6 @@ export const Layout = ({ children, menuItems, menuLoading }) => {
             ) : (
               <ul className="nav-menu">
                 {renderMenuItems(menuItems)}
-                <li className="menu-item-container">
-                  <Link to="/articles" className="menu-link dropdown-link">Articles</Link>
-                </li>
                 <li className="menu-item-container mobile-auth-item">
                   {isAuthenticated ? (
                     <div className="user-badge" style={{ justifyContent: 'center', margin: '0.5rem 0' }}>

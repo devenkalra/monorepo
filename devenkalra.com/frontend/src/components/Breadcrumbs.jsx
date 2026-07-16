@@ -47,7 +47,7 @@ export const Breadcrumbs = ({ menuItemId, menuItems, pageTitle, slug }) => {
       <Link to="/">Home</Link>
       {finalTrail.map((node, index) => {
         const isLast = index === finalTrail.length - 1;
-        const toPath = node.title === 'Articles' ? '/articles' : (node.page_slug ? `/p/${node.id}/${node.page_slug}` : `/p/${node.id}`);
+        const toPath = node.page_slug ? `/p/${node.id}/${node.page_slug}` : (node.external_url || `/p/${node.id}`);
 
         return (
           <React.Fragment key={node.id}>
