@@ -48,10 +48,22 @@ class MenuView(APIView):
     """
     permission_classes = [permissions.AllowAny]
 
+    def _has_menu_access(self, item, user_role):
+        allowed_roles = [r.strip().lower() for r in (item.roles_with_access or '').split(',') if r.strip()]
+        if not allowed_roles:
+            return True
+        if not user_role:
+            return False
+        if user_role == 'superuser':
+            return True
+        return user_role in allowed_roles
+
     def get(self, request):
         # Fetch root menu items (items without a parent)
+        user_role = get_user_role(request)
         roots = MenuItem.objects.filter(parent=None).order_by('order', 'title')
-        serializer = MenuItemSerializer(roots, many=True)
+        roots = [item for item in roots if self._has_menu_access(item, user_role)]
+        serializer = MenuItemSerializer(roots, many=True, context={'user_role': user_role})
         return Response(serializer.data)
 
 class PageDetailView(APIView):

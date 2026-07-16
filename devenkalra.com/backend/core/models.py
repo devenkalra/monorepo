@@ -34,6 +34,7 @@ class MenuItem(models.Model):
         help_text="The page this menu item links to. Leave blank if it's just a category folder."
     )
     order = models.PositiveIntegerField(default=0, help_text="Order in which items appear in the submenu")
+    roles_with_access = models.CharField(max_length=255, blank=True, default="", help_text="Comma-separated roles allowed to view this menu item (e.g. 'user, superuser'). Leave blank for public access.")
     external_url = models.CharField(max_length=300, null=True, blank=True, help_text="Optional external link (e.g. github URL)")
     show_in_menu = models.BooleanField(default=True, help_text="If unchecked, this item won't be rendered in the header dropdown menu but can still be navigated to via links and generate breadcrumbs")
     full_path = models.CharField(max_length=500, blank=True, default="", help_text="Computed full hierarchical path of the menu item")

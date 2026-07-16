@@ -10,14 +10,30 @@ class MenuItemSerializer(serializers.ModelSerializer):
     children = serializers.SerializerMethodField()
     page_slug = serializers.CharField(source='page.slug', read_only=True, default=None)
     page_roles_with_access = serializers.CharField(source='page.roles_with_access', read_only=True, default="")
+    roles_with_access = serializers.CharField(read_only=True, default="")
 
     class Meta:
         model = MenuItem
-        fields = ['id', 'title', 'parent', 'page', 'page_slug', 'page_roles_with_access', 'order', 'external_url', 'show_in_menu', 'children']
+        fields = ['id', 'title', 'parent', 'page', 'page_slug', 'page_roles_with_access', 'roles_with_access', 'order', 'external_url', 'show_in_menu', 'children']
+
+    def _has_menu_access(self, obj):
+        required_roles = [r.strip().lower() for r in (obj.roles_with_access or '').split(',') if r.strip()]
+        if not required_roles:
+            return True
+
+        user_role = self.context.get('user_role')
+        if not user_role:
+            return False
+
+        if user_role == 'superuser':
+            return True
+
+        return user_role in required_roles
 
     def get_children(self, obj):
         # Recursively serialize children and order them
         children_queryset = obj.children.all().order_by('order', 'title')
+        children_queryset = [child for child in children_queryset if self._has_menu_access(child)]
         return MenuItemSerializer(children_queryset, many=True, context=self.context).data
 
 class ProjectSerializer(serializers.ModelSerializer):

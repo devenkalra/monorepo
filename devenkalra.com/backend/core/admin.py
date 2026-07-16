@@ -79,9 +79,9 @@ class SubscriptionAdmin(admin.ModelAdmin):
 
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):
-    list_display = ('title', 'parent', 'page', 'order')
-    list_filter = ('parent', 'page')
-    search_fields = ('title',)
+    list_display = ('title', 'parent', 'page', 'roles_with_access', 'show_in_menu', 'order')
+    list_filter = ('parent', 'page', 'roles_with_access', 'show_in_menu')
+    search_fields = ('title', 'roles_with_access')
     ordering = ('parent', 'order', 'title')
 
 @admin.register(Project)
