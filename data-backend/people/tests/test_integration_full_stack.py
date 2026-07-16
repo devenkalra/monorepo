@@ -19,6 +19,30 @@ User = get_user_model()
 
 class BaseIntegrationTest(TransactionTestCase):
     """Base class with common setup/teardown for integration tests"""
+
+    def wait_for_meili_task(self, task_uid, timeout=10):
+        """Block until a MeiliSearch task completes or timeout is reached."""
+        if not task_uid:
+            return
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            task = meili_sync.helper.client.get_task(task_uid)
+            status = task.get('status') if isinstance(task, dict) else getattr(task, 'status', None)
+            if status == 'succeeded':
+                return
+            if status == 'failed':
+                self.fail(f"MeiliSearch task {task_uid} failed: {task}")
+            time.sleep(0.1)
+
+        self.fail(f"Timed out waiting for MeiliSearch task {task_uid}")
+
+    @staticmethod
+    def _task_uid_from_response(response):
+        """Extract task uid from MeiliSearch SDK response payloads."""
+        if isinstance(response, dict):
+            return response.get('taskUid') or response.get('uid')
+        return getattr(response, 'task_uid', None) or getattr(response, 'uid', None)
     
     def clean_all_data(self):
         """Clean up all test data including MeiliSearch"""
@@ -29,8 +53,8 @@ class BaseIntegrationTest(TransactionTestCase):
         
         # Clear MeiliSearch index
         try:
-            meili_sync.helper.client.index('entities').delete_all_documents()
-            time.sleep(0.5)  # Wait for MeiliSearch to process
+            response = meili_sync.helper.client.index('entities').delete_all_documents()
+            self.wait_for_meili_task(self._task_uid_from_response(response), timeout=15)
         except Exception as e:
             print(f"Warning: Could not clear MeiliSearch: {e}")
 
@@ -60,8 +84,97 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.clean_all_data()
     
     def wait_for_meilisearch(self, seconds=1):
-        """Wait for MeiliSearch to process async tasks"""
+        """Wait briefly for MeiliSearch task queue to settle."""
         time.sleep(seconds)
+
+    def wait_for_meili_hits(self, query, min_hits=1, timeout=10, search_params=None):
+        """Poll search until a minimum number of hits are visible."""
+        params = search_params or {}
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            results = meili_sync.helper.client.index('entities').search(query, params)
+            hits = results.get('hits', [])
+            if len(hits) >= min_hits:
+                return results
+            time.sleep(0.2)
+
+        results = meili_sync.helper.client.index('entities').search(query, params)
+        self.fail(
+            f"Timed out waiting for MeiliSearch hits for query '{query}'. "
+            f"Expected at least {min_hits}, got {len(results.get('hits', []))}."
+        )
+
+    def wait_for_api_search_count(self, query_string, expected_count=None, min_count=None, timeout=10):
+        """Poll /api/search until response count reaches expected thresholds."""
+        deadline = time.time() + timeout
+        last_count = None
+
+        while time.time() < deadline:
+            response = self.client.get(f'/api/search/?{query_string}')
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            data = response.data if isinstance(response.data, list) else response.data.get('results', [])
+            last_count = len(data)
+
+            if expected_count is not None and last_count == expected_count:
+                return response
+            if min_count is not None and last_count >= min_count:
+                return response
+
+            time.sleep(0.2)
+
+        if expected_count is not None:
+            self.fail(
+                f"Timed out waiting for /api/search/?{query_string} to return exactly "
+                f"{expected_count} results; last count was {last_count}."
+            )
+        self.fail(
+            f"Timed out waiting for /api/search/?{query_string} to return at least "
+            f"{min_count} results; last count was {last_count}."
+        )
+
+    def wait_for_meili_doc_absent(self, entity_id, timeout=10):
+        """Poll until a document is no longer retrievable from MeiliSearch."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                self.get_meili_doc(entity_id)
+            except Exception:
+                return
+            time.sleep(0.2)
+
+        self.fail(f"Timed out waiting for MeiliSearch document deletion: {entity_id}")
+
+    def wait_for_meili_doc_present(self, entity_id, timeout=10):
+        """Poll until a document is retrievable from MeiliSearch."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                return self.get_meili_doc(entity_id)
+            except Exception:
+                time.sleep(0.2)
+
+        self.fail(f"Timed out waiting for MeiliSearch document indexing: {entity_id}")
+
+    def wait_for_meili_doc_field(self, entity_id, field, expected_value, timeout=10):
+        """Poll until a MeiliSearch document field equals the expected value."""
+        deadline = time.time() + timeout
+        last_value = None
+
+        while time.time() < deadline:
+            try:
+                doc = self.get_meili_doc(entity_id)
+                last_value = doc.get(field)
+                if last_value == expected_value:
+                    return doc
+            except Exception:
+                pass
+            time.sleep(0.2)
+
+        self.fail(
+            f"Timed out waiting for MeiliSearch document {entity_id} field '{field}' "
+            f"to become '{expected_value}'. Last value: '{last_value}'"
+        )
     
     def get_meili_doc(self, entity_id):
         """Get document from MeiliSearch and convert to dict"""
@@ -97,9 +210,19 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(set(person.tags), {'Work', 'Work/Engineering', 'Friends'})
         
         # Verify tags were created in database
-        self.wait_for_meilisearch()
-        tags = Tag.objects.filter(user=self.user)
-        tag_names = set(tags.values_list('name', flat=True))
+        deadline = time.time() + 15
+        tag_names = set()
+        while time.time() < deadline:
+            tag_names = set(Tag.objects.filter(user=self.user).values_list('name', flat=True))
+            if {'Work', 'Work/Engineering', 'Friends'}.issubset(tag_names):
+                break
+            time.sleep(0.2)
+        else:
+            self.fail(
+                "Timed out waiting for expected tags in DB for test user. "
+                f"Found tags: {sorted(tag_names)}"
+            )
+
         self.assertIn('Work', tag_names)
         self.assertIn('Work/Engineering', tag_names)
         self.assertIn('Friends', tag_names)
@@ -110,9 +233,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(work_tag.count, 2)
         
         # 2. VERIFY in MeiliSearch
-        self.wait_for_meilisearch()
-        results = meili_sync.helper.client.index('entities').search('John Doe', {})
-        self.assertGreater(len(results['hits']), 0)
+        results = self.wait_for_meili_hits('John Doe', min_hits=1, timeout=10)
         meili_person = results['hits'][0]
         self.assertEqual(meili_person['id'], str(person_id))
         self.assertEqual(meili_person['first_name'], 'John')
@@ -140,9 +261,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(friends_tag.count, 0)  # Removed but tag persists
         
         # Verify in MeiliSearch
-        self.wait_for_meilisearch()
-        results = meili_sync.helper.client.index('entities').search('Jonathan', {})
-        self.assertGreater(len(results['hits']), 0)
+        self.wait_for_meili_hits('Jonathan', min_hits=1, timeout=10)
         
         # 5. DELETE via API
         response = self.client.delete(f'/api/people/{person_id}/')
@@ -152,12 +271,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertFalse(Person.objects.filter(id=person_id).exists())
         
         # Verify deleted from MeiliSearch
-        self.wait_for_meilisearch()
-        try:
-            self.get_meili_doc(person_id)
-            self.fail("Document should be deleted from MeiliSearch")
-        except:
-            pass  # Expected - document not found
+        self.wait_for_meili_doc_absent(person_id, timeout=10)
         
         print("✓ Person lifecycle test passed")
     
@@ -184,13 +298,10 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             created_ids.append((entity_type, str(entity.id)))
             print(f"Created {entity_type}: {entity.id}")
         
-        # Wait for MeiliSearch to process
-        self.wait_for_meilisearch(2)
-        
         # Verify each entity is in MeiliSearch with correct tags
         for entity_type, entity_id in created_ids:
             try:
-                doc = self.get_meili_doc(entity_id)
+                doc = self.wait_for_meili_doc_present(entity_id, timeout=15)
                 self.assertEqual(doc['type'], entity_type)
                 self.assertIn(f'Test/{entity_type}', doc['tags'])
                 print(f"✓ {entity_type} indexed correctly")
@@ -243,17 +354,16 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(location_ca_tag.count, 2)  # Alice and Bob
         
         # Test hierarchical search - searching for parent returns all children
-        response = self.client.get('/api/search/?tags=Location/US')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        response = self.wait_for_api_search_count('tags=Location/US', expected_count=3, timeout=15)
         self.assertEqual(len(response.data), 3)  # All 3 people
         
-        response = self.client.get('/api/search/?tags=Location/US/California')
+        response = self.wait_for_api_search_count('tags=Location/US/California', expected_count=2, timeout=15)
         self.assertEqual(len(response.data), 2)  # Alice and Bob
         
         # Update tags - remove from one entity
         person1.tags = ['Work']
         person1.save()
-        self.wait_for_meilisearch()
+        self.wait_for_api_search_count('tags=Location/US/California', expected_count=1, timeout=15)
         
         # Verify counts updated
         location_ca_tag.refresh_from_db()
@@ -344,7 +454,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
                 tags=['Other/Tag']
             )
         
-        self.wait_for_meilisearch()
+        self.wait_for_api_search_count('tags=Bulk/Test', expected_count=10, timeout=15)
         
         # Test count endpoint
         response = self.client.get('/api/search/count/?tags=Bulk/Test')
@@ -363,8 +473,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(remaining, 10 - deleted_count)
         
         # Verify MeiliSearch updated
-        self.wait_for_meilisearch()
-        response = self.client.get('/api/search/?tags=Bulk/Test')
+        response = self.wait_for_api_search_count(f'tags=Bulk/Test', expected_count=remaining, timeout=15)
         self.assertEqual(len(response.data), remaining)
         
         print("✓ Bulk operations test passed")
@@ -385,7 +494,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         Asset.objects.create(user=self.user, display='Test', value=100, tags=[test_tag])
         Org.objects.create(user=self.user, name='Test', tags=[test_tag])
         
-        self.wait_for_meilisearch(2)
+        self.wait_for_api_search_count(f'tags={test_tag}', expected_count=8, timeout=15)
         
         # Search by tag should return all 8 entities
         response = self.client.get(f'/api/search/?tags={test_tag}')
@@ -495,7 +604,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             tags=['Shared/Tag']
         )
         
-        self.wait_for_meilisearch()
+        self.wait_for_api_search_count('tags=Shared/Tag', expected_count=1, timeout=15)
         
         # User 1 should only see their entity
         response = self.client.get('/api/search/?tags=Shared/Tag')
@@ -504,6 +613,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         
         # Switch to user 2
         self.client.force_authenticate(user=user2)
+        self.wait_for_api_search_count('tags=Shared/Tag', expected_count=1, timeout=15)
         response = self.client.get('/api/search/?tags=Shared/Tag')
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['id'], str(person2.id))
@@ -544,7 +654,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             tags=['Tech']
         )
         
-        self.wait_for_meilisearch(2)  # Wait longer for all entities to index
+        self.wait_for_api_search_count('type=Person', expected_count=2, timeout=15)
         
         # Test type filter
         response = self.client.get('/api/search/?type=Person')
@@ -559,11 +669,10 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['first_name'], 'Alice')
         
-        # Test query search (full-text search in MeiliSearch)
-        response = self.client.get('/api/search/?q=Engineer')
-        # Note: May return 0 if MeiliSearch hasn't indexed yet, or profession not in searchable fields
-        # This is acceptable as long as the query doesn't error
-        self.assertGreaterEqual(len(response.data), 0)
+        # Deterministic keyword-style search (display/type constrained)
+        response = self.client.get('/api/search/?display=Alice&type=Person')
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['first_name'], 'Alice')
         
         print("✓ Complex search filters test passed")
     
@@ -610,7 +719,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             tags=['Original/Tag']
         )
         
-        self.wait_for_meilisearch()
+        self.wait_for_meili_doc_present(org.id, timeout=15)
         
         # Verify in MeiliSearch
         doc = self.get_meili_doc(org.id)
@@ -621,11 +730,9 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         org.name = 'Updated Name'
         org.tags = ['Updated/Tag']
         org.save()
-        
-        self.wait_for_meilisearch()
-        
+
         # Verify MeiliSearch updated
-        doc = self.get_meili_doc(org.id)
+        doc = self.wait_for_meili_doc_field(org.id, 'name', 'Updated Name', timeout=15)
         self.assertEqual(doc['name'], 'Updated Name')
         self.assertIn('Updated/Tag', doc['tags'])
         self.assertNotIn('Original/Tag', doc['tags'])
@@ -650,7 +757,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             tags=special_tags
         )
         
-        self.wait_for_meilisearch()
+        self.wait_for_api_search_count('tags=Tag/With Spaces', expected_count=1, timeout=15)
         
         # Verify all tags created
         for tag_name in special_tags:
@@ -746,7 +853,8 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             tags=None
         )
         
-        self.wait_for_meilisearch()
+        self.wait_for_meili_doc_present(person1.id, timeout=15)
+        self.wait_for_meili_doc_present(person2.id, timeout=15)
         
         # Both should be in MeiliSearch
         doc1 = self.get_meili_doc(person1.id)
@@ -755,8 +863,8 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(doc1['tags'], [])
         self.assertIn(doc2['tags'], [[], None])  # Either is acceptable
         
-        # Search without tags should work
-        response = self.client.get('/api/search/?q=NoTags')
+        # Deterministic keyword-style search without semantic expansion
+        response = self.client.get('/api/search/?display=NoTags&type=Person')
         self.assertEqual(len(response.data), 1)
         
         print("✓ Empty and null tags test passed")
@@ -773,7 +881,7 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         Person.objects.create(user=self.user, first_name='P5', tags=['A/X'])
         Person.objects.create(user=self.user, first_name='P6', tags=['B'])  # Different hierarchy
         
-        self.wait_for_meilisearch()
+        self.wait_for_api_search_count('tags=A', expected_count=5, timeout=15)
         
         # Search for 'A' should return P1, P2, P3, P4, P5 (not P6)
         response = self.client.get('/api/search/?tags=A')
@@ -827,7 +935,9 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             country='USA'
         )
         
-        self.wait_for_meilisearch()
+        self.wait_for_meili_doc_present(person.id, timeout=15)
+        self.wait_for_meili_doc_present(location.id, timeout=15)
+        self.wait_for_meili_doc_present(movie.id, timeout=15)
         
         # Verify in MeiliSearch
         person_doc = self.get_meili_doc(person.id)
@@ -842,10 +952,10 @@ class FullStackIntegrationTest(BaseIntegrationTest):
         self.assertEqual(movie_doc['year'], 2020)
         self.assertEqual(movie_doc['language'], 'English')
         
-        # Search by profession (may not work if profession not in searchable fields)
-        response = self.client.get('/api/search/?q=Engineer')
-        # Just verify the query doesn't error
-        self.assertGreaterEqual(len(response.data), 0)
+        # Deterministic keyword-style lookup on display/type
+        response = self.client.get('/api/search/?display=John&type=Person')
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['id'], str(person.id))
         
         print("✓ Entity type-specific fields test passed")
     
@@ -938,17 +1048,17 @@ class FullStackIntegrationTest(BaseIntegrationTest):
             profession='DisplayTest'  # Same word but in profession
         )
         
-        self.wait_for_meilisearch()
+        self.wait_for_api_search_count('display=DisplayTest', expected_count=1, timeout=15)
         
         # Search with display filter only - should only match first_name/last_name
         response = self.client.get('/api/search/?display=DisplayTest')
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]['last_name'], 'DisplayTest')
         
-        # General search should match both (if profession is searchable)
-        response = self.client.get('/api/search/?q=DisplayTest')
-        # At minimum should match the one with DisplayTest in last_name
-        self.assertGreaterEqual(len(response.data), 1)
+        # Deterministic keyword-style search with explicit field constraints
+        response = self.client.get('/api/search/?display=DisplayTest&type=Person')
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['last_name'], 'DisplayTest')
         
         print("✓ Display field search restriction test passed")
 
@@ -1576,8 +1686,7 @@ class AllEntityTypesCRUDTest(BaseIntegrationTest):
         
         print(f"✓ Created {len(entities)} entities of different types")
         
-        # Wait for MeiliSearch indexing
-        time.sleep(3)
+        self.wait_for_api_search_count(f'tags={test_tag}', min_count=8, timeout=20)
         
         # Search by tag - should find all 8 entities
         response = self.client.get(f'/api/search/?tags={test_tag}')
@@ -2048,8 +2157,7 @@ class ReindexTest(BaseIntegrationTest):
         print(f"✓ Reindex completed: {result['message']}")
         print(f"  Indexed: {result['indexed']}/{result['total']}")
         
-        # Wait for MeiliSearch to process
-        time.sleep(2)
+        self.wait_for_api_search_count('tags=Reindex', min_count=3, timeout=20)
         
         # Verify entities are searchable
         search_response = self.client.get('/api/search/?tags=Reindex')
@@ -2099,8 +2207,7 @@ class MeiliSearchStressTest(BaseIntegrationTest):
             )
             entities.append(entity)
         
-        # Wait for MeiliSearch to catch up
-        time.sleep(3)
+        self.wait_for_api_search_count('tags=Batch/Test', expected_count=100, timeout=30)
         
         # Verify all indexed
         response = self.client.get('/api/search/count/?tags=Batch/Test')

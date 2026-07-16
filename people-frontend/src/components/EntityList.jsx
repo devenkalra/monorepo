@@ -169,6 +169,7 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
     }, []);
 
     const typeLetter = getTypeLetter(entity.type);
+    const isUnlockedEncrypted = entity.is_encrypted && entity._decrypted;
 
     return (
         <li
@@ -236,6 +237,15 @@ function EntityListItem({ entity, thumbnailUrl, isSelected, selectionMode, onTog
                     >
                         {typeLetter}
                     </span>
+                    {isUnlockedEncrypted && (
+                        <span
+                            className="absolute -bottom-1 -right-1 w-4 h-4 flex items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] shadow"
+                            title="Encrypted entity is unlocked"
+                            aria-label="Encrypted entity is unlocked"
+                        >
+                            🔓
+                        </span>
+                    )}
                 </div>
                 {/* Entity Info */}
                 <div className="flex-1 min-w-0 flex flex-col gap-1">

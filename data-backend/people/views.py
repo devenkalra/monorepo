@@ -2031,20 +2031,13 @@ class SearchViewSet(viewsets.ViewSet):
             count = Entity.objects.filter(id__in=relation_entity_ids, user=self.request.user).count()
             return Response({'count': count})
         
-        # Use same MeiliSearch path as list() for consistency with UI results.
+        # Use keyword search path only for now.
         from .sync import meili_sync
-        hybrid_params = {
-            'semanticRatio': 0.25,
-            'embedder': 'default',
-        }
         search_query = query if query else ''
         results = meili_sync.search(
             search_query,
             filter_str=filter_str,
             attributes_to_search_on=search_attributes,
-            hybrid=hybrid_params,
-            ranking_score_threshold=0.82,
-            show_ranking_score=True,
             limit=10000,
         )
 
@@ -2209,20 +2202,11 @@ class SearchViewSet(viewsets.ViewSet):
         # MeiliSearch requires at least empty string for query
         search_query = query if query else ''
 
-        # Match the previously working hybrid semantic search payload.
-        hybrid_params = {
-            'semanticRatio': 0.25,
-            'embedder': 'default',
-        }
-        
-        # Perform Meilisearch query with user filter and optional attribute restriction
+        # Perform keyword-based Meilisearch query with user filter and optional attribute restriction
         results = meili_sync.search(
             search_query,
             filter_str=filter_str,
             attributes_to_search_on=search_attributes,
-            hybrid=hybrid_params,
-            ranking_score_threshold=0.82,
-            show_ranking_score=True,
             limit=10000,
         )
         
