@@ -156,8 +156,14 @@ ensure_repo_clean_enough() {
   local status
   status=$(git status --porcelain || true)
   if [[ -n "$status" ]]; then
-    print_info "Working tree has local changes. Targeted path restore may overwrite tracked files in selected app paths."
+    print_info "Working tree has local changes outside this deploy. The script will refuse to overwrite changed files inside the selected app paths."
   fi
+}
+
+paths_have_local_changes() {
+  git diff --quiet -- "${@}" || return 0
+  git diff --cached --quiet -- "${@}" || return 0
+  return 1
 }
 
 deploy_one_app() {
@@ -192,8 +198,14 @@ deploy_one_app() {
   print_info "[$app] Files to update:"
   echo "$diff_out" | sed 's/^/  - /'
 
+  if paths_have_local_changes "${paths[@]}"; then
+    print_err "[$app] Local changes exist in targeted paths. Commit, stash, or discard them before deploying this app."
+    git status --short -- "${paths[@]}" || true
+    exit 1
+  fi
+
   print_step "[$app] Updating only selected paths from origin/$BRANCH"
-  run_cmd git restore --source "origin/$BRANCH" --worktree --staged -- "${paths[@]}"
+  run_cmd git restore --source "origin/$BRANCH" --worktree -- "${paths[@]}"
 
   print_step "[$app] Rebuilding and recreating services: $services"
   run_shell "docker compose -p \"$PROJECT\" -f \"$COMPOSE_FILE\" up -d --build --force-recreate --no-deps $services"
