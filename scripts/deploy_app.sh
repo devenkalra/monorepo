@@ -12,7 +12,7 @@
 #   ./scripts/deploy_app.sh --app devenkalra --with-edge
 #
 # Expected:
-# - Repo exists on server (default: /home/deploy)
+# - Repo exists on server (default: /home/deploy/apps/monorepo)
 # - Run from anywhere; script will cd into REPO_DIR
 # - docker compose + git installed
 
@@ -42,7 +42,7 @@ Apps:
 Options:
   --app <name>         App to deploy (repeatable). Use 'all' for all apps.
   --branch <name>      Git branch to deploy (default: main)
-  --repo-dir <path>    Repo path on server (default: /home/deploy)
+  --repo-dir <path>    Repo path on server (default: /home/deploy/apps/monorepo)
   --compose-file <f>   Compose file relative to repo root (default: docker-compose.production.yml)
   --project <name>     Compose project name (default: data-backend)
   --with-edge          Recreate edge-nginx (devenkalra only)
@@ -259,7 +259,7 @@ deploy_one_app() {
   print_ok "[$app] Deploy complete"
 }
 
-REPO_DIR="${REPO_DIR:-/home/deploy}"
+REPO_DIR="${REPO_DIR:-/home/deploy/apps/monorepo}"
 BRANCH="${BRANCH:-main}"
 COMPOSE_FILE="docker-compose.production.yml"
 PROJECT="data-backend"

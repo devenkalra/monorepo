@@ -8,7 +8,7 @@
 #   ./scripts/deploy_production.sh              # Deploy
 #   ./scripts/deploy_production.sh --dry-run    # Show what would be copied
 #
-# Expected PROD_DIR structure (default /home/deploy):
+# Expected PROD_DIR structure (default /home/deploy/apps/monorepo):
 #   data-backend/   (with .env, ssl/)
 #   frontend/
 #   people-frontend/
@@ -61,7 +61,7 @@ ensure_local_git_excludes() {
 }
 
 # Configuration
-PROD_DIR="${PROD_DIR:-/home/deploy}"
+PROD_DIR="${PROD_DIR:-/home/deploy/apps/monorepo}"
 STAGING_DIR="${STAGING_DIR:-/home/deploy-staging}"
 TEMP_DIR="${TEMP_DIR:-/tmp/bldrdojo-deploy-$$}"
 REPO_URL="${REPO_URL:-}"  # Set via env or leave empty to use existing clone
