@@ -790,15 +790,15 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             return;
         }
         try {
-            const response = await api.fetch(`/api/search/?q=${encodeURIComponent(query)}`);
+            const validTypes = getValidEntityTypes(entity.type);
+            const typeQuery = validTypes.length > 0
+                ? `&type=${encodeURIComponent(validTypes.join(','))}`
+                : '';
+            const response = await api.fetch(`/api/search/?q=${encodeURIComponent(query)}${typeQuery}`);
             if (response.ok) {
                 const data = await response.json();
-
-                // Filter results to only show entity types that can be related to current entity
-                const validTypes = getValidEntityTypes(entity.type);
-                const filteredData = (data.results || []).filter(result => validTypes.includes(result.type));
-
-                setEntitySearchResults(filteredData);
+                const results = Array.isArray(data) ? data : (data.results || []);
+                setEntitySearchResults(results);
             }
         } catch (error) {
             console.error('Failed to search entities:', error);

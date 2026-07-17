@@ -305,6 +305,50 @@ describe('EntityDetail Component', () => {
     expect(screen.queryByText('Charlie Brown')).not.toBeInTheDocument();
   });
 
+  it('renders returned relation search entities and requests only valid target types', async () => {
+    api.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ([
+        {
+          id: 'candidate-org',
+          type: 'Org',
+          display: 'VeriSign',
+        },
+      ]),
+    });
+
+    render(
+      <BrowserRouter>
+        <EntityDetail
+          entity={mockEntity}
+          isVisible={true}
+          onClose={vi.fn()}
+          onUpdate={vi.fn()}
+          initialViewMode="relations-edit"
+        />
+      </BrowserRouter>
+    );
+
+    const addRelationButton = await screen.findByRole('button', { name: /\+ add relation/i });
+    fireEvent.click(addRelationButton);
+
+    const searchInput = await screen.findByPlaceholderText(/type to search/i);
+    fireEvent.change(searchInput, { target: { value: 'Veri' } });
+
+    await waitFor(() => {
+      expect(api.fetch).toHaveBeenCalled();
+    });
+
+    const searchCall = api.fetch.mock.calls.find(([url]) => url.includes('/api/search/?q=Veri'));
+    expect(searchCall).toBeTruthy();
+    expect(searchCall[0]).toContain('&type=');
+    expect(searchCall[0]).toContain('Org');
+
+    await waitFor(() => {
+      expect(screen.getByText('VeriSign')).toBeInTheDocument();
+    });
+  });
+
   it('expands and collapses all relations', async () => {
     const relationsWithMultipleTypes = {
       outgoing: [
