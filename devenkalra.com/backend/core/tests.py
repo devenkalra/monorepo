@@ -108,6 +108,24 @@ class PersonalWebsiteTests(APITestCase):
         self.assertEqual(response.json()['slug'], 'new-page')
         self.assertTrue(Page.objects.filter(slug='new-page').exists())
 
+    def test_create_page_converts_literal_newlines(self):
+        """Literal \\n in markdown content becomes real line breaks on save."""
+        token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + token.key)
+        url = reverse('page-list')
+        response = self.client.post(url, {
+            'title': 'Escaped Newlines',
+            'slug': 'escaped-newlines',
+            'category': '',
+            'content': '# Hello\\n\\nSecond paragraph',
+            'roles_with_access': '',
+            'render_as_html': False,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        page = Page.objects.get(slug='escaped-newlines')
+        self.assertEqual(page.content, '# Hello\n\nSecond paragraph')
+        self.assertNotIn('\\n', page.content)
+
     def test_create_menu_item_for_page(self):
         """Authenticated clients can create menu items pointing at a page."""
         token = Token.objects.create(user=self.user)

@@ -9,6 +9,8 @@
   --accent-color: #a27b5c;
   --accent-light: #f4efe6;
   --shadow-color: rgba(43, 43, 42, 0.05);
+  /* Sticky .site-header clearance for in-page #anchor jumps */
+  --site-header-offset: 6rem;
   
   --font-serif: 'Lora', Georgia, serif;
   --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
@@ -20,6 +22,10 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+html {
+  scroll-padding-top: var(--site-header-offset);
 }
 
 body {
@@ -53,6 +59,13 @@ body {
   position: sticky;
   top: 0;
   z-index: 100;
+}
+
+/* Keep fragment targets visible below the sticky header */
+.markdown-body :is(h1, h2, h3, h4, h5, h6),
+.markdown-body a[id],
+[id] {
+  scroll-margin-top: var(--site-header-offset);
 }
 
 .header-container {
@@ -256,6 +269,41 @@ p {
 .markdown-body li {
   margin-bottom: 0.5rem;
   font-size: 1.05rem;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0 2rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  display: block;
+  overflow-x: auto;
+}
+
+.markdown-body thead,
+.markdown-body tbody,
+.markdown-body tr {
+  display: table;
+  width: 100%;
+  table-layout: auto;
+}
+
+.markdown-body th {
+  border-bottom: 2px solid var(--text-color);
+  text-align: left;
+  padding: 0.75rem 0.85rem;
+  font-weight: 600;
+}
+
+.markdown-body td {
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.75rem 0.85rem;
+  vertical-align: top;
+}
+
+.markdown-body tr:hover td {
+  background-color: var(--accent-light);
 }
 
 .markdown-body pre {
@@ -543,6 +591,10 @@ p {
 
 /* Responsive Navigation Header */
 @media (max-width: 768px) {
+  :root {
+    --site-header-offset: 4.75rem;
+  }
+
   .header-container {
     padding: 1rem 1.5rem;
     position: relative;

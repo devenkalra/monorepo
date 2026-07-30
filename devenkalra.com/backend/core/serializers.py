@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, BlogCategory, BlogTag, BlogPost, Comment
+from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, BlogCategory, BlogTag, BlogPost, Comment, normalize_escaped_newlines
 
 class PageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -10,6 +10,9 @@ class PageSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_content(self, value):
+        return normalize_escaped_newlines(value)
 
 class MenuItemSerializer(serializers.ModelSerializer):
     """Nested tree serializer for the public menu endpoint."""

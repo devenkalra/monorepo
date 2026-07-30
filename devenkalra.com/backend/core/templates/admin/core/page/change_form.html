@@ -277,6 +277,52 @@
             return;
         }
 
+        function normalizeEscapedNewlines(text) {
+            if (!text) return text || "";
+            // Convert pasted literal \n / \r\n / \r into real line breaks (repeat for double-escaped \\n).
+            let out = String(text);
+            for (let i = 0; i < 3; i++) {
+                const next = out
+                    .replace(/\\r\\n/g, "\n")
+                    .replace(/\\n/g, "\n")
+                    .replace(/\\r/g, "\n");
+                if (next === out) break;
+                out = next;
+            }
+            return out;
+        }
+
+        function syncNormalizedContent() {
+            const normalized = normalizeEscapedNewlines(contentInput.value);
+            if (normalized !== contentInput.value) {
+                const start = contentInput.selectionStart;
+                const end = contentInput.selectionEnd;
+                contentInput.value = normalized;
+                // Best-effort caret restore after length change
+                try {
+                    const delta = normalized.length - (end - start);
+                    const pos = Math.min(normalized.length, (start || 0) + Math.max(0, delta));
+                    contentInput.setSelectionRange(pos, pos);
+                } catch (e) { /* ignore on unsupported inputs */ }
+            }
+            return contentInput.value;
+        }
+
+        // Persist real line breaks when saving pasted markdown that contains literal \n
+        const pageForm = contentInput.closest("form");
+        if (pageForm) {
+            pageForm.addEventListener("submit", function () {
+                contentInput.value = normalizeEscapedNewlines(contentInput.value);
+            });
+        }
+
+        // Prefer GFM so tables/newlines match the live site renderer
+        if (window.marked && typeof marked.setOptions === "function") {
+            marked.setOptions({ gfm: true, breaks: false });
+        } else if (window.marked && typeof marked.use === "function") {
+            marked.use({ gfm: true, breaks: false });
+        }
+
         // --- Drag to Resize Functionality ---
         let isDragging = false;
 
@@ -510,7 +556,7 @@
         `;
 
         function updatePreview() {
-            const rawContent = contentInput.value;
+            const rawContent = syncNormalizedContent();
             const renderAsHtml = renderHtmlCheckbox ? renderHtmlCheckbox.checked : false;
 
             if (renderAsHtml) {
@@ -565,7 +611,13 @@
 
                 // Parse and update HTML using marked library
                 try {
-                    previewContainer.innerHTML = marked.parse(rawContent || "");
+                    const withAnchors = (rawContent || "").replace(
+                        /^(#{1,6})\s+(.+?)\s+\[#([A-Za-z0-9_-]+)\][ \t]*$/gm,
+                        function (_, hashes, title, id) {
+                            return hashes + ' <a id="' + id + '" href="#' + id + '">' + title + '</a>';
+                        }
+                    );
+                    previewContainer.innerHTML = marked.parse(withAnchors);
                 } catch (e) {
                     console.error("Marked parsing error:", e);
                     previewContainer.innerText = rawContent;
@@ -575,6 +627,11 @@
 
         // Add event listeners for dynamic updates
         contentInput.addEventListener("input", updatePreview);
+        contentInput.addEventListener("change", updatePreview);
+        contentInput.addEventListener("paste", function () {
+            // Paste inserts after this handler returns; normalize on next tick.
+            setTimeout(updatePreview, 0);
+        });
         if (renderHtmlCheckbox) {
             renderHtmlCheckbox.addEventListener("change", updatePreview);
         }

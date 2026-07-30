@@ -1,11 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import rehypeRaw from 'rehype-raw';
 import { useAuth } from '../context/AuthContext';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { TimeKeeperApp } from '../components/TimeKeeperApp';
 import { ExercisePlannerApp } from '../components/ExercisePlannerApp';
+import { MarkdownBody } from '../components/MarkdownBody';
 
 export const PageView = ({ menuItems }) => {
   const { menuItemId, slug } = useParams();
@@ -60,41 +59,7 @@ export const PageView = ({ menuItems }) => {
   };
 
   const renderMarkdown = (content) => (
-    <ReactMarkdown
-      rehypePlugins={[rehypeRaw]}
-      components={{
-        a: ({ href, children, ...props }) => {
-          const isInternal = href && !href.startsWith('http://') && !href.startsWith('https://') && !href.startsWith('//') && !href.startsWith('#');
-          if (isInternal) {
-            return (
-              <a
-                href={href}
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (href.startsWith('/')) {
-                    navigate(href);
-                  } else {
-                    const currentPath = window.location.pathname;
-                    const cleanPath = currentPath.endsWith('/') ? currentPath.slice(0, -1) : currentPath;
-                    const cleanUrl = href.startsWith('./') ? href.slice(2) : href;
-                    const segments = cleanPath.split('/');
-                    segments.pop();
-                    segments.push(cleanUrl);
-                    navigate(segments.join('/'));
-                  }
-                }}
-                {...props}
-              >
-                {children}
-              </a>
-            );
-          }
-          return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
-        }
-      }}
-    >
-      {content}
-    </ReactMarkdown>
+    <MarkdownBody navigate={navigate}>{content}</MarkdownBody>
   );
 
   const renderHTML = (content) => (
@@ -3019,7 +2984,7 @@ export const ContactsApp = () => {
                 <div style={{ marginTop: '0.35rem' }}>
                   <strong>Description:</strong>
                   <div style={{ marginTop: '0.3rem', color: 'var(--text-muted)' }} className="markdown-body">
-                    <ReactMarkdown rehypePlugins={[rehypeRaw]}>{selectedContactMarkdown}</ReactMarkdown>
+                    <MarkdownBody>{selectedContactMarkdown}</MarkdownBody>
                   </div>
                 </div>
               )}

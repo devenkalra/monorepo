@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import ReactMarkdown from 'react-markdown';
-import rehypeRaw from 'rehype-raw';
 import { useAuth } from '../context/AuthContext';
+import { MarkdownBody } from '../components/MarkdownBody';
 
 export const BlogPostDetail = () => {
   const { slug } = useParams();
@@ -255,7 +254,7 @@ export const BlogPostDetail = () => {
         {post.render_as_html ? (
           <div dangerouslySetInnerHTML={{ __html: post.content }} />
         ) : (
-          <ReactMarkdown rehypePlugins={[rehypeRaw]}>{post.content}</ReactMarkdown>
+          <MarkdownBody>{post.content}</MarkdownBody>
         )}
       </section>
 

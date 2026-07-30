@@ -1,6 +1,23 @@
 from django.db import models
 import uuid
 
+
+def normalize_escaped_newlines(text):
+    """Turn literal ``\\n`` / ``\\r\\n`` sequences into real line breaks.
+
+    Common when pasting markdown from JSON, Swagger, or chat into the page editor.
+    """
+    if not text:
+        return text
+    if '\\n' not in text and '\\r' not in text:
+        return text
+    return (
+        text.replace('\\r\\n', '\n')
+        .replace('\\n', '\n')
+        .replace('\\r', '\n')
+    )
+
+
 class Page(models.Model):
     title = models.CharField(max_length=200)
     category = models.CharField(max_length=100, blank=True, default="", help_text="Optional category to group pages")
@@ -11,6 +28,10 @@ class Page(models.Model):
     allowed_emails = models.TextField(blank=True, default="", help_text="Optional comma-separated list of emails allowed to view this page (if protected)")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.content = normalize_escaped_newlines(self.content)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
