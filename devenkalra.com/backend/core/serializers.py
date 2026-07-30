@@ -4,9 +4,15 @@ from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrac
 class PageSerializer(serializers.ModelSerializer):
     class Meta:
         model = Page
-        fields = ['id', 'title', 'category', 'slug', 'content', 'roles_with_access', 'render_as_html', 'created_at', 'updated_at']
+        fields = [
+            'id', 'title', 'category', 'slug', 'content',
+            'roles_with_access', 'render_as_html', 'allowed_emails',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 class MenuItemSerializer(serializers.ModelSerializer):
+    """Nested tree serializer for the public menu endpoint."""
     children = serializers.SerializerMethodField()
     page_slug = serializers.CharField(source='page.slug', read_only=True, default=None)
     page_roles_with_access = serializers.CharField(source='page.roles_with_access', read_only=True, default="")
@@ -35,6 +41,20 @@ class MenuItemSerializer(serializers.ModelSerializer):
         children_queryset = obj.children.all().order_by('order', 'title')
         children_queryset = [child for child in children_queryset if self._has_menu_access(child)]
         return MenuItemSerializer(children_queryset, many=True, context=self.context).data
+
+
+class MenuItemCRUDSerializer(serializers.ModelSerializer):
+    """Flat serializer for menu-item CRUD (create/update/list)."""
+    page_slug = serializers.CharField(source='page.slug', read_only=True, default=None)
+
+    class Meta:
+        model = MenuItem
+        fields = [
+            'id', 'title', 'parent', 'page', 'page_slug', 'order',
+            'roles_with_access', 'external_url', 'show_in_menu', 'full_path',
+        ]
+        read_only_fields = ['id', 'full_path', 'page_slug']
+
 
 class ProjectSerializer(serializers.ModelSerializer):
     class Meta:

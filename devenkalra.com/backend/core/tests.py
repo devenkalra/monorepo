@@ -26,19 +26,19 @@ class PersonalWebsiteTests(APITestCase):
             title="Public Info",
             slug="public-info",
             content="This is public information.",
-            is_protected=False
+            roles_with_access="",
         )
         self.protected_page = Page.objects.create(
             title="Protected Log",
             slug="protected-log",
             content="This is super secret log.",
-            is_protected=True
+            roles_with_access="user,superuser",
         )
         self.html_page = Page.objects.create(
             title="HTML Page",
             slug="html-page",
             content="<html><body><h1>Hello HTML</h1></body></html>",
-            is_protected=False,
+            roles_with_access="",
             render_as_html=True
         )
 
@@ -74,7 +74,7 @@ class PersonalWebsiteTests(APITestCase):
 
     def test_public_page_retrieval(self):
         """Verify public pages can be retrieved without authentication."""
-        url = reverse('api-page-detail', kwargs={'slug': 'public-info'})
+        url = reverse('page-detail', kwargs={'slug': 'public-info'})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()['title'], 'Public Info')
@@ -82,10 +82,62 @@ class PersonalWebsiteTests(APITestCase):
 
     def test_protected_page_unauthorized(self):
         """Verify protected pages return 403 Forbidden for anonymous requests."""
-        url = reverse('api-page-detail', kwargs={'slug': 'protected-log'})
+        url = reverse('page-detail', kwargs={'slug': 'protected-log'})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertTrue(response.json()['is_protected'])
+        self.assertIn('roles_with_access', response.json())
+
+    def test_create_page_requires_auth(self):
+        """Anonymous POST /pages/ is rejected; authenticated create succeeds."""
+        url = reverse('page-list')
+        payload = {
+            'title': 'New Page',
+            'slug': 'new-page',
+            'category': 'Books',
+            'content': '# Hello',
+            'roles_with_access': '',
+            'render_as_html': False,
+        }
+        response = self.client.post(url, payload, format='json')
+        self.assertIn(response.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+        token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + token.key)
+        response = self.client.post(url, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.json()['slug'], 'new-page')
+        self.assertTrue(Page.objects.filter(slug='new-page').exists())
+
+    def test_create_menu_item_for_page(self):
+        """Authenticated clients can create menu items pointing at a page."""
+        token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION='Token ' + token.key)
+        url = reverse('menu-item-list')
+        response = self.client.post(url, {
+            'title': 'Public Info Link',
+            'page': self.public_page.id,
+            'order': 5,
+            'show_in_menu': True,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.json()['page'], self.public_page.id)
+        self.assertEqual(response.json()['page_slug'], 'public-info')
+
+    def test_openapi_schema_includes_pages(self):
+        """Swagger schema is generated and documents the pages API."""
+        response = self.client.get('/api/schema/', HTTP_ACCEPT='application/json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        schema = response.json()
+        paths = schema.get('paths', {})
+        self.assertIn('/api/pages/', paths)
+        self.assertIn('get', paths['/api/pages/'])
+        self.assertIn('post', paths['/api/pages/'])
+        self.assertIn('/api/pages/{slug}/', paths)
+        self.assertEqual(schema.get('info', {}).get('title'), 'devenkalra.com API')
+
+    def test_swagger_ui_serves(self):
+        response = self.client.get('/api/docs/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     def test_user_login_and_protected_access(self):
         """Verify login endpoint grants token and enables accessing protected pages."""
@@ -100,7 +152,7 @@ class PersonalWebsiteTests(APITestCase):
         self.assertIsNotNone(token)
 
         # 2. Access protected page with Token
-        url = reverse('api-page-detail', kwargs={'slug': 'protected-log'})
+        url = reverse('page-detail', kwargs={'slug': 'protected-log'})
         self.client.credentials(HTTP_AUTHORIZATION='Token ' + token)
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -109,7 +161,7 @@ class PersonalWebsiteTests(APITestCase):
 
     def test_html_page_retrieval(self):
         """Verify HTML pages can be retrieved and contain the render_as_html flag."""
-        url = reverse('api-page-detail', kwargs={'slug': 'html-page'})
+        url = reverse('page-detail', kwargs={'slug': 'html-page'})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.json()['title'], 'HTML Page')

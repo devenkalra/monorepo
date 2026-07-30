@@ -11,11 +11,12 @@ from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
 from rest_framework.authentication import TokenAuthentication
+from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes
 
 
 from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription
 from .serializers import (
-    PageSerializer, MenuItemSerializer, ProjectSerializer, 
+    PageSerializer, MenuItemSerializer, MenuItemCRUDSerializer, ProjectSerializer,
     WorkflowIdeaSerializer, BookReviewSerializer, MusicTrackSerializer, RecipeSerializer,
     BlogCategorySerializer, BlogTagSerializer, BlogPostSerializer, CommentSerializer
 )
@@ -42,6 +43,81 @@ def get_user_role(request):
         return "user"
     return None
 
+@extend_schema_view(
+    list=extend_schema(
+        tags=['pages'],
+        summary='List pages',
+        description='Return all pages. Public; content of role-gated pages is still listed but retrieve may 403.',
+    ),
+    retrieve=extend_schema(
+        tags=['pages'],
+        summary='Get page by slug',
+        description='Fetch a single page by slug. Enforces `roles_with_access` / `allowed_emails`.',
+        parameters=[
+            OpenApiParameter(
+                name='slug',
+                type=OpenApiTypes.STR,
+                location=OpenApiParameter.PATH,
+                description='Page slug (URL key)',
+            ),
+        ],
+    ),
+    create=extend_schema(
+        tags=['pages'],
+        summary='Create page',
+        description='Create a page. Requires `Authorization: Token <key>`.',
+    ),
+    update=extend_schema(tags=['pages'], summary='Replace page'),
+    partial_update=extend_schema(tags=['pages'], summary='Patch page'),
+    destroy=extend_schema(tags=['pages'], summary='Delete page'),
+)
+class PageViewSet(viewsets.ModelViewSet):
+    """
+    Full CRUD for pages.
+
+    - list/retrieve: public (retrieve still enforces roles_with_access)
+    - create/update/destroy: authenticated
+    Lookup is by ``slug`` so clients can use ``/api/pages/<slug>/``.
+    """
+    queryset = Page.objects.all().order_by('title')
+    serializer_class = PageSerializer
+    lookup_field = 'slug'
+    lookup_value_regex = r'[-a-zA-Z0-9_]+'
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
+
+    def retrieve(self, request, *args, **kwargs):
+        page = self.get_object()
+        denied = page_access_denied_response(request, page)
+        if denied is not None:
+            return denied
+        serializer = self.get_serializer(page)
+        return Response(serializer.data)
+
+
+@extend_schema_view(
+    list=extend_schema(tags=['menu'], summary='List menu items'),
+    retrieve=extend_schema(tags=['menu'], summary='Get menu item'),
+    create=extend_schema(tags=['menu'], summary='Create menu item'),
+    update=extend_schema(tags=['menu'], summary='Replace menu item'),
+    partial_update=extend_schema(tags=['menu'], summary='Patch menu item'),
+    destroy=extend_schema(tags=['menu'], summary='Delete menu item'),
+)
+class MenuItemViewSet(viewsets.ModelViewSet):
+    """CRUD for flat menu items (nested public tree remains at GET /menu/)."""
+    queryset = MenuItem.objects.all().order_by('order', 'title')
+    serializer_class = MenuItemCRUDSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve'):
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
+
+
+@extend_schema(tags=['menu'], summary='Get nested navigation menu')
 class MenuView(APIView):
     """
     Returns the full hierarchical navigation menu.
@@ -66,64 +142,62 @@ class MenuView(APIView):
         serializer = MenuItemSerializer(roots, many=True, context={'user_role': user_role})
         return Response(serializer.data)
 
-class PageDetailView(APIView):
-    """
-    Returns detail for a single page. 
-    Enforces password/login check based on roles_with_access.
-    """
-    permission_classes = [permissions.AllowAny]
+def page_access_denied_response(request, page):
+    """Return a 403 Response if the request may not view ``page``, else None."""
+    if not page.roles_with_access:
+        return None
 
-    def get(self, request, slug):
-        try:
-            page = Page.objects.get(slug=slug)
-        except Page.DoesNotExist:
-            return Response({"detail": "Page not found."}, status=status.HTTP_404_NOT_FOUND)
+    allowed_roles = [r.strip().lower() for r in page.roles_with_access.split(',') if r.strip()]
+    if not allowed_roles:
+        return None
 
-        # Enforce role-based access control (RBAC)
-        if page.roles_with_access:
-            allowed_roles = [r.strip().lower() for r in page.roles_with_access.split(',') if r.strip()]
-            if allowed_roles:
-                user_role = get_user_role(request)
-                if not user_role:
-                    return Response(
-                        {"detail": "Authentication required.", "roles_with_access": allowed_roles},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-                
-                # Check allowed roles: superuser role gets access to everything
-                # user role gets access if "user" in allowed_roles
-                has_access = False
-                if user_role == "superuser":
-                    has_access = True
-                elif user_role == "user" and "user" in allowed_roles:
-                    has_access = True
-                
-                if not has_access:
-                    return Response(
-                        {"detail": "Access denied. You do not have the required role to view this page.", "roles_with_access": allowed_roles, "no_permission": True},
-                        status=status.HTTP_403_FORBIDDEN
-                    )
+    user_role = get_user_role(request)
+    if not user_role:
+        return Response(
+            {"detail": "Authentication required.", "roles_with_access": allowed_roles},
+            status=status.HTTP_403_FORBIDDEN
+        )
 
-                # Check granular email permission if configured (as a secondary check)
-                if page.allowed_emails:
-                    social_user = request.session.get('social_user')
-                    if request.user.is_authenticated:
-                        user_email = request.user.email
-                    elif social_user:
-                        user_email = social_user.get('email')
-                    else:
-                        user_email = ""
-                    
-                    allowed = [e.strip().lower() for e in page.allowed_emails.split(',') if e.strip()]
-                    if not user_email or user_email.lower() not in allowed:
-                        return Response(
-                            {"detail": "Access denied. You do not have permission to view this page.", "roles_with_access": allowed_roles, "no_permission": True},
-                            status=status.HTTP_403_FORBIDDEN
-                        )
+    has_access = False
+    if user_role == "superuser":
+        has_access = True
+    elif user_role == "user" and "user" in allowed_roles:
+        has_access = True
 
-        serializer = PageSerializer(page)
-        return Response(serializer.data)
+    if not has_access:
+        return Response(
+            {
+                "detail": "Access denied. You do not have the required role to view this page.",
+                "roles_with_access": allowed_roles,
+                "no_permission": True,
+            },
+            status=status.HTTP_403_FORBIDDEN
+        )
 
+    if page.allowed_emails:
+        social_user = request.session.get('social_user')
+        if request.user.is_authenticated:
+            user_email = request.user.email
+        elif social_user:
+            user_email = social_user.get('email')
+        else:
+            user_email = ""
+
+        allowed = [e.strip().lower() for e in page.allowed_emails.split(',') if e.strip()]
+        if not user_email or user_email.lower() not in allowed:
+            return Response(
+                {
+                    "detail": "Access denied. You do not have permission to view this page.",
+                    "roles_with_access": allowed_roles,
+                    "no_permission": True,
+                },
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+    return None
+
+
+@extend_schema(tags=['auth'], summary='Login (session + token)')
 class LoginView(APIView):
     """
     Handles user login. Supports both session cookie and token-based response.
@@ -136,7 +210,7 @@ class LoginView(APIView):
 
         if not username or not password:
             return Response(
-                {"detail": "Please provide both username and password."}, 
+                {"detail": "Please provide both username and password."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -144,10 +218,10 @@ class LoginView(APIView):
         if user is not None:
             # Log in session for cookie-based authentication
             login(request, user)
-            
+
             # Generate or get token for API-based headers
             token, created = Token.objects.get_or_create(user=user)
-            
+
             return Response({
                 "detail": "Successfully logged in.",
                 "token": token.key,

@@ -1,14 +1,17 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    MenuView, PageDetailView, LoginView, LogoutView, AuthStatusView, CSRFTokenView,
+    MenuView, LoginView, LogoutView, AuthStatusView, CSRFTokenView,
     ProjectViewSet, WorkflowIdeaViewSet, BookReviewViewSet, MusicTrackViewSet, RecipeViewSet,
     PageDataDetailView, ClickUpTasksView, ClickUpContactsView, ClickUpContactActivitiesView,
     BlogCategoryViewSet, BlogTagViewSet, BlogPostViewSet, BlogCommentView,
-    SocialAuthConfigView, SocialGoogleLoginView, SocialGithubLoginView
+    SocialAuthConfigView, SocialGoogleLoginView, SocialGithubLoginView,
+    PageViewSet, MenuItemViewSet,
 )
 
 router = DefaultRouter()
+router.register(r'pages', PageViewSet, basename='page')
+router.register(r'menu-items', MenuItemViewSet, basename='menu-item')
 router.register(r'projects', ProjectViewSet, basename='project')
 router.register(r'ideas', WorkflowIdeaViewSet, basename='idea')
 router.register(r'books', BookReviewViewSet, basename='book')
@@ -20,7 +23,6 @@ router.register(r'blog/posts', BlogPostViewSet, basename='blog-post')
 
 urlpatterns = [
     path('menu/', MenuView.as_view(), name='api-menu'),
-    path('pages/<slug:slug>/', PageDetailView.as_view(), name='api-page-detail'),
     path('page-data/<slug:page_slug>/', PageDataDetailView.as_view(), name='api-page-data'),
     path('auth/login/', LoginView.as_view(), name='api-login'),
     path('auth/logout/', LogoutView.as_view(), name='api-logout'),

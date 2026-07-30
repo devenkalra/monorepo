@@ -80,10 +80,19 @@ def serve_spa_or_asset(request, path=""):
     if not index_file.exists():
         raise Http404('Frontend build output not found')
     return FileResponse(index_file.open('rb'))
+from drf_spectacular.views import (
+    SpectacularAPIView,
+    SpectacularSwaggerView,
+    SpectacularRedocView,
+)
+
 urlpatterns = [
     path('admin', RedirectView.as_view(url='/admin/', permanent=False)),
     path('admin/', admin.site.urls),
     re_path(r'^api/media/(?P<path>.*)$', serve_media_with_db_fallback),
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     path('api/', include('core.urls')),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     re_path(r'^(?P<path>.*)$', serve_spa_or_asset),

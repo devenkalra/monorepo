@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
+    'drf_spectacular',
 ]
 
 MIDDLEWARE = [
@@ -143,6 +144,27 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
+    ],
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'devenkalra.com API',
+    'DESCRIPTION': (
+        'REST API for pages, menu, blog, and related content. '
+        'Authenticate mutating requests with a Token header: '
+        '`Authorization: Token <key>` (obtain via POST /api/auth/login/).'
+    ),
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+    'TAGS': [
+        {'name': 'pages', 'description': 'CMS pages (CRUD by slug)'},
+        {'name': 'menu', 'description': 'Navigation menu tree and menu items'},
+        {'name': 'blog', 'description': 'Articles / blog posts, categories, tags, comments'},
+        {'name': 'auth', 'description': 'Login, logout, CSRF, social auth'},
+        {'name': 'content', 'description': 'Projects, ideas, books, tracks, recipes'},
+        {'name': 'clickup', 'description': 'ClickUp integrations'},
     ],
 }
 
