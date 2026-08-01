@@ -299,6 +299,22 @@ export function NotesApp() {
     return out;
   }, [tree]);
 
+  /** Live children of the selected folder (from current tree, not stale selection). */
+  const selectedFolderListing = useMemo(() => {
+    if (!selected?.is_folder) return null;
+    const path = findNodePath(tree, (n) => n.id === selected.id);
+    const node = path?.[path.length - 1] || selected;
+    const children = [...(node.children || [])].sort((a, b) => {
+      if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1;
+      return (a.order - b.order) || a.title.localeCompare(b.title);
+    });
+    return {
+      title: node.title || selected.title,
+      folders: children.filter((c) => c.is_folder),
+      pages: children.filter((c) => !c.is_folder),
+    };
+  }, [selected, tree]);
+
   const toggleExpand = (id) => {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -737,10 +753,81 @@ export function NotesApp() {
                 <p>Choose a page from the left panel to preview its content here.</p>
               </div>
             )}
-            {selected?.is_folder && (
-              <div className="notes-preview-empty">
-                <h2>{selected.title}</h2>
-                <p>Folder selected. Open a page inside it to preview, or create/link pages under this folder.</p>
+            {selected?.is_folder && selectedFolderListing && (
+              <div className="notes-folder-view">
+                <header className="notes-preview-header">
+                  <div>
+                    <h2>{selectedFolderListing.title}</h2>
+                    <p className="notes-folder-meta">
+                      {selectedFolderListing.folders.length} folder
+                      {selectedFolderListing.folders.length === 1 ? '' : 's'}
+                      {' · '}
+                      {selectedFolderListing.pages.length} page
+                      {selectedFolderListing.pages.length === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                </header>
+
+                {!selectedFolderListing.folders.length && !selectedFolderListing.pages.length ? (
+                  <p className="notes-muted" style={{ paddingLeft: 0 }}>
+                    This folder is empty.
+                    {isAuthenticated
+                      ? ' Use New folder, New page, or Link page to add items under it.'
+                      : ''}
+                  </p>
+                ) : (
+                  <div className="notes-folder-sections">
+                    {selectedFolderListing.folders.length > 0 && (
+                      <section className="notes-folder-section">
+                        <h3>Folders</h3>
+                        <ul className="notes-folder-grid">
+                          {selectedFolderListing.folders.map((child) => (
+                            <li key={child.id}>
+                              <button
+                                type="button"
+                                className="notes-folder-card is-folder"
+                                onClick={() => onSelect(child)}
+                              >
+                                <span className="notes-folder-card-icon" aria-hidden="true">
+                                  📁
+                                </span>
+                                <span className="notes-folder-card-title">{child.title}</span>
+                                <span className="notes-folder-card-meta">
+                                  {(child.children || []).length} item
+                                  {(child.children || []).length === 1 ? '' : 's'}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                    {selectedFolderListing.pages.length > 0 && (
+                      <section className="notes-folder-section">
+                        <h3>Pages</h3>
+                        <ul className="notes-folder-grid">
+                          {selectedFolderListing.pages.map((child) => (
+                            <li key={child.id}>
+                              <button
+                                type="button"
+                                className="notes-folder-card is-page"
+                                onClick={() => onSelect(child)}
+                              >
+                                <span className="notes-folder-card-icon" aria-hidden="true">
+                                  📄
+                                </span>
+                                <span className="notes-folder-card-title">{child.title}</span>
+                                {child.page_slug && (
+                                  <span className="notes-folder-card-meta">{child.page_slug}</span>
+                                )}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    )}
+                  </div>
+                )}
               </div>
             )}
             {selected && !selected.is_folder && (

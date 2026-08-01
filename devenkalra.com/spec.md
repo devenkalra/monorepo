@@ -1,38 +1,46 @@
-This is a dynamic website to maintain my personal activities. Currently the website is a static website but I will be adding database based dynamic features in the future. This is a personal website and not a multiuser website
+# devenkalra.com — Product brief
 
-# Who Am I?
+Personal website for Deven Kalra (not a multi-user SaaS). Share professional background, interests, writing, and small tools.
 
-I am an (early retired) engineering executive being fortunate for having working on a number of cutting edge and high impact technologies at companies like Hewlett-Packard, Adaptive Media/Vuent, Langoo, VeriSign, Stratify/Iron Mountain, AtHoc and Google.
+**Architecture and implementation details:** see [`DESIGN.md`](./DESIGN.md).
 
+---
 
-I am interested in  many things including photography, writing, woodworking, traveling and more! In this site I share a few of my interests and creations.
+## Who Am I?
 
-# Content
+Early-retired engineering executive; work at Hewlett-Packard, Adaptive Media/Vuent, Langoo, VeriSign, Stratify/Iron Mountain, AtHoc, and Google. Interests include photography, writing, woodworking, travel, and more.
 
-On the website, I will like to maintain information about:
-1. My professional life
-1. My personal life
-    1. Content
-        1. Video Transcripts
-        1. Technical Papers
-        1. Book Summaries
-        1. Book Lists and Reviews
-        1. Indian Music
-        1. Cooking
-             1. Snacks
-    1. Workflow
-        1. Track Ideas
-        1. Ongoing projects
-             1. Highschool Photography
-             1. Video AI Internships
-    1. Custom Database based Apps (to be developed)
+---
 
-# Requirements
-1. Drop Down Hierarchial Menu
-1. Bread Crumbs
-1. A page can appear under multiple menu branches
-1. Some pages will be protected with passwords.
+## Content areas (intent)
 
-Ideas
-Category: Video
-Status: 
+1. Professional life  
+2. Personal life  
+   - Content — video transcripts, technical papers, book summaries/reviews, Indian music, cooking  
+   - Workflow — ideas, ongoing projects (e.g. photography, video AI)  
+   - Custom apps — timers, exercise planner, Notes, ClickUp-backed projects/contacts, etc.  
+3. Voyages / articles (blog)  
+4. Notebook — including **Notes** (multi-level folders of selected pages)
+
+The live menu is data-driven (`MenuItem` tree) and may diverge from this outline as content evolves.
+
+---
+
+## Product requirements
+
+| Requirement | Status |
+|-------------|--------|
+| Hierarchical dropdown menu | Done (`MenuItem`) |
+| Breadcrumbs | Done |
+| Same page under multiple menu branches | Done |
+| Protected pages | Done via `roles_with_access` + optional `allowed_emails` (not a separate password-per-page flow) |
+| Markdown / HTML pages | Done (`render_as_html`) |
+| Admin live preview | Done |
+| Notes folder UI with preview + URL state | Done (slug `notes`) |
+
+---
+
+## Ideas / backlog
+
+- Category: Video  
+- Status: _(open)_  
