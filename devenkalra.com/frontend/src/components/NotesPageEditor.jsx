@@ -1,5 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownBody } from './MarkdownBody';
+import './NotesApp.css';
+
+const AUTOSAVE_DEBOUNCE_MS = 10_000;
 
 function slugify(title) {
   return String(title || '')
@@ -48,6 +51,24 @@ function formFromPage(page) {
   };
 }
 
+function payloadFromForm(form) {
+  const title = form.title.trim();
+  const slug = (form.slug.trim() || slugify(title)).slice(0, 200);
+  return {
+    title,
+    slug,
+    category: form.category.trim(),
+    roles_with_access: form.roles_with_access.trim(),
+    allowed_emails: form.allowed_emails.trim(),
+    render_as_html: !!form.render_as_html,
+    content: normalizeEscapedNewlines(form.content),
+  };
+}
+
+function serializePayload(payload) {
+  return JSON.stringify(payload);
+}
+
 /**
  * Admin-like page create/edit form: metadata + content editor + live preview.
  */
@@ -62,15 +83,36 @@ export function NotesPageEditor({
   navigate,
 }) {
   const isEdit = mode === 'edit';
+  const pageKey = isEdit
+    ? String(initialValues?.id ?? initialValues?.slug ?? '')
+    : 'create';
+
   const [form, setForm] = useState(() => formFromPage(initialValues));
   const [slugTouched, setSlugTouched] = useState(isEdit);
   const [localError, setLocalError] = useState('');
+  const [lastSavedKey, setLastSavedKey] = useState(() =>
+    isEdit ? serializePayload(payloadFromForm(formFromPage(initialValues))) : ''
+  );
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [saveHint, setSaveHint] = useState('');
 
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+  const autoSavingRef = useRef(false);
+  const formRef = useRef(form);
+  formRef.current = form;
+
+  // Reset form only when switching pages / modes — not after autosave updates preview.
   useEffect(() => {
-    setForm(formFromPage(initialValues));
+    const next = formFromPage(initialValues);
+    setForm(next);
     setSlugTouched(isEdit);
     setLocalError('');
-  }, [initialValues, isEdit, mode]);
+    setSaveHint('');
+    setLastSavedKey(isEdit ? serializePayload(payloadFromForm(next)) : '');
+    // initialValues read intentionally when pageKey/mode changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageKey, isEdit, mode]);
 
   const setField = (key, value) => {
     setForm((prev) => {
@@ -87,29 +129,69 @@ export function NotesPageEditor({
     [form.content]
   );
 
+  const draftPayload = useMemo(() => payloadFromForm(form), [form]);
+  const draftKey = useMemo(() => serializePayload(draftPayload), [draftPayload]);
+  const isDirty = isEdit && draftKey !== lastSavedKey;
+  const draftValid = Boolean(draftPayload.title && draftPayload.slug);
+
+  useEffect(() => {
+    if (!isEdit || !isDirty || !draftValid || busy || autoSaving) {
+      return undefined;
+    }
+
+    const timer = setTimeout(async () => {
+      if (autoSavingRef.current) return;
+      const payload = payloadFromForm(formRef.current);
+      if (!payload.title || !payload.slug) return;
+
+      autoSavingRef.current = true;
+      setAutoSaving(true);
+      setSaveHint('Saving…');
+      setLocalError('');
+      try {
+        const ok = await onSaveRef.current(payload, { close: false });
+        if (ok) {
+          setLastSavedKey(serializePayload(payload));
+          setSaveHint('Saved');
+        } else {
+          setSaveHint('Autosave failed');
+        }
+      } catch {
+        setSaveHint('Autosave failed');
+      } finally {
+        autoSavingRef.current = false;
+        setAutoSaving(false);
+      }
+    }, AUTOSAVE_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [isEdit, isDirty, draftValid, draftKey, busy, autoSaving]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLocalError('');
-    const title = form.title.trim();
-    const slug = (form.slug.trim() || slugify(title)).slice(0, 200);
-    if (!title) {
+    const payload = payloadFromForm(form);
+    if (!payload.title) {
       setLocalError('Title is required.');
       return;
     }
-    if (!slug) {
+    if (!payload.slug) {
       setLocalError('Slug is required.');
       return;
     }
-    await onSave({
-      title,
-      slug,
-      category: form.category.trim(),
-      roles_with_access: form.roles_with_access.trim(),
-      allowed_emails: form.allowed_emails.trim(),
-      render_as_html: !!form.render_as_html,
-      content: normalizeEscapedNewlines(form.content),
-    });
+    const ok = await onSave(payload, isEdit ? { close: true } : undefined);
+    if (ok !== false && isEdit) {
+      setLastSavedKey(serializePayload(payload));
+    }
   };
+
+  let statusText = '';
+  if (isEdit) {
+    if (autoSaving || (busy && isDirty)) statusText = 'Saving…';
+    else if (isDirty && draftValid) statusText = 'Unsaved changes';
+    else if (saveHint === 'Saved' && !isDirty) statusText = 'Saved';
+    else if (saveHint === 'Autosave failed') statusText = 'Autosave failed';
+  }
 
   return (
     <div className="notes-page-editor">
@@ -121,6 +203,18 @@ export function NotesPageEditor({
             {isEdit ? (
               <>
                 Editing: <strong>{initialValues?.slug || form.slug}</strong>
+                {statusText ? (
+                  <>
+                    {' · '}
+                    <span
+                      className={`notes-save-status${
+                        statusText === 'Autosave failed' ? ' is-error' : ''
+                      }${statusText === 'Unsaved changes' ? ' is-dirty' : ''}`}
+                    >
+                      {statusText}
+                    </span>
+                  </>
+                ) : null}
               </>
             ) : (
               <>
@@ -137,7 +231,7 @@ export function NotesPageEditor({
             type="submit"
             form="notes-page-editor-form"
             className="notes-btn notes-btn--primary"
-            disabled={busy}
+            disabled={busy || autoSaving}
           >
             {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Save page'}
           </button>
@@ -237,7 +331,11 @@ export function NotesPageEditor({
           <div className="notes-page-editor-preview-body markdown-body">
             {form.title && <h1>{form.title}</h1>}
             {form.render_as_html ? (
-              <div dangerouslySetInnerHTML={{ __html: previewContent || '<p class="notes-muted">Nothing to preview yet.</p>' }} />
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: previewContent || '<p class="notes-muted">Nothing to preview yet.</p>',
+                }}
+              />
             ) : previewContent.trim() ? (
               <MarkdownBody navigate={navigate}>{previewContent}</MarkdownBody>
             ) : (

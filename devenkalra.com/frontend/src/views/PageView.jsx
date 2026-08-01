@@ -1,16 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { TimeKeeperApp } from '../components/TimeKeeperApp';
 import { ExercisePlannerApp } from '../components/ExercisePlannerApp';
 import { NotesApp } from '../components/NotesApp';
+import { NotesPageEditor } from '../components/NotesPageEditor';
 import { MarkdownBody } from '../components/MarkdownBody';
 
 export const PageView = ({ menuItems }) => {
   const { menuItemId, slug } = useParams();
   const { isAuthenticated, token, login, logout, user, openSocialLoginModal } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [showAdminLogin, setShowAdminLogin] = useState(false);
 
   // Helper to find MenuItem by page slug recursively
@@ -73,6 +75,9 @@ export const PageView = ({ menuItems }) => {
   const [page, setPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveError, setSaveError] = useState('');
   
   // Login form state (if page is protected)
   const [username, setUsername] = useState('');
@@ -280,6 +285,110 @@ export const PageView = ({ menuItems }) => {
     fetchPage();
   }, [activeSlug, activeMenuItemId, token]);
 
+  // Use page_edit (not edit) so NotesApp's ?edit=1 does not open site-page edit.
+  const urlEditing = searchParams.get('page_edit') === '1';
+  // 403 stub pages lack slug/title; only real loaded pages are editable by superusers.
+  const pageIsEditable =
+    isAuthenticated &&
+    !!token &&
+    user?.role === 'superuser' &&
+    !!page?.slug &&
+    page?.title != null &&
+    !page?.no_permission;
+
+  useEffect(() => {
+    if (!pageIsEditable) {
+      setEditing(false);
+      return;
+    }
+    setEditing(urlEditing);
+  }, [urlEditing, pageIsEditable, page?.slug]);
+
+  const writeEditParam = useCallback(
+    (enabled, { replace = false } = {}) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          if (enabled) next.set('page_edit', '1');
+          else next.delete('page_edit');
+          return next;
+        },
+        { replace }
+      );
+    },
+    [setSearchParams]
+  );
+
+  const openPageEdit = () => {
+    if (!pageIsEditable) return;
+    setSaveError('');
+    setEditing(true);
+    writeEditParam(true, { replace: false });
+  };
+
+  const closePageEdit = ({ replace = true } = {}) => {
+    setEditing(false);
+    setSaveError('');
+    writeEditParam(false, { replace });
+  };
+
+  const savePageEdits = async (payload, { close = true } = {}) => {
+    if (!token) {
+      setSaveError('Sign in again to edit pages (missing auth token).');
+      return false;
+    }
+    if (!page?.slug) {
+      setSaveError('No page selected to edit.');
+      return false;
+    }
+    const originalSlug = page.slug;
+    if (close) setSaveBusy(true);
+    setSaveError('');
+    try {
+      const response = await fetch(`${API_URL}/pages/${originalSlug}/`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json',
+        },
+        credentials: 'omit',
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        const msg =
+          body.slug?.[0] ||
+          body.title?.[0] ||
+          body.content?.[0] ||
+          body.detail ||
+          `Could not update page (${response.status})`;
+        throw new Error(typeof msg === 'string' ? msg : JSON.stringify(body));
+      }
+      const updated = await response.json();
+      setPage(updated);
+
+      const slugChanged = updated.slug && updated.slug !== originalSlug;
+      if (slugChanged) {
+        const editSuffix = close ? '' : '?page_edit=1';
+        if (isIdNumeric && menuItemId) {
+          navigate(`/p/${menuItemId}/${updated.slug}${editSuffix}`, { replace: true });
+        } else {
+          navigate(`/p/${updated.slug}${editSuffix}`, { replace: true });
+        }
+      }
+
+      if (close) {
+        setEditing(false);
+        if (!slugChanged) writeEditParam(false, { replace: true });
+      }
+      return true;
+    } catch (err) {
+      setSaveError(err.message || 'Could not update page');
+      return false;
+    } finally {
+      if (close) setSaveBusy(false);
+    }
+  };
 
   const handleInlineLogin = async (e) => {
     e.preventDefault();
@@ -485,8 +594,29 @@ export const PageView = ({ menuItems }) => {
 
   return (
     <div>
-      <Breadcrumbs menuItemId={activeMenuItemId} menuItems={menuItems} pageTitle={page?.title} slug={activeSlug} />
-      
+      <Breadcrumbs
+        menuItemId={activeMenuItemId}
+        menuItems={menuItems}
+        pageTitle={page?.title}
+        slug={activeSlug}
+        canEdit={pageIsEditable && !editing}
+        onEdit={openPageEdit}
+      />
+
+      {editing && page?.slug ? (
+        <div className="page-view-editor">
+          <NotesPageEditor
+            mode="edit"
+            initialValues={page}
+            busy={saveBusy}
+            error={saveError}
+            navigate={navigate}
+            onCancel={() => closePageEdit({ replace: true })}
+            onSave={savePageEdits}
+          />
+        </div>
+      ) : (
+        <>
       {page?.render_as_html ? (
         <iframe
           title={page.title}
@@ -792,6 +922,8 @@ export const PageView = ({ menuItems }) => {
           </section>
         );
       })()}
+        </>
+      )}
     </div>
   );
 };

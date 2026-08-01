@@ -537,6 +537,18 @@
   margin: 0;
 }
 
+.notes-save-status {
+  color: var(--text-muted);
+}
+
+.notes-save-status.is-dirty {
+  color: var(--accent-color);
+}
+
+.notes-save-status.is-error {
+  color: #b42318;
+}
+
 .notes-page-editor-actions {
   display: flex;
   gap: 0.4rem;

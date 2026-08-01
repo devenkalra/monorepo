@@ -244,6 +244,55 @@ body {
   font-weight: 300;
 }
 
+.breadcrumbs-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  margin-left: 0.15rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+/* Hide until hover on fine pointers; always available on touch. */
+@media (hover: hover) and (pointer: fine) {
+  .breadcrumbs-edit-btn {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .breadcrumbs--editable:hover .breadcrumbs-edit-btn,
+  .breadcrumbs--editable:focus-within .breadcrumbs-edit-btn,
+  .breadcrumbs-edit-btn:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.breadcrumbs-edit-btn:hover {
+  color: var(--accent-color);
+  border-color: var(--border-color);
+  background: var(--accent-light);
+}
+
+.page-view-editor {
+  margin: -0.25rem 0 2rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: 70vh;
+  background: var(--bg-color);
+}
+
+.page-view-editor .notes-page-editor {
+  min-height: 70vh;
+}
+
 /* Editorial Typography */
 h1 {
 

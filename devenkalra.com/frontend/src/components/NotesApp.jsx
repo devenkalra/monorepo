@@ -129,9 +129,10 @@ function TreeNode({
 }
 
 export function NotesApp() {
-  const { token, isAuthenticated } = useAuth();
+  const { token, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const isSuperuser = user?.role === 'superuser';
 
   const urlNodeId = searchParams.get('node');
   const urlDoc = searchParams.get('doc');
@@ -152,7 +153,7 @@ export function NotesApp() {
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [showLinkPage, setShowLinkPage] = useState(false);
   const [showCreatePage, setShowCreatePage] = useState(() => urlCreating);
-  const [showEditPage, setShowEditPage] = useState(() => urlEditing);
+  const [showEditPage, setShowEditPage] = useState(() => urlEditing && isSuperuser);
   const [folderTitle, setFolderTitle] = useState('');
   const [pageQuery, setPageQuery] = useState('');
   const [pageOptions, setPageOptions] = useState([]);
@@ -237,9 +238,9 @@ export function NotesApp() {
   useEffect(() => {
     setSidebarOpen(!urlCollapsed);
     setShowCreatePage(urlCreating);
-    setShowEditPage(urlEditing && !urlCreating);
+    setShowEditPage(isSuperuser && urlEditing && !urlCreating);
     if (!urlCreating && !urlEditing) setCreateError('');
-  }, [urlCollapsed, urlCreating, urlEditing]);
+  }, [urlCollapsed, urlCreating, urlEditing, isSuperuser]);
 
   // Restore selection from URL once the tree is available
   useEffect(() => {
@@ -477,7 +478,7 @@ export function NotesApp() {
   };
 
   const openEditPage = () => {
-    if (!isAuthenticated || !preview || !selected || selected.is_folder) return;
+    if (!isSuperuser || !preview || !selected || selected.is_folder) return;
     setShowEditPage(true);
     setShowCreatePage(false);
     setShowLinkPage(false);
@@ -559,17 +560,17 @@ export function NotesApp() {
     }
   };
 
-  const saveEditedPage = async (payload) => {
+  const saveEditedPage = async (payload, { close = true } = {}) => {
     if (!token) {
       setCreateError('Sign in again to edit pages (missing auth token).');
-      return;
+      return false;
     }
     if (!selected?.page_slug || !preview) {
       setCreateError('No page selected to edit.');
-      return;
+      return false;
     }
     const originalSlug = preview.slug || selected.page_slug;
-    setBusy(true);
+    if (close) setBusy(true);
     setCreateError('');
     setError('');
     try {
@@ -599,8 +600,6 @@ export function NotesApp() {
         });
       }
 
-      setShowEditPage(false);
-      await loadTree();
       const selectedNode = {
         ...selected,
         title: page.title,
@@ -610,11 +609,23 @@ export function NotesApp() {
       };
       setSelected(selectedNode);
       setPreview(page);
-      writeNotesUrl({ node: selectedNode, creating: false, editing: false, replace: true });
+
+      if (close) {
+        setShowEditPage(false);
+        await loadTree();
+        writeNotesUrl({ node: selectedNode, creating: false, editing: false, replace: true });
+      } else if (payload.title && payload.title !== selected.title) {
+        await loadTree();
+        writeNotesUrl({ node: selectedNode, creating: false, editing: true, replace: true });
+      } else if (page.slug !== originalSlug) {
+        writeNotesUrl({ node: selectedNode, creating: false, editing: true, replace: true });
+      }
+      return true;
     } catch (err) {
       setCreateError(err.message || 'Could not update page');
+      return false;
     } finally {
-      setBusy(false);
+      if (close) setBusy(false);
     }
   };
 
@@ -846,6 +857,7 @@ export function NotesApp() {
             parentLabel={parentLabel}
             busy={busy}
             error={createError}
+            navigate={navigate}
             onCancel={() => closePageEditor({ replace: true })}
             onSave={showEditPage ? saveEditedPage : createNewPage}
           />
@@ -940,7 +952,7 @@ export function NotesApp() {
                   <div>
                     <div className="notes-preview-title-row">
                       <h2>{preview?.title || selected.title}</h2>
-                      {isAuthenticated && (
+                      {isSuperuser && (
                         <button
                           type="button"
                           className="notes-edit-icon-btn"
