@@ -1,7 +1,9 @@
 from rest_framework import serializers
-from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, BlogCategory, BlogTag, BlogPost, Comment, normalize_escaped_newlines
+from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, BlogCategory, BlogTag, BlogPost, Comment, NoteNode, normalize_escaped_newlines
 
 class PageSerializer(serializers.ModelSerializer):
+    content = serializers.CharField(required=False, allow_blank=True, default="")
+
     class Meta:
         model = Page
         fields = [
@@ -12,7 +14,7 @@ class PageSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
     def validate_content(self, value):
-        return normalize_escaped_newlines(value)
+        return normalize_escaped_newlines(value or "")
 
 class MenuItemSerializer(serializers.ModelSerializer):
     """Nested tree serializer for the public menu endpoint."""
@@ -112,3 +114,75 @@ class BlogPostSerializer(serializers.ModelSerializer):
             'render_as_html', 'category', 'category_name', 'category_slug',
             'tags', 'tags_detail', 'is_published', 'publish_date', 'preview_token', 'created_at', 'updated_at'
         ]
+
+
+class NoteNodeSerializer(serializers.ModelSerializer):
+    """Flat CRUD serializer for note folders and page links."""
+    is_folder = serializers.BooleanField(read_only=True)
+    page_slug = serializers.CharField(source='page.slug', read_only=True, default=None)
+    page_title = serializers.CharField(source='page.title', read_only=True, default=None)
+
+    class Meta:
+        model = NoteNode
+        fields = [
+            'id', 'title', 'parent', 'page', 'page_slug', 'page_title',
+            'is_folder', 'order', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'is_folder', 'page_slug', 'page_title', 'created_at', 'updated_at']
+
+    def validate(self, attrs):
+        parent = attrs.get('parent', getattr(self.instance, 'parent', None))
+        page = attrs.get('page', getattr(self.instance, 'page', None) if self.instance else None)
+        # Allow clearing page on update via explicit null
+        if self.instance and 'page' in attrs:
+            page = attrs['page']
+
+        if parent is not None and parent.page_id is not None:
+            raise serializers.ValidationError({'parent': 'Parent must be a folder, not a page link.'})
+
+        if parent is not None and self.instance and parent.pk == self.instance.pk:
+            raise serializers.ValidationError({'parent': 'A node cannot be its own parent.'})
+
+        # Cycle check when reparenting
+        if parent is not None and self.instance:
+            cursor = parent
+            while cursor is not None:
+                if cursor.pk == self.instance.pk:
+                    raise serializers.ValidationError({'parent': 'Cannot create a circular folder hierarchy.'})
+                cursor = cursor.parent
+
+        # Default title from page when linking
+        title = attrs.get('title')
+        if page is not None and not title and not (self.instance and self.instance.title):
+            attrs['title'] = page.title
+        elif page is not None and not title and self.instance and not attrs.get('title'):
+            if 'title' in attrs and not attrs['title']:
+                attrs['title'] = page.title
+
+        return attrs
+
+    def create(self, validated_data):
+        page = validated_data.get('page')
+        if page and not validated_data.get('title'):
+            validated_data['title'] = page.title
+        return super().create(validated_data)
+
+
+class NoteNodeTreeSerializer(serializers.ModelSerializer):
+    """Nested tree for the Notes sidebar."""
+    children = serializers.SerializerMethodField()
+    is_folder = serializers.BooleanField(read_only=True)
+    page_slug = serializers.CharField(source='page.slug', read_only=True, default=None)
+    page_title = serializers.CharField(source='page.title', read_only=True, default=None)
+
+    class Meta:
+        model = NoteNode
+        fields = [
+            'id', 'title', 'parent', 'page', 'page_slug', 'page_title',
+            'is_folder', 'order', 'children',
+        ]
+
+    def get_children(self, obj):
+        kids = obj.children.all().order_by('order', 'title')
+        return NoteNodeTreeSerializer(kids, many=True, context=self.context).data
+

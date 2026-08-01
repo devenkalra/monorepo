@@ -22,7 +22,7 @@ class Page(models.Model):
     title = models.CharField(max_length=200)
     category = models.CharField(max_length=100, blank=True, default="", help_text="Optional category to group pages")
     slug = models.SlugField(max_length=200, unique=True, help_text="Unique slug for the page URL (e.g. professional-life)")
-    content = models.TextField(help_text="Markdown content of the page")
+    content = models.TextField(blank=True, default="", help_text="Markdown content of the page (may be empty)")
     roles_with_access = models.CharField(max_length=255, blank=True, default="", help_text="Comma-separated roles allowed to view this page (e.g. 'user, superuser'). Leave blank for public access.")
     render_as_html = models.BooleanField(default=False, help_text="If checked, render page content as raw HTML instead of Markdown")
     allowed_emails = models.TextField(blank=True, default="", help_text="Optional comma-separated list of emails allowed to view this page (if protected)")
@@ -30,7 +30,7 @@ class Page(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
-        self.content = normalize_escaped_newlines(self.content)
+        self.content = normalize_escaped_newlines(self.content or "")
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -439,4 +439,43 @@ class Subscription(models.Model):
         return f"{self.email} ({'Active' if self.is_active else 'Inactive'})"
 
 
+class NoteNode(models.Model):
+    """Folder or page link in the Notebook → Notes tree.
 
+    Folders have ``page=None``. Page links reference an existing ``Page`` and
+    are typically leaves (selected pages only — not every page on the site).
+    """
+    title = models.CharField(
+        max_length=200,
+        help_text="Folder name, or display title for a linked page (defaults to page title).",
+    )
+    parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='children',
+        help_text="Parent folder. Leave blank for root-level items.",
+    )
+    page = models.ForeignKey(
+        Page,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='note_nodes',
+        help_text="Linked page. Leave blank to create a folder.",
+    )
+    order = models.PositiveIntegerField(default=0, help_text="Sort order within the parent folder")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'title']
+
+    @property
+    def is_folder(self):
+        return self.page_id is None
+
+    def __str__(self):
+        kind = 'folder' if self.is_folder else f'page:{self.page.slug if self.page_id else "?"}'
+        return f"{self.title} ({kind})"

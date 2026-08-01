@@ -6,12 +6,13 @@ from .views import (
     PageDataDetailView, ClickUpTasksView, ClickUpContactsView, ClickUpContactActivitiesView,
     BlogCategoryViewSet, BlogTagViewSet, BlogPostViewSet, BlogCommentView,
     SocialAuthConfigView, SocialGoogleLoginView, SocialGithubLoginView,
-    PageViewSet, MenuItemViewSet,
+    PageViewSet, MenuItemViewSet, NoteNodeViewSet,
 )
 
 router = DefaultRouter()
 router.register(r'pages', PageViewSet, basename='page')
 router.register(r'menu-items', MenuItemViewSet, basename='menu-item')
+router.register(r'note-nodes', NoteNodeViewSet, basename='note-node')
 router.register(r'projects', ProjectViewSet, basename='project')
 router.register(r'ideas', WorkflowIdeaViewSet, basename='idea')
 router.register(r'books', BookReviewViewSet, basename='book')

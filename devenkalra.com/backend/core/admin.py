@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django import forms
-from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, StaticFile, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription
+from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, StaticFile, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription, NoteNode
 
 class BulkUpdateForm(forms.Form):
     status = forms.ChoiceField(
@@ -83,6 +83,18 @@ class MenuItemAdmin(admin.ModelAdmin):
     list_filter = ('parent', 'page', 'roles_with_access', 'show_in_menu')
     search_fields = ('title', 'roles_with_access')
     ordering = ('parent', 'order', 'title')
+
+@admin.register(NoteNode)
+class NoteNodeAdmin(admin.ModelAdmin):
+    list_display = ('title', 'parent', 'page', 'is_folder_display', 'order', 'updated_at')
+    list_filter = ('parent',)
+    search_fields = ('title', 'page__title', 'page__slug')
+    ordering = ('parent', 'order', 'title')
+    raw_id_fields = ('page', 'parent')
+
+    @admin.display(boolean=True, description='Folder')
+    def is_folder_display(self, obj):
+        return obj.is_folder
 
 @admin.register(Project)
 class ProjectAdmin(admin.ModelAdmin):

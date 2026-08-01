@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { Breadcrumbs } from '../components/Breadcrumbs';
 import { TimeKeeperApp } from '../components/TimeKeeperApp';
 import { ExercisePlannerApp } from '../components/ExercisePlannerApp';
+import { NotesApp } from '../components/NotesApp';
 import { MarkdownBody } from '../components/MarkdownBody';
 
 export const PageView = ({ menuItems }) => {
@@ -513,6 +514,10 @@ export const PageView = ({ menuItems }) => {
 
       {activeSlug === 'exercise-planner' && (
         <ExercisePlannerApp />
+      )}
+
+      {activeSlug === 'notes' && (
+        <NotesApp />
       )}
 
       {activeSlug === 'creative-projects' && (

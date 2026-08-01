@@ -14,11 +14,12 @@ from rest_framework.authentication import TokenAuthentication
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes
 
 
-from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription
+from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription, NoteNode
 from .serializers import (
     PageSerializer, MenuItemSerializer, MenuItemCRUDSerializer, ProjectSerializer,
     WorkflowIdeaSerializer, BookReviewSerializer, MusicTrackSerializer, RecipeSerializer,
-    BlogCategorySerializer, BlogTagSerializer, BlogPostSerializer, CommentSerializer
+    BlogCategorySerializer, BlogTagSerializer, BlogPostSerializer, CommentSerializer,
+    NoteNodeSerializer, NoteNodeTreeSerializer,
 )
 
 import os
@@ -115,6 +116,31 @@ class MenuItemViewSet(viewsets.ModelViewSet):
         if self.action in ('list', 'retrieve'):
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
+
+
+@extend_schema_view(
+    list=extend_schema(tags=['notes'], summary='List note nodes'),
+    retrieve=extend_schema(tags=['notes'], summary='Get note node'),
+    create=extend_schema(tags=['notes'], summary='Create folder or page link'),
+    update=extend_schema(tags=['notes'], summary='Replace note node'),
+    partial_update=extend_schema(tags=['notes'], summary='Patch note node'),
+    destroy=extend_schema(tags=['notes'], summary='Delete note node'),
+)
+class NoteNodeViewSet(viewsets.ModelViewSet):
+    """CRUD + nested tree for Notebook → Notes folders and selected pages."""
+    queryset = NoteNode.objects.select_related('page', 'parent').all().order_by('order', 'title')
+    serializer_class = NoteNodeSerializer
+
+    def get_permissions(self):
+        if self.action in ('list', 'retrieve', 'tree'):
+            return [permissions.AllowAny()]
+        return [permissions.IsAuthenticated()]
+
+    @extend_schema(tags=['notes'], summary='Get nested Notes folder tree')
+    @action(detail=False, methods=['get'], url_path='tree')
+    def tree(self, request):
+        roots = NoteNode.objects.filter(parent=None).select_related('page').order_by('order', 'title')
+        return Response(NoteNodeTreeSerializer(roots, many=True).data)
 
 
 @extend_schema(tags=['menu'], summary='Get nested navigation menu')
