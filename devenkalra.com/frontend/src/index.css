@@ -95,7 +95,7 @@ body {
 .logo-section {
 
   font-family: var(--font-sans);
-  font-size: clamp(1.35rem, 2vw, 1.65rem);
+  font-size: 1.55rem;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.025em;
@@ -249,7 +249,7 @@ h1 {
 
   font-family: var(--font-sans);
   color: var(--text-strong);
-  font-size: clamp(2.1rem, 4vw, 3.5rem);
+  font-size: 2rem;
   font-weight: 700;
   line-height: 1.02;
   margin-bottom: 1.25rem;
@@ -261,7 +261,7 @@ h2 {
 
   font-family: var(--font-sans);
   color: var(--text-strong);
-  font-size: clamp(1.65rem, 3vw, 2.25rem);
+  font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.12;
   margin-top: 2.75rem;
@@ -767,11 +767,6 @@ p {
     min-height: 3.75rem;
     padding: 0.65rem 1.1rem;
   }
-
-  h1 {
-    font-size: clamp(2.2rem, 12vw, 3.25rem);
-  }
-
   h2 {
     margin-top: 2.25rem;
   }
@@ -1048,7 +1043,7 @@ p {
 .blog-card-title {
 
   font-family: var(--font-sans);
-  font-size: clamp(1.45rem, 2.5vw, 2rem);
+  font-size: 1.65rem;
   font-weight: 600;
   line-height: 1.08;
   margin-bottom: 0.55rem;
@@ -1335,4 +1330,62 @@ p {
 .serif-accent {
   font-family: var(--font-serif);
   font-weight: 500;
+}
+
+
+/* Apply this class only to links that should use the accent color. */
+.accent-link {
+  color: var(--accent-color);
+}
+
+.accent-link:hover {
+  color: var(--accent-hover);
+}
+
+
+/* Final typography overrides */
+h1 {
+  font-size: 2rem;
+}
+
+h2 {
+  font-size: 1.5rem;
+}
+
+/*
+ * Keep ordinary links the same color as surrounding text.
+ * Includes unvisited and visited states and overrides Markdown/browser defaults.
+ */
+a,
+a:link,
+a:visited,
+.markdown-body a,
+.markdown-body a:link,
+.markdown-body a:visited,
+.blog-post-content a,
+.blog-post-content a:link,
+.blog-post-content a:visited {
+  color: inherit !important;
+}
+
+a:hover,
+a:focus-visible,
+.markdown-body a:hover,
+.markdown-body a:focus-visible,
+.blog-post-content a:hover,
+.blog-post-content a:focus-visible {
+  color: inherit !important;
+  text-decoration-color: currentColor;
+}
+
+/* Use only when an intentionally colored link is desired. */
+a.accent-link,
+a.accent-link:link,
+a.accent-link:visited {
+  color: var(--accent-color) !important;
+}
+
+a.accent-link:hover,
+a.accent-link:focus-visible {
+  color: var(--accent-hover) !important;
 }
