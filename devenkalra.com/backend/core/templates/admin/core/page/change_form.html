@@ -5,8 +5,6 @@
 {{ block.super }}
 <!-- Load Marked library for markdown parsing -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<!-- Load GitHub Markdown styling for markdown mode -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5.5.1/github-markdown.min.css">
 
 <style>
     /* Split layout container */
@@ -148,8 +146,9 @@
     .preview-content {
         flex: 1;
         overflow-y: auto;
-        padding: 20px;
+        padding: 0;
         box-sizing: border-box;
+        background: #fbfaf7;
     }
     
     .preview-iframe {
@@ -157,6 +156,7 @@
         height: 100%;
         border: none;
         background: transparent;
+        display: block;
     }
     
     /* Floating Restore Buttons */
@@ -277,6 +277,10 @@
             return;
         }
 
+        function getContentInput() {
+            return document.getElementById("id_content");
+        }
+
         function normalizeEscapedNewlines(text) {
             if (!text) return text || "";
             // Convert pasted literal \n / \r\n / \r into real line breaks (repeat for double-escaped \\n).
@@ -293,26 +297,28 @@
         }
 
         function syncNormalizedContent() {
-            const normalized = normalizeEscapedNewlines(contentInput.value);
-            if (normalized !== contentInput.value) {
-                const start = contentInput.selectionStart;
-                const end = contentInput.selectionEnd;
-                contentInput.value = normalized;
-                // Best-effort caret restore after length change
+            const el = getContentInput();
+            if (!el) return "";
+            const normalized = normalizeEscapedNewlines(el.value);
+            if (normalized !== el.value) {
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                el.value = normalized;
                 try {
                     const delta = normalized.length - (end - start);
                     const pos = Math.min(normalized.length, (start || 0) + Math.max(0, delta));
-                    contentInput.setSelectionRange(pos, pos);
-                } catch (e) { /* ignore on unsupported inputs */ }
+                    el.setSelectionRange(pos, pos);
+                } catch (e) { /* ignore */ }
             }
-            return contentInput.value;
+            return el.value;
         }
 
         // Persist real line breaks when saving pasted markdown that contains literal \n
         const pageForm = contentInput.closest("form");
         if (pageForm) {
             pageForm.addEventListener("submit", function () {
-                contentInput.value = normalizeEscapedNewlines(contentInput.value);
+                const el = getContentInput();
+                if (el) el.value = normalizeEscapedNewlines(el.value);
             });
         }
 
@@ -425,11 +431,13 @@
 
 
         // --- Live Preview Compiler (Markdown & HTML) ---
-        
-        // Inline CSS for the HTML iframe preview to replicate frontend layout
-        const iframeStyles = `
-            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap');
-            
+        // Styles mirror frontend index.css / iframe-editorial.css (Inter + Lora editorial look).
+        const siteFontLink =
+            '<link rel="preconnect" href="https://fonts.googleapis.com">' +
+            '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>' +
+            '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap">';
+
+        const sitePreviewStyles = `
             :root {
               --bg-color: #fbfaf7;
               --text-color: #2b2b2a;
@@ -441,30 +449,33 @@
               --font-serif: 'Lora', Georgia, serif;
               --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
             }
-            
+
+            * { box-sizing: border-box; }
+
             body {
               background-color: var(--bg-color);
               color: var(--text-color);
               font-family: var(--font-serif);
               line-height: 1.7;
-              padding: 1rem;
+              padding: 1.25rem 1.5rem;
               margin: 0;
               -webkit-font-smoothing: antialiased;
+              -moz-osx-font-smoothing: grayscale;
             }
-            
+
             h1 {
               font-family: var(--font-serif);
-              font-size: 2.2rem;
+              font-size: 2.5rem;
               font-weight: 400;
               line-height: 1.2;
               margin-top: 1rem;
               margin-bottom: 1.5rem;
               letter-spacing: -0.01em;
             }
-            
+
             h2 {
               font-family: var(--font-serif);
-              font-size: 1.6rem;
+              font-size: 1.75rem;
               font-weight: 400;
               line-height: 1.3;
               margin-top: 2rem;
@@ -472,50 +483,54 @@
               border-bottom: 1px solid var(--border-color);
               padding-bottom: 0.5rem;
             }
-            
+
             h3 {
               font-family: var(--font-serif);
-              font-size: 1.25rem;
+              font-size: 1.3rem;
               font-weight: 500;
               margin-top: 1.5rem;
               margin-bottom: 0.5rem;
             }
-            
+
+            h4, h5, h6 {
+              font-family: var(--font-serif);
+              font-weight: 500;
+              margin-top: 1.25rem;
+              margin-bottom: 0.5rem;
+            }
+
             p {
               margin-bottom: 1.5rem;
               font-size: 1.05rem;
             }
-            
+
             a {
               color: var(--accent-color);
               text-decoration: underline;
               transition: color 0.2s ease;
             }
-            
-            a:hover {
-              color: var(--text-color);
-            }
-            
+
+            a:hover { color: var(--text-color); }
+
             ul, ol {
               margin-left: 1.5rem;
               margin-bottom: 1.5rem;
             }
-            
+
             li {
               margin-bottom: 0.5rem;
               font-size: 1.05rem;
             }
-            
+
             blockquote {
               border-left: 3px solid var(--accent-color);
-              padding-left: 1.2rem;
               font-style: italic;
               color: var(--text-muted);
               margin: 1.5rem 0;
               background-color: var(--accent-light);
               padding: 0.75rem 0.75rem 0.75rem 1.2rem;
             }
-            
+
             pre {
               background-color: #f5f4f0;
               border: 1px solid var(--border-color);
@@ -525,18 +540,60 @@
               font-size: 0.9rem;
               margin-bottom: 1.5rem;
             }
-            
+
             code {
               font-family: monospace;
               background-color: #f5f4f0;
               padding: 0.1rem 0.3rem;
               font-size: 0.9rem;
             }
-            
-            button, input, select {
-              font-family: var(--font-sans);
+
+            pre code {
+              background: transparent;
+              padding: 0;
             }
-            
+
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin: 1.5rem 0 2rem;
+              font-family: var(--font-sans);
+              font-size: 0.95rem;
+              display: block;
+              overflow-x: auto;
+            }
+
+            thead, tbody, tr {
+              display: table;
+              width: 100%;
+              table-layout: auto;
+            }
+
+            th {
+              border-bottom: 2px solid var(--text-color);
+              text-align: left;
+              padding: 0.75rem 0.85rem;
+              font-weight: 600;
+            }
+
+            td {
+              border-bottom: 1px solid var(--border-color);
+              padding: 0.75rem 0.85rem;
+              vertical-align: top;
+            }
+
+            tr:hover td { background-color: var(--accent-light); }
+
+            img { max-width: 100%; height: auto; }
+
+            hr {
+              border: none;
+              border-top: 1px solid var(--border-color);
+              margin: 2rem 0;
+            }
+
+            button, input, select { font-family: var(--font-sans); }
+
             .editorial-btn {
               padding: 0.5rem 1rem;
               background-color: var(--text-color);
@@ -549,88 +606,94 @@
               cursor: pointer;
               transition: all 0.2s ease;
             }
-            
-            .editorial-btn:hover {
-              background-color: var(--accent-color);
-            }
+
+            .editorial-btn:hover { background-color: var(--accent-color); }
         `;
+
+        if (typeof marked !== "undefined" && marked.setOptions) {
+            marked.setOptions({ gfm: true, breaks: false });
+        }
+
+        function writePreviewIframe(finalHtml) {
+            previewContainer.className = "preview-content";
+            previewContainer.innerHTML = "";
+            const iframe = document.createElement("iframe");
+            iframe.className = "preview-iframe";
+            iframe.sandbox = "allow-scripts allow-same-origin allow-downloads allow-modals allow-forms";
+            previewContainer.appendChild(iframe);
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            iframeDoc.open();
+            iframeDoc.write(finalHtml);
+            iframeDoc.close();
+        }
 
         function updatePreview() {
             const rawContent = syncNormalizedContent();
             const renderAsHtml = renderHtmlCheckbox ? renderHtmlCheckbox.checked : false;
+            const injectHead = `${siteFontLink}<style>${sitePreviewStyles}</style>`;
 
             if (renderAsHtml) {
-                // Update badge to HTML Mode
                 previewBadge.innerText = "HTML Mode";
                 previewBadge.className = "preview-mode-badge html";
-                
-                // Clear any markdown classes on container
-                previewContainer.className = "preview-content";
 
-                // Recreate iframe to avoid session history nesting or other script lock issues
-                previewContainer.innerHTML = '';
-                const iframe = document.createElement("iframe");
-                iframe.className = "preview-iframe";
-                iframe.sandbox = "allow-scripts allow-same-origin allow-downloads allow-modals allow-forms";
-                previewContainer.appendChild(iframe);
+                let finalHtml = "";
+                const lowerContent = (rawContent || "").toLowerCase();
 
-                // Inject CSS + user content
-                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-                
-                // Construct the HTML to inject
-                let finalHtml = '';
-                const lowerContent = rawContent.toLowerCase();
-                
-                const injectHead = `<style>${iframeStyles}</style>`;
-                
-                if (lowerContent.includes('<html')) {
-                    // Inject style into head of existing html structure
-                    if (lowerContent.includes('<head>')) {
-                        const headIndex = lowerContent.indexOf('<head>');
+                if (lowerContent.includes("<html")) {
+                    if (lowerContent.includes("<head>")) {
+                        const headIndex = lowerContent.indexOf("<head>");
                         finalHtml = rawContent.slice(0, headIndex + 6) + injectHead + rawContent.slice(headIndex + 6);
                     } else {
-                        // Insert head tag
-                        const htmlIndex = lowerContent.indexOf('<html>');
-                        finalHtml = rawContent.slice(0, htmlIndex + 6) + `<head>${injectHead}</head>` + rawContent.slice(htmlIndex + 6);
+                        const htmlIndex = lowerContent.indexOf("<html");
+                        const tagEnd = rawContent.indexOf(">", htmlIndex) + 1;
+                        finalHtml = rawContent.slice(0, tagEnd) + `<head>${injectHead}</head>` + rawContent.slice(tagEnd);
                     }
                 } else {
-                    // Wrap user content with style
-                    finalHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">${injectHead}</head><body>${rawContent}</body></html>`;
+                    finalHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">${injectHead}</head><body>${rawContent || ""}</body></html>`;
                 }
 
-                iframeDoc.open();
-                iframeDoc.write(finalHtml);
-                iframeDoc.close();
+                writePreviewIframe(finalHtml);
             } else {
-                // Update badge to Markdown Mode
                 previewBadge.innerText = "Markdown Mode";
                 previewBadge.className = "preview-mode-badge markdown";
 
-                // Use github-markdown container style
-                previewContainer.className = "preview-content markdown-body";
-
-                // Parse and update HTML using marked library
+                let htmlBody = "";
                 try {
                     const withAnchors = (rawContent || "").replace(
                         /^(#{1,6})\s+(.+?)\s+\[#([A-Za-z0-9_-]+)\][ \t]*$/gm,
                         function (_, hashes, title, id) {
-                            return hashes + ' <a id="' + id + '" href="#' + id + '">' + title + '</a>';
+                            return hashes + ' <a id="' + id + '" href="#' + id + '">' + title + "</a>";
                         }
                     );
-                    previewContainer.innerHTML = marked.parse(withAnchors);
+                    htmlBody = marked.parse(withAnchors);
                 } catch (e) {
                     console.error("Marked parsing error:", e);
-                    previewContainer.innerText = rawContent;
+                    const pre = document.createElement("pre");
+                    pre.textContent = rawContent || "";
+                    htmlBody = pre.outerHTML;
                 }
+
+                writePreviewIframe(
+                    `<!DOCTYPE html><html><head><meta charset="utf-8">${injectHead}</head>` +
+                    `<body><article class="markdown-body">${htmlBody}</article></body></html>`
+                );
             }
         }
 
         // Add event listeners for dynamic updates
-        contentInput.addEventListener("input", updatePreview);
-        contentInput.addEventListener("change", updatePreview);
-        contentInput.addEventListener("paste", function () {
-            // Paste inserts after this handler returns; normalize on next tick.
-            setTimeout(updatePreview, 0);
+        function bindContentListeners(el) {
+            if (!el || el.dataset.previewBound === "1") return;
+            el.dataset.previewBound = "1";
+            el.addEventListener("input", updatePreview);
+            el.addEventListener("change", updatePreview);
+            el.addEventListener("paste", function () {
+                setTimeout(updatePreview, 0);
+            });
+        }
+        bindContentListeners(getContentInput());
+        document.addEventListener("admin:form-saved", function () {
+            bindContentListeners(getContentInput());
+            updatePreview();
         });
         if (renderHtmlCheckbox) {
             renderHtmlCheckbox.addEventListener("change", updatePreview);

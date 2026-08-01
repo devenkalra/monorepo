@@ -171,7 +171,9 @@ services:
     container_name: bldrdojo-local-frontend
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:80"
+      # Bind on all interfaces so edge-nginx (via host.docker.internal) can reach it.
+      # 127.0.0.1-only publishes are often unreachable from Docker Desktop containers.
+      - "8080:80"
     volumes:
       - static_volume_local:/app/staticfiles:ro
       - media_volume_local:/app/media
@@ -193,6 +195,8 @@ services:
     volumes:
       - ./devenkalra.com/backend/db.sqlite3:/app/db.sqlite3
       - ./devenkalra.com/backend/media:/app/media
+      # Live-edit admin/templates without rebuilding the image
+      - ./devenkalra.com/backend/core/templates:/app/core/templates
     networks:
       - backend-network
 
