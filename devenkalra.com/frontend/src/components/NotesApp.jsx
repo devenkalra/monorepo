@@ -233,7 +233,8 @@ export function NotesApp() {
     try {
       const res = await apiFetch('/api/note-nodes/tree/');
       if (!res.ok) throw new Error('Failed to load Notes tree');
-      const data = sortNoteTree(Array.isArray(data) ? data : []);
+      const raw = await res.json();
+      const data = sortNoteTree(Array.isArray(raw) ? raw : []);
       setTree(data);
       setExpanded((prev) => {
         if (prev.size > 0) return prev;
