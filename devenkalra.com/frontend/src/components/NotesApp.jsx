@@ -137,6 +137,7 @@ export function NotesApp() {
   const urlDoc = searchParams.get('doc');
   const urlCollapsed = searchParams.get('sidebar') === 'collapsed';
   const urlCreating = searchParams.get('new') === '1';
+  const urlEditing = searchParams.get('edit') === '1';
 
   const [tree, setTree] = useState([]);
   const [expanded, setExpanded] = useState(() => new Set());
@@ -151,6 +152,7 @@ export function NotesApp() {
   const [showAddFolder, setShowAddFolder] = useState(false);
   const [showLinkPage, setShowLinkPage] = useState(false);
   const [showCreatePage, setShowCreatePage] = useState(() => urlCreating);
+  const [showEditPage, setShowEditPage] = useState(() => urlEditing);
   const [folderTitle, setFolderTitle] = useState('');
   const [pageQuery, setPageQuery] = useState('');
   const [pageOptions, setPageOptions] = useState([]);
@@ -159,7 +161,13 @@ export function NotesApp() {
   const [createError, setCreateError] = useState('');
 
   const writeNotesUrl = useCallback(
-    ({ node = undefined, sidebarCollapsed = undefined, creating = undefined, replace = false } = {}) => {
+    ({
+      node = undefined,
+      sidebarCollapsed = undefined,
+      creating = undefined,
+      editing = undefined,
+      replace = false,
+    } = {}) => {
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
@@ -182,8 +190,18 @@ export function NotesApp() {
           else next.delete('sidebar');
 
           const isCreating = creating === undefined ? next.get('new') === '1' : creating;
-          if (isCreating) next.set('new', '1');
-          else next.delete('new');
+          const isEditing = editing === undefined ? next.get('edit') === '1' : editing;
+          // create and edit are mutually exclusive in the URL
+          if (isCreating) {
+            next.set('new', '1');
+            next.delete('edit');
+          } else if (isEditing) {
+            next.set('edit', '1');
+            next.delete('new');
+          } else {
+            next.delete('new');
+            next.delete('edit');
+          }
 
           return next;
         },
@@ -215,12 +233,13 @@ export function NotesApp() {
     loadTree();
   }, [loadTree]);
 
-  // Restore sidebar + create-editor from URL (back/forward / bookmarks)
+  // Restore sidebar + editor modes from URL (back/forward / bookmarks)
   useEffect(() => {
     setSidebarOpen(!urlCollapsed);
     setShowCreatePage(urlCreating);
-    if (!urlCreating) setCreateError('');
-  }, [urlCollapsed, urlCreating]);
+    setShowEditPage(urlEditing && !urlCreating);
+    if (!urlCreating && !urlEditing) setCreateError('');
+  }, [urlCollapsed, urlCreating, urlEditing]);
 
   // Restore selection from URL once the tree is available
   useEffect(() => {
@@ -327,11 +346,12 @@ export function NotesApp() {
   const onSelect = (node) => {
     setSelected(node);
     setShowCreatePage(false);
+    setShowEditPage(false);
     if (node.is_folder) {
       setExpanded((prev) => new Set(prev).add(node.id));
       setTargetParentId(node.id);
     }
-    writeNotesUrl({ node, creating: false, replace: false });
+    writeNotesUrl({ node, creating: false, editing: false, replace: false });
   };
 
   const collapseSidebar = () => {
@@ -448,11 +468,30 @@ export function NotesApp() {
 
   const openCreatePage = () => {
     setShowCreatePage(true);
+    setShowEditPage(false);
     setShowLinkPage(false);
     setShowAddFolder(false);
     setCreateError('');
     setError('');
-    writeNotesUrl({ creating: true, replace: false });
+    writeNotesUrl({ creating: true, editing: false, replace: false });
+  };
+
+  const openEditPage = () => {
+    if (!isAuthenticated || !preview || !selected || selected.is_folder) return;
+    setShowEditPage(true);
+    setShowCreatePage(false);
+    setShowLinkPage(false);
+    setShowAddFolder(false);
+    setCreateError('');
+    setError('');
+    writeNotesUrl({ editing: true, creating: false, replace: false });
+  };
+
+  const closePageEditor = ({ replace = true } = {}) => {
+    setShowCreatePage(false);
+    setShowEditPage(false);
+    setCreateError('');
+    writeNotesUrl({ creating: false, editing: false, replace });
   };
 
   const createNewPage = async (payload) => {
@@ -501,6 +540,7 @@ export function NotesApp() {
       }
       const created = await nodeRes.json();
       setShowCreatePage(false);
+      setShowEditPage(false);
       await loadTree();
       if (targetParentId) setExpanded((prev) => new Set(prev).add(targetParentId));
       const selectedNode = {
@@ -510,9 +550,69 @@ export function NotesApp() {
         page_title: page.title,
       };
       setSelected(selectedNode);
-      writeNotesUrl({ node: selectedNode, creating: false, replace: true });
+      setPreview(page);
+      writeNotesUrl({ node: selectedNode, creating: false, editing: false, replace: true });
     } catch (err) {
       setCreateError(err.message || 'Could not create page');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveEditedPage = async (payload) => {
+    if (!token) {
+      setCreateError('Sign in again to edit pages (missing auth token).');
+      return;
+    }
+    if (!selected?.page_slug || !preview) {
+      setCreateError('No page selected to edit.');
+      return;
+    }
+    const originalSlug = preview.slug || selected.page_slug;
+    setBusy(true);
+    setCreateError('');
+    setError('');
+    try {
+      const pageRes = await apiFetch(`/api/pages/${originalSlug}/`, {
+        method: 'PATCH',
+        token,
+        body: payload,
+      });
+      if (!pageRes.ok) {
+        const body = await pageRes.json().catch(() => ({}));
+        const msg =
+          body.slug?.[0] ||
+          body.title?.[0] ||
+          body.content?.[0] ||
+          body.detail ||
+          `Could not update page (${pageRes.status})`;
+        throw new Error(typeof msg === 'string' ? msg : JSON.stringify(body));
+      }
+      const page = await pageRes.json();
+
+      // Keep the Notes tree label in sync with the page title
+      if (selected.id != null && payload.title && payload.title !== selected.title) {
+        await apiFetch(`/api/note-nodes/${selected.id}/`, {
+          method: 'PATCH',
+          token,
+          body: { title: page.title },
+        });
+      }
+
+      setShowEditPage(false);
+      await loadTree();
+      const selectedNode = {
+        ...selected,
+        title: page.title,
+        page_slug: page.slug,
+        page_title: page.title,
+        is_folder: false,
+      };
+      setSelected(selectedNode);
+      setPreview(page);
+      writeNotesUrl({ node: selectedNode, creating: false, editing: false, replace: true });
+    } catch (err) {
+      setCreateError(err.message || 'Could not update page');
     } finally {
       setBusy(false);
     }
@@ -617,7 +717,8 @@ export function NotesApp() {
                   setShowAddFolder((v) => !v);
                   setShowLinkPage(false);
                   setShowCreatePage(false);
-                  writeNotesUrl({ creating: false, replace: true });
+                  setShowEditPage(false);
+                  writeNotesUrl({ creating: false, editing: false, replace: true });
                 }}
               >
                 New folder
@@ -638,7 +739,8 @@ export function NotesApp() {
                   setShowLinkPage((v) => !v);
                   setShowAddFolder(false);
                   setShowCreatePage(false);
-                  writeNotesUrl({ creating: false, replace: true });
+                  setShowEditPage(false);
+                  writeNotesUrl({ creating: false, editing: false, replace: true });
                 }}
               >
                 Link page
@@ -731,19 +833,21 @@ export function NotesApp() {
         </button>
       )}
 
-      <div className={`notes-preview${showCreatePage ? ' notes-preview--editing' : ''}`} aria-live="polite">
-        {showCreatePage ? (
+      <div
+        className={`notes-preview${
+          showCreatePage || (showEditPage && preview) ? ' notes-preview--editing' : ''
+        }`}
+        aria-live="polite"
+      >
+        {showCreatePage || (showEditPage && preview) ? (
           <NotesPageEditor
+            mode={showEditPage ? 'edit' : 'create'}
+            initialValues={showEditPage ? preview : null}
             parentLabel={parentLabel}
             busy={busy}
             error={createError}
-            navigate={navigate}
-            onCancel={() => {
-              setShowCreatePage(false);
-              setCreateError('');
-              writeNotesUrl({ creating: false, replace: true });
-            }}
-            onSave={createNewPage}
+            onCancel={() => closePageEditor({ replace: true })}
+            onSave={showEditPage ? saveEditedPage : createNewPage}
           />
         ) : (
           <>
@@ -834,7 +938,34 @@ export function NotesApp() {
               <>
                 <header className="notes-preview-header">
                   <div>
-                    <h2>{preview?.title || selected.title}</h2>
+                    <div className="notes-preview-title-row">
+                      <h2>{preview?.title || selected.title}</h2>
+                      {isAuthenticated && (
+                        <button
+                          type="button"
+                          className="notes-edit-icon-btn"
+                          onClick={openEditPage}
+                          disabled={busy || previewLoading || !preview}
+                          title="Edit page"
+                          aria-label="Edit page"
+                        >
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path
+                              d="M4 20h4.5L19 9.5 14.5 5 4 15.5V20z"
+                              stroke="currentColor"
+                              strokeWidth="1.75"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M12.5 6.5l5 5"
+                              stroke="currentColor"
+                              strokeWidth="1.75"
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
                     {selected.page_slug && (
                       <button
                         type="button"

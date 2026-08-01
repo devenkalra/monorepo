@@ -412,9 +412,41 @@
   font-family: var(--font-serif);
   font-size: 1.65rem;
   font-weight: 500;
-  margin: 0 0 0.35rem;
+  margin: 0;
   border: none;
   padding: 0;
+}
+
+.notes-preview-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.35rem;
+}
+
+.notes-edit-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.notes-edit-icon-btn:hover:not(:disabled) {
+  color: var(--accent-color);
+  border-color: var(--border-color);
+  background: var(--accent-light);
+}
+
+.notes-edit-icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .notes-open-full {

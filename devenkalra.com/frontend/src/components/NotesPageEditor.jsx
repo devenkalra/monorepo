@@ -35,10 +35,25 @@ const EMPTY_FORM = {
   content: '',
 };
 
+function formFromPage(page) {
+  if (!page) return { ...EMPTY_FORM };
+  return {
+    title: page.title || '',
+    slug: page.slug || '',
+    category: page.category || '',
+    roles_with_access: page.roles_with_access || '',
+    allowed_emails: page.allowed_emails || '',
+    render_as_html: !!page.render_as_html,
+    content: page.content || '',
+  };
+}
+
 /**
- * Admin-like page create form: metadata + content editor + live preview.
+ * Admin-like page create/edit form: metadata + content editor + live preview.
  */
 export function NotesPageEditor({
+  mode = 'create',
+  initialValues = null,
   parentLabel,
   busy,
   error,
@@ -46,20 +61,21 @@ export function NotesPageEditor({
   onSave,
   navigate,
 }) {
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [slugTouched, setSlugTouched] = useState(false);
+  const isEdit = mode === 'edit';
+  const [form, setForm] = useState(() => formFromPage(initialValues));
+  const [slugTouched, setSlugTouched] = useState(isEdit);
   const [localError, setLocalError] = useState('');
 
   useEffect(() => {
-    setForm(EMPTY_FORM);
-    setSlugTouched(false);
+    setForm(formFromPage(initialValues));
+    setSlugTouched(isEdit);
     setLocalError('');
-  }, []);
+  }, [initialValues, isEdit, mode]);
 
   const setField = (key, value) => {
     setForm((prev) => {
       const next = { ...prev, [key]: value };
-      if (key === 'title' && !slugTouched) {
+      if (key === 'title' && !slugTouched && !isEdit) {
         next.slug = slugify(value);
       }
       return next;
@@ -99,10 +115,18 @@ export function NotesPageEditor({
     <div className="notes-page-editor">
       <header className="notes-page-editor-header">
         <div>
-          <span className="notes-sidebar-kicker">New page</span>
-          <h2>Create page</h2>
+          <span className="notes-sidebar-kicker">{isEdit ? 'Edit page' : 'New page'}</span>
+          <h2>{isEdit ? 'Edit page' : 'Create page'}</h2>
           <p className="notes-page-editor-dest">
-            Saves into: <strong>{parentLabel || 'Notes (root)'}</strong>
+            {isEdit ? (
+              <>
+                Editing: <strong>{initialValues?.slug || form.slug}</strong>
+              </>
+            ) : (
+              <>
+                Saves into: <strong>{parentLabel || 'Notes (root)'}</strong>
+              </>
+            )}
           </p>
         </div>
         <div className="notes-page-editor-actions">
@@ -111,11 +135,11 @@ export function NotesPageEditor({
           </button>
           <button
             type="submit"
-            form="notes-page-create-form"
+            form="notes-page-editor-form"
             className="notes-btn notes-btn--primary"
             disabled={busy}
           >
-            {busy ? 'Saving…' : 'Save page'}
+            {busy ? 'Saving…' : isEdit ? 'Save changes' : 'Save page'}
           </button>
         </div>
       </header>
@@ -125,7 +149,7 @@ export function NotesPageEditor({
       )}
 
       <div className="notes-page-editor-split">
-        <form id="notes-page-create-form" className="notes-page-editor-form" onSubmit={handleSubmit}>
+        <form id="notes-page-editor-form" className="notes-page-editor-form" onSubmit={handleSubmit}>
           <div className="notes-field-grid">
             <label className="notes-field">
               <span>Title</span>
