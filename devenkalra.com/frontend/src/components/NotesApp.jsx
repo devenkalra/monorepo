@@ -25,6 +25,22 @@ async function apiFetch(url, { token, json, method = 'GET', body } = {}) {
   return fetch(url, options);
 }
 
+function compareNoteNodes(a, b) {
+  if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1;
+  return String(a.title || '').localeCompare(String(b.title || ''), undefined, {
+    sensitivity: 'base',
+  });
+}
+
+/** Folders first, then pages; each group A–Z (recursive). */
+function sortNoteTree(nodes) {
+  return [...(nodes || [])]
+    .sort(compareNoteNodes)
+    .map((n) =>
+      n.children?.length ? { ...n, children: sortNoteTree(n.children) } : { ...n, children: n.children || [] }
+    );
+}
+
 function collectExpandedDefaults(nodes, depth = 0, into = new Set()) {
   for (const n of nodes || []) {
     if (n.is_folder && depth < 1) into.add(n.id);
@@ -217,8 +233,8 @@ export function NotesApp() {
     try {
       const res = await apiFetch('/api/note-nodes/tree/');
       if (!res.ok) throw new Error('Failed to load Notes tree');
-      const data = await res.json();
-      setTree(Array.isArray(data) ? data : []);
+      const data = sortNoteTree(Array.isArray(data) ? data : []);
+      setTree(data);
       setExpanded((prev) => {
         if (prev.size > 0) return prev;
         return collectExpandedDefaults(data);
@@ -324,10 +340,7 @@ export function NotesApp() {
     if (!selected?.is_folder) return null;
     const path = findNodePath(tree, (n) => n.id === selected.id);
     const node = path?.[path.length - 1] || selected;
-    const children = [...(node.children || [])].sort((a, b) => {
-      if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1;
-      return (a.order - b.order) || a.title.localeCompare(b.title);
-    });
+    const children = [...(node.children || [])].sort(compareNoteNodes);
     return {
       title: node.title || selected.title,
       folders: children.filter((c) => c.is_folder),
