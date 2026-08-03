@@ -72,10 +72,28 @@ class PageAdmin(admin.ModelAdmin):
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ('email', 'name', 'provider', 'subscribed_at', 'is_active')
-    list_filter = ('provider', 'is_active', 'subscribed_at')
-    search_fields = ('email', 'name')
+    list_display = (
+        'email',
+        'name',
+        'provider',
+        'user',
+        'blog_subscribed',
+        'notify_on_article',
+        'is_active',
+        'subscribed_at',
+        'updated_at',
+    )
+    list_filter = (
+        'provider',
+        'is_active',
+        'blog_subscribed',
+        'notify_on_article',
+        'subscribed_at',
+    )
+    search_fields = ('email', 'name', 'user__username', 'user__email')
+    raw_id_fields = ('user',)
     ordering = ('-subscribed_at',)
+    readonly_fields = ('subscribed_at', 'updated_at')
 
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):

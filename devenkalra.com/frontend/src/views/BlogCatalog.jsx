@@ -1,13 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 
 export const BlogCatalog = () => {
+  const { isAuthenticated, token, openSocialLoginModal } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [posts, setPosts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [prefs, setPrefs] = useState(null);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [prefsError, setPrefsError] = useState('');
+  const [prefsBusy, setPrefsBusy] = useState(false);
 
   // Extract query parameters from URL search params
   const searchQuery = searchParams.get('q') || '';
@@ -23,6 +29,110 @@ export const BlogCatalog = () => {
     setPrevSearchQuery(searchQuery);
     setSearchText(searchQuery);
   }
+
+  const fetchPreferences = useCallback(async () => {
+    if (!isAuthenticated || !token) {
+      setPrefs(null);
+      setPrefsError('');
+      return;
+    }
+    setPrefsLoading(true);
+    setPrefsError('');
+    try {
+      const response = await fetch('/api/me/preferences/', {
+        headers: {
+          Authorization: `Token ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      if (response.ok) {
+        setPrefs(await response.json());
+      } else {
+        const data = await response.json().catch(() => ({}));
+        setPrefsError(data.detail || 'Could not load subscription preferences.');
+        setPrefs(null);
+      }
+    } catch (err) {
+      console.error('Error fetching preferences:', err);
+      setPrefsError('Could not load subscription preferences.');
+      setPrefs(null);
+    } finally {
+      setPrefsLoading(false);
+    }
+  }, [isAuthenticated, token]);
+
+  const patchPreferences = useCallback(
+    async (payload) => {
+      if (!token) return null;
+      setPrefsBusy(true);
+      setPrefsError('');
+      try {
+        const response = await fetch('/api/me/preferences/', {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Token ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setPrefs(data);
+          return data;
+        }
+        const data = await response.json().catch(() => ({}));
+        setPrefsError(data.detail || 'Could not update preferences.');
+        return null;
+      } catch (err) {
+        console.error('Error updating preferences:', err);
+        setPrefsError('Could not update preferences.');
+        return null;
+      } finally {
+        setPrefsBusy(false);
+      }
+    },
+    [token]
+  );
+
+  const handleSubscribeClick = () => {
+    if (!isAuthenticated || !token) {
+      // OAuth uses a full-page redirect; remember intent across the round trip.
+      try {
+        sessionStorage.setItem('pendingBlogSubscribe', '1');
+      } catch {
+        /* ignore */
+      }
+      openSocialLoginModal();
+      return;
+    }
+    patchPreferences({ blog_subscribed: true, notify_on_article: true });
+  };
+
+  // Complete Subscribe after social login redirect
+  useEffect(() => {
+    if (!isAuthenticated || !token) return;
+    let pending = false;
+    try {
+      pending = sessionStorage.getItem('pendingBlogSubscribe') === '1';
+    } catch {
+      pending = false;
+    }
+    if (!pending) return;
+    try {
+      sessionStorage.removeItem('pendingBlogSubscribe');
+    } catch {
+      /* ignore */
+    }
+    patchPreferences({ blog_subscribed: true, notify_on_article: true });
+  }, [isAuthenticated, token, patchPreferences]);
+
+  const handleUnsubscribeClick = () => {
+    patchPreferences({ blog_subscribed: false, notify_on_article: false });
+  };
+
+  const handleNotifyToggle = (checked) => {
+    patchPreferences({ notify_on_article: checked });
+  };
 
   // Fetch categories and tags once on mount
   useEffect(() => {
@@ -48,6 +158,10 @@ export const BlogCatalog = () => {
 
     fetchMetadata();
   }, []);
+
+  useEffect(() => {
+    fetchPreferences();
+  }, [fetchPreferences]);
 
   // Fetch blog posts matching active filters
   useEffect(() => {
@@ -125,13 +239,55 @@ export const BlogCatalog = () => {
       <div className="breadcrumbs">
         <Link to="/">Home</Link>
         <span className="breadcrumbs-separator">/</span>
-        <span className="current">Articles</span>
+        <span className="current">Blog</span>
       </div>
 
       <h1 style={{ marginBottom: '0.5rem' }}>Writing & Musings</h1>
-      <p style={{ color: 'var(--text-muted)', marginBottom: '2.5rem', fontFamily: 'var(--font-serif)', fontStyle: 'italic' }}>
+      <p style={{ color: 'var(--text-muted)', marginBottom: '1.25rem', fontFamily: 'var(--font-serif)', fontStyle: 'italic' }}>
         Thoughts, project diaries, and explorations in woodworking, photography, music, and software.
       </p>
+
+      <div className="blog-subscribe-bar">
+        {prefsLoading ? (
+          <span className="blog-subscribe-status">Checking subscription…</span>
+        ) : prefs?.blog_subscribed ? (
+          <>
+            <span className="blog-subscribe-status">You're subscribed to new posts.</span>
+            <label className="blog-subscribe-notify">
+              <input
+                type="checkbox"
+                checked={!!prefs.notify_on_article}
+                disabled={prefsBusy}
+                onChange={(e) => handleNotifyToggle(e.target.checked)}
+              />
+              Email me when a new article is published
+            </label>
+            <button
+              type="button"
+              className="blog-subscribe-btn blog-subscribe-btn--muted"
+              disabled={prefsBusy}
+              onClick={handleUnsubscribeClick}
+            >
+              Unsubscribe
+            </button>
+          </>
+        ) : (
+          <>
+            <span className="blog-subscribe-status">
+              Get occasional notes when something new is published.
+            </span>
+            <button
+              type="button"
+              className="blog-subscribe-btn"
+              disabled={prefsBusy}
+              onClick={handleSubscribeClick}
+            >
+              Subscribe
+            </button>
+          </>
+        )}
+        {prefsError && <span className="blog-subscribe-error">{prefsError}</span>}
+      </div>
 
       <div className="blog-layout">
         {/* Sidebar Filters */}
@@ -244,7 +400,7 @@ export const BlogCatalog = () => {
           ) : (
             <div className="blog-posts-grid">
               {posts.map((post) => (
-                <Link to={`/articles/${post.slug}`} key={post.id} className="blog-card">
+                <Link to={`/blog/${post.slug}`} key={post.id} className="blog-card">
                   <div className="blog-card-image-wrapper">
                     {post.cover_image ? (
                       <img

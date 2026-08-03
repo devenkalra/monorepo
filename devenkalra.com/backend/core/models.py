@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 import uuid
 
@@ -429,14 +430,56 @@ class Comment(models.Model):
 
 
 class Subscription(models.Model):
+    """Email-keyed contact preferences (blog opt-in, notifications, etc.).
+
+    Social login creates/updates a row by email; blog subscription is an
+    explicit preference (``blog_subscribed``), not implied by login alone.
+    """
     email = models.EmailField(unique=True)
     name = models.CharField(max_length=200, blank=True, default="")
-    provider = models.CharField(max_length=50, blank=True, default="google", help_text="Social auth provider (e.g. google, github)")
+    provider = models.CharField(
+        max_length=50,
+        blank=True,
+        default="google",
+        help_text="Social auth provider (e.g. google, github), if any",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='subscriptions',
+        help_text="Linked Django user when known (social or staff login)",
+    )
     subscribed_at = models.DateTimeField(auto_now_add=True)
-    is_active = models.BooleanField(default=True, help_text="If unchecked, user is unsubscribed from updates")
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Master switch: inactive contacts are excluded from all outreach",
+    )
+    blog_subscribed = models.BooleanField(
+        default=False,
+        help_text="Opted in to the blog mailing list",
+    )
+    notify_on_article = models.BooleanField(
+        default=False,
+        help_text="Email when a new blog article is published",
+    )
+
+    class Meta:
+        ordering = ['-subscribed_at']
+        verbose_name = 'Subscription / preferences'
+        verbose_name_plural = 'Subscriptions / preferences'
 
     def __str__(self):
-        return f"{self.email} ({'Active' if self.is_active else 'Inactive'})"
+        flags = []
+        if self.blog_subscribed:
+            flags.append('blog')
+        if self.notify_on_article:
+            flags.append('notify')
+        flag_s = ', '.join(flags) if flags else 'no prefs'
+        status = 'active' if self.is_active else 'inactive'
+        return f"{self.email} ({status}; {flag_s})"
 
 
 class NoteNode(models.Model):

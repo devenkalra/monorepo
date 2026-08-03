@@ -7,7 +7,7 @@ from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from .models import Page, MenuItem, StaticFile, Project, WorkflowIdea
+from .models import Page, MenuItem, StaticFile, Project, WorkflowIdea, Subscription
 
 class PersonalWebsiteTests(APITestCase):
 
@@ -743,25 +743,163 @@ class PersonalWebsiteTests(APITestCase):
         """Verify social logins create a DRF token so authenticated APIs can work."""
         from unittest.mock import patch, MagicMock
         import json
+        import os
 
         google_userinfo = {
             'email': 'social@example.com',
             'name': 'Social User',
-            'sub': 'google-123'
+            'sub': 'google-123',
+            'aud': 'test-google-client-id',
         }
 
         google_response = MagicMock()
         google_response.read.return_value = json.dumps(google_userinfo).encode('utf-8')
         google_response.__enter__.return_value = google_response
 
-        with patch('urllib.request.urlopen', return_value=google_response):
-            url = reverse('api-social-google-login')
-            response = self.client.post(url, {'id_token': 'fake-google-token'}, format='json')
+        with patch.dict(os.environ, {'GOOGLE_CLIENT_ID': 'test-google-client-id'}):
+            with patch('urllib.request.urlopen', return_value=google_response):
+                url = reverse('api-social-google-login')
+                response = self.client.post(url, {'id_token': 'fake-google-token'}, format='json')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertIn('token', data)
         self.assertTrue(Token.objects.filter(key=data['token']).exists())
+
+        sub = Subscription.objects.get(email='social@example.com')
+        self.assertEqual(sub.provider, 'google')
+        self.assertTrue(sub.is_active)
+        self.assertFalse(sub.blog_subscribed)
+        self.assertFalse(sub.notify_on_article)
+        self.assertEqual(sub.user, Token.objects.get(key=data['token']).user)
+
+    def test_social_google_code_exchange_login(self):
+        """Verify OAuth authorization-code login exchanges code then creates a token."""
+        from unittest.mock import patch, MagicMock
+        import json
+        import os
+
+        token_exchange = {
+            'id_token': 'fake-google-id-token',
+            'access_token': 'fake-access',
+        }
+        google_userinfo = {
+            'email': 'oauth@example.com',
+            'name': 'OAuth User',
+            'sub': 'google-456',
+            'aud': 'test-google-client-id',
+        }
+
+        exchange_response = MagicMock()
+        exchange_response.read.return_value = json.dumps(token_exchange).encode('utf-8')
+        exchange_response.__enter__.return_value = exchange_response
+
+        verify_response = MagicMock()
+        verify_response.read.return_value = json.dumps(google_userinfo).encode('utf-8')
+        verify_response.__enter__.return_value = verify_response
+
+        with patch.dict(
+            os.environ,
+            {
+                'GOOGLE_CLIENT_ID': 'test-google-client-id',
+                'GOOGLE_CLIENT_SECRET': 'test-google-secret',
+            },
+        ):
+            with patch('urllib.request.urlopen', side_effect=[exchange_response, verify_response]):
+                url = reverse('api-social-google-login')
+                response = self.client.post(
+                    url,
+                    {
+                        'code': 'fake-auth-code',
+                        'redirect_uri': 'https://devenkalra.com/login/google/callback',
+                    },
+                    format='json',
+                )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn('token', data)
+        self.assertEqual(data['user']['email'], 'oauth@example.com')
+        self.assertTrue(Token.objects.filter(key=data['token']).exists())
+
+    def test_me_preferences_get_and_patch(self):
+        """Authenticated users can read/update blog opt-in prefs without auto-subscribe on create."""
+        token = Token.objects.create(user=self.user)
+        url = reverse('api-me-preferences')
+
+        response = self.client.get(url, HTTP_AUTHORIZATION=f'Token {token.key}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data['email'], 'test@devenkalra.com')
+        self.assertFalse(data['blog_subscribed'])
+        self.assertFalse(data['notify_on_article'])
+
+        response = self.client.patch(
+            url,
+            {'blog_subscribed': True, 'notify_on_article': True},
+            format='json',
+            HTTP_AUTHORIZATION=f'Token {token.key}',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertTrue(data['blog_subscribed'])
+        self.assertTrue(data['notify_on_article'])
+
+        sub = Subscription.objects.get(email='test@devenkalra.com')
+        self.assertEqual(sub.user, self.user)
+        self.assertTrue(sub.blog_subscribed)
+
+        # Unsubscribing clears article notifications
+        response = self.client.patch(
+            url,
+            {'blog_subscribed': False},
+            format='json',
+            HTTP_AUTHORIZATION=f'Token {token.key}',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data['blog_subscribed'])
+        self.assertFalse(data['notify_on_article'])
+
+    def test_me_preferences_requires_auth(self):
+        url = reverse('api-me-preferences')
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_social_login_preserves_existing_blog_prefs(self):
+        """Re-login must not overwrite an existing blog opt-in."""
+        from unittest.mock import patch, MagicMock
+        import json
+        import os
+
+        Subscription.objects.create(
+            email='social@example.com',
+            name='Prior Name',
+            provider='google',
+            blog_subscribed=True,
+            notify_on_article=True,
+        )
+
+        google_userinfo = {
+            'email': 'social@example.com',
+            'name': 'Social User',
+            'sub': 'google-123',
+            'aud': 'test-google-client-id',
+        }
+        google_response = MagicMock()
+        google_response.read.return_value = json.dumps(google_userinfo).encode('utf-8')
+        google_response.__enter__.return_value = google_response
+
+        with patch.dict(os.environ, {'GOOGLE_CLIENT_ID': 'test-google-client-id'}):
+            with patch('urllib.request.urlopen', return_value=google_response):
+                url = reverse('api-social-google-login')
+                response = self.client.post(url, {'id_token': 'fake-google-token'}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        sub = Subscription.objects.get(email='social@example.com')
+        self.assertTrue(sub.blog_subscribed)
+        self.assertTrue(sub.notify_on_article)
+        self.assertEqual(sub.name, 'Social User')
 
     def test_substack_import_success(self):
         """Verify that importing from a Substack URL correctly extracts content, downloads images, and rewrites URLs."""

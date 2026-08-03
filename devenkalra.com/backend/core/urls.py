@@ -6,7 +6,7 @@ from .views import (
     PageDataDetailView, ClickUpTasksView, ClickUpContactsView, ClickUpContactActivitiesView,
     BlogCategoryViewSet, BlogTagViewSet, BlogPostViewSet, BlogCommentView,
     SocialAuthConfigView, SocialGoogleLoginView, SocialGithubLoginView,
-    PageViewSet, MenuItemViewSet, NoteNodeViewSet,
+    PageViewSet, MenuItemViewSet, NoteNodeViewSet, MePreferencesView,
 )
 
 router = DefaultRouter()
@@ -32,6 +32,7 @@ urlpatterns = [
     path('auth/config/', SocialAuthConfigView.as_view(), name='api-social-config'),
     path('auth/social/google/', SocialGoogleLoginView.as_view(), name='api-social-google-login'),
     path('auth/social/github/', SocialGithubLoginView.as_view(), name='api-social-github-login'),
+    path('me/preferences/', MePreferencesView.as_view(), name='api-me-preferences'),
     path('clickup/tasks/', ClickUpTasksView.as_view(), name='api-clickup-tasks'),
     path('clickup/contacts/', ClickUpContactsView.as_view(), name='api-clickup-contacts'),
     path('clickup/contacts/<str:task_id>/activities/', ClickUpContactActivitiesView.as_view(), name='api-clickup-contact-activities'),

@@ -600,6 +600,52 @@ p {
   box-shadow: 0 0 0 3px var(--focus-ring);
 }
 
+/* Social OAuth buttons on login / modal */
+.social-auth-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 280px;
+  max-width: 100%;
+  margin: 0;
+  padding: 0.7rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  box-sizing: border-box;
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.social-auth-btn--google {
+  background: #fff;
+  color: #3c4043;
+  border-color: #dadce0;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.12);
+}
+
+.social-auth-btn--google:hover {
+  background: #f8f9fa;
+  border-color: #c6c9ce;
+  box-shadow: 0 1px 3px rgba(60, 64, 67, 0.18);
+}
+
+.social-auth-btn--github {
+  background: #24292e;
+  color: #fff;
+  border-color: #24292e;
+}
+
+.social-auth-btn--github:hover {
+  background: #1b1f23;
+  border-color: #1b1f23;
+}
+
 .editorial-button {
 
   width: 100%;
@@ -863,6 +909,72 @@ p {
 /* ==========================================
    BLOG MODULE STYLES
    ========================================== */
+
+.blog-subscribe-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 2.5rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.blog-subscribe-status {
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  color: var(--text-muted);
+  flex: 1 1 12rem;
+}
+
+.blog-subscribe-notify {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.blog-subscribe-notify input {
+  margin: 0;
+}
+
+.blog-subscribe-btn {
+  appearance: none;
+  border: 1px solid var(--text-strong);
+  background: var(--text-strong);
+  color: var(--surface-color);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.55rem 1.1rem;
+  cursor: pointer;
+}
+
+.blog-subscribe-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.blog-subscribe-btn:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.blog-subscribe-btn--muted {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border-color);
+}
+
+.blog-subscribe-error {
+  flex: 1 1 100%;
+  font-size: 0.85rem;
+  color: var(--error, #b33);
+}
 
 /* Blog Catalog Grid & Sidebar Layout */
 .blog-layout {

@@ -158,7 +158,8 @@ export const Layout = ({ children, menuItems, menuLoading }) => {
 
       <footer className="site-footer">
         <div className="footer-container">
-          <p>© {new Date().getFullYear()} Deven Kalra. Built with Django & React.</p>
+          <p>© {new Date().getFullYear()} Deven Kalra 💬
+            <a href="/p/contact" target="_blank" rel="noopener noreferrer">Want a site like this?</a></p>
         </div>
       </footer>
     </div>

@@ -284,6 +284,24 @@ class LogoutView(APIView):
         
         return Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
 
+def _user_display_name(user, social_user=None):
+    """Prefer human-readable name over internal ids like google_<sub>."""
+    if social_user:
+        name = (social_user.get('name') or '').strip()
+        if name:
+            return name
+        email = (social_user.get('email') or '').strip()
+        if email:
+            return email
+
+    full = (user.get_full_name() or '').strip() if user else ''
+    if full:
+        return full
+    if user and user.email:
+        return user.email
+    return user.username if user else ''
+
+
 class AuthStatusView(APIView):
     """
     Checks current authentication status. Supports both Django Users and Social Session.
@@ -291,30 +309,37 @@ class AuthStatusView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request):
+        social_user = request.session.get('social_user')
+
         if request.user.is_authenticated:
+            is_social = bool(
+                social_user
+                or request.user.username.startswith('google_')
+                or request.user.username.startswith('github_')
+            )
             return Response({
                 "isAuthenticated": True,
                 "user": {
-                    "username": request.user.username,
-                    "email": request.user.email,
+                    "username": _user_display_name(request.user, social_user),
+                    "email": request.user.email or (social_user or {}).get('email') or '',
                     "isStaff": request.user.is_staff,
-                    "type": "django",
-                    "role": get_user_role(request)
-                }
+                    "type": "social" if is_social else "django",
+                    "provider": (social_user or {}).get('provider') if is_social else None,
+                    "role": get_user_role(request),
+                },
             })
-        
-        social_user = request.session.get('social_user')
+
         if social_user:
             return Response({
                 "isAuthenticated": True,
                 "user": {
-                    "username": social_user.get('name'),
+                    "username": social_user.get('name') or social_user.get('email'),
                     "email": social_user.get('email'),
                     "isStaff": False,
                     "type": "social",
                     "provider": social_user.get('provider'),
-                    "role": get_user_role(request)
-                }
+                    "role": get_user_role(request),
+                },
             })
 
         return Response({
@@ -1028,75 +1053,256 @@ class SocialAuthConfigView(APIView):
             "githubClientId": os.environ.get('GITHUB_CLIENT_ID', '')
         })
 
+
+def _verify_google_id_token(id_token):
+    """Validate an ID token via Google's tokeninfo endpoint and check audience."""
+    url = f"https://oauth2.googleapis.com/tokeninfo?id_token={urllib.parse.quote(id_token)}"
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req) as response:
+        token_info = json.loads(response.read().decode('utf-8'))
+
+    client_id = os.environ.get('GOOGLE_CLIENT_ID', '')
+    aud = token_info.get('aud')
+    if client_id and aud and aud != client_id:
+        raise ValueError('Google token audience does not match this application.')
+    return token_info
+
+
+def _exchange_google_auth_code(code, redirect_uri):
+    """Exchange an OAuth authorization code for tokens (includes id_token)."""
+    client_id = os.environ.get('GOOGLE_CLIENT_ID', '')
+    client_secret = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+    if not client_id or not client_secret:
+        raise ValueError('Google OAuth is not fully configured on this server (missing client secret).')
+    if not redirect_uri:
+        raise ValueError('redirect_uri is required for Google code exchange.')
+
+    body = urllib.parse.urlencode({
+        'code': code,
+        'client_id': client_id,
+        'client_secret': client_secret,
+        'redirect_uri': redirect_uri,
+        'grant_type': 'authorization_code',
+    }).encode('utf-8')
+    req = urllib.request.Request(
+        'https://oauth2.googleapis.com/token',
+        data=body,
+        method='POST',
+        headers={'Content-Type': 'application/x-www-form-urlencoded'},
+    )
+    with urllib.request.urlopen(req) as response:
+        tokens = json.loads(response.read().decode('utf-8'))
+
+    id_token = tokens.get('id_token')
+    if not id_token:
+        raise ValueError('Google token response did not include an id_token.')
+    return id_token
+
+
+def _upsert_subscription_contact(*, email, name='', provider='', user=None):
+    """Create/update a contact row without changing opt-in preference flags.
+
+    Social login links identity (email/name/provider/user) but does not
+    imply blog subscription — that requires an explicit Subscribe action.
+    """
+    email = (email or '').strip()
+    if not email:
+        return None
+
+    defaults = {'is_active': True}
+    if name:
+        defaults['name'] = name
+    if provider:
+        defaults['provider'] = provider
+    if user is not None:
+        defaults['user'] = user
+
+    sub, _created = Subscription.objects.update_or_create(
+        email=email,
+        defaults=defaults,
+    )
+    return sub
+
+
+def _resolve_preferences_identity(request):
+    """Return (email, user, name, provider) for the current request, or Nones."""
+    social = request.session.get('social_user') or {}
+    user = request.user if getattr(request.user, 'is_authenticated', False) else None
+
+    if user:
+        email = (user.email or social.get('email') or '').strip()
+        name = _user_display_name(user, social if social else None)
+        provider = social.get('provider') or ''
+        return email, user, name, provider
+
+    if social:
+        email = (social.get('email') or '').strip()
+        name = (social.get('name') or '').strip()
+        provider = social.get('provider') or ''
+        return email, None, name, provider
+
+    return '', None, '', ''
+
+
+def _preferences_payload(sub):
+    return {
+        'email': sub.email,
+        'name': sub.name,
+        'provider': sub.provider,
+        'is_active': sub.is_active,
+        'blog_subscribed': sub.blog_subscribed,
+        'notify_on_article': sub.notify_on_article,
+        'subscribed_at': sub.subscribed_at,
+        'updated_at': sub.updated_at,
+    }
+
+
+class MePreferencesView(APIView):
+    """GET/PATCH contact preferences for the authenticated user (by email)."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        email, user, name, provider = _resolve_preferences_identity(request)
+        if not email:
+            return Response(
+                {"detail": "No email on this account; preferences are unavailable."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        sub = _upsert_subscription_contact(
+            email=email, name=name, provider=provider, user=user,
+        )
+        return Response(_preferences_payload(sub))
+
+    def patch(self, request):
+        email, user, name, provider = _resolve_preferences_identity(request)
+        if not email:
+            return Response(
+                {"detail": "No email on this account; preferences are unavailable."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        sub = _upsert_subscription_contact(
+            email=email, name=name, provider=provider, user=user,
+        )
+
+        data = request.data or {}
+        updated = []
+        if 'blog_subscribed' in data:
+            sub.blog_subscribed = bool(data.get('blog_subscribed'))
+            updated.append('blog_subscribed')
+        if 'notify_on_article' in data:
+            sub.notify_on_article = bool(data.get('notify_on_article'))
+            updated.append('notify_on_article')
+        if 'is_active' in data:
+            sub.is_active = bool(data.get('is_active'))
+            updated.append('is_active')
+
+        if updated:
+            # Unsubscribing from the blog also turns off article mail.
+            if 'blog_subscribed' in updated and not sub.blog_subscribed:
+                sub.notify_on_article = False
+                if 'notify_on_article' not in updated:
+                    updated.append('notify_on_article')
+            sub.save(update_fields=list(dict.fromkeys(updated + ['updated_at'])))
+
+        return Response(_preferences_payload(sub))
+
+
+def _complete_google_social_login(request, token_info):
+    email = token_info.get('email')
+    name = token_info.get('name', '')
+    uid = token_info.get('sub')
+
+    if not email:
+        return Response(
+            {"detail": "Email address not found in Google account."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    request.session['social_user'] = {
+        'email': email,
+        'name': name,
+        'uid': uid,
+        'provider': 'google',
+    }
+    request.session.modified = True
+
+    first = name.split(' ')[0] if name else ''
+    last = ' '.join(name.split(' ')[1:]) if name and len(name.split(' ')) > 1 else ''
+    user, _created = User.objects.get_or_create(
+        username=f'google_{uid}',
+        defaults={
+            'email': email,
+            'first_name': first,
+            'last_name': last,
+        },
+    )
+    updates = []
+    if user.email != email:
+        user.email = email
+        updates.append('email')
+    if name and (user.first_name != first or user.last_name != last):
+        user.first_name = first
+        user.last_name = last
+        updates.extend(['first_name', 'last_name'])
+    if updates:
+        user.save(update_fields=list(dict.fromkeys(updates)))
+
+    _upsert_subscription_contact(
+        email=email, name=name, provider='google', user=user,
+    )
+
+    auth_token, _ = Token.objects.get_or_create(user=user)
+    display = name or email
+
+    return Response({
+        "detail": "Successfully authenticated with Google.",
+        "token": auth_token.key,
+        "user": {
+            "username": display,
+            "email": email,
+            "isStaff": False,
+            "type": "social",
+            "provider": "google",
+            "role": get_user_role(request),
+        },
+    }, status=status.HTTP_200_OK)
+
+
 class SocialGoogleLoginView(APIView):
+    """
+    Google social login.
+
+    Preferred: OAuth authorization-code redirect
+      POST { "code": "...", "redirect_uri": "https://…/login/google/callback" }
+
+    Legacy: GIS ID token
+      POST { "id_token": "..." }
+    """
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        token = request.data.get('id_token')
-        if not token:
-            return Response({"detail": "Google ID Token is required."}, status=status.HTTP_400_BAD_REQUEST)
+        code = request.data.get('code')
+        id_token = request.data.get('id_token')
+        redirect_uri = request.data.get('redirect_uri')
 
-        # Validate with Google's tokeninfo API
         try:
-            url = f"https://oauth2.googleapis.com/tokeninfo?id_token={token}"
-            req = urllib.request.Request(url)
-            with urllib.request.urlopen(req) as response:
-                token_info = json.loads(response.read().decode('utf-8'))
+            if code:
+                id_token = _exchange_google_auth_code(code, redirect_uri)
+            elif not id_token:
+                return Response(
+                    {"detail": "Google authorization code or ID token is required."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            token_info = _verify_google_id_token(id_token)
         except Exception as e:
-            return Response({"detail": f"Failed to verify Google token: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"detail": f"Failed to verify Google login: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        email = token_info.get('email')
-        name = token_info.get('name', '')
-        uid = token_info.get('sub')
-
-        if not email:
-            return Response({"detail": "Email address not found in Google account."}, status=status.HTTP_400_BAD_REQUEST)
-
-        # Store in session
-        request.session['social_user'] = {
-            'email': email,
-            'name': name,
-            'uid': uid,
-            'provider': 'google'
-        }
-        request.session.modified = True
-
-        # Auto-subscribe
-        Subscription.objects.update_or_create(
-            email=email,
-            defaults={
-                'name': name,
-                'provider': 'google',
-                'is_active': True
-            }
-        )
-
-        user, created = User.objects.get_or_create(
-            username=f'google_{uid}',
-            defaults={
-                'email': email,
-                'first_name': name.split(' ')[0] if name else '',
-                'last_name': ' '.join(name.split(' ')[1:]) if len(name.split(' ')) > 1 else ''
-            }
-        )
-        if user.email != email:
-            user.email = email
-            user.save(update_fields=['email'])
-
-        auth_token, _ = Token.objects.get_or_create(user=user)
-
-        return Response({
-            "detail": "Successfully authenticated with Google.",
-            "token": auth_token.key,
-            "user": {
-                "username": name,
-                "email": email,
-                "isStaff": False,
-                "type": "social",
-                "provider": "google",
-                "role": get_user_role(request)
-            }
-        }, status=status.HTTP_200_OK)
+        return _complete_google_social_login(request, token_info)
 
 class SocialGithubLoginView(APIView):
     permission_classes = [permissions.AllowAny]
@@ -1183,27 +1389,31 @@ class SocialGithubLoginView(APIView):
         }
         request.session.modified = True
 
-        # Auto-subscribe
-        Subscription.objects.update_or_create(
-            email=email,
-            defaults={
-                'name': name,
-                'provider': 'github',
-                'is_active': True
-            }
-        )
-
+        first = name.split(' ')[0] if name else ''
+        last = ' '.join(name.split(' ')[1:]) if name and len(name.split(' ')) > 1 else ''
         user, created = User.objects.get_or_create(
             username=f'github_{uid}',
             defaults={
                 'email': email,
-                'first_name': name.split(' ')[0] if name else '',
-                'last_name': ' '.join(name.split(' ')[1:]) if len(name.split(' ')) > 1 else ''
+                'first_name': first,
+                'last_name': last,
             }
         )
+        updates = []
         if user.email != email:
             user.email = email
-            user.save(update_fields=['email'])
+            updates.append('email')
+        if name and (user.first_name != first or user.last_name != last):
+            user.first_name = first
+            user.last_name = last
+            updates.extend(['first_name', 'last_name'])
+        if updates:
+            user.save(update_fields=list(dict.fromkeys(updates)))
+
+        # Link contact identity; do not auto opt-in to blog mail
+        _upsert_subscription_contact(
+            email=email, name=name, provider='github', user=user,
+        )
 
         auth_token, _ = Token.objects.get_or_create(user=user)
 
@@ -1211,7 +1421,7 @@ class SocialGithubLoginView(APIView):
             "detail": "Successfully authenticated with GitHub.",
             "token": auth_token.key,
             "user": {
-                "username": name,
+                "username": name or email,
                 "email": email,
                 "isStaff": False,
                 "type": "social",

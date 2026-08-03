@@ -507,7 +507,7 @@ export const PageView = ({ menuItems }) => {
               <div style={{ fontSize: '2.5rem', marginBottom: '1rem', color: 'var(--accent-color)' }}>🔒</div>
               <h2 style={{ borderBottom: 'none', marginTop: 0, marginBottom: '0.5rem' }}>Protected Page</h2>
               <p style={{ fontSize: '0.88rem', color: 'var(--text-muted)', marginBottom: '1.8rem', lineHeight: '1.5' }}>
-                This page is protected and requires sign-in. Authenticate temporarily with a social account to unlock it and subscribe for updates (no account creation required).
+                This page is protected and requires sign-in. Authenticate temporarily with a social account to unlock it (no account creation required).
               </p>
               
               {loginError && <div className="error-message" style={{ marginBottom: '1rem' }}>{loginError}</div>}

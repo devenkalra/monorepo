@@ -193,8 +193,8 @@ export const BlogPostDetail = () => {
     return (
       <div className="text-center" style={{ padding: '6rem 2rem' }}>
         <h2 style={{ fontWeight: 400, marginBottom: '1rem' }}>{error}</h2>
-        <Link to="/articles" className="editorial-button" style={{ display: 'inline-block', width: 'auto' }}>
-          Back to Articles
+        <Link to="/blog" className="editorial-button" style={{ display: 'inline-block', width: 'auto' }}>
+          Back to Blog
         </Link>
       </div>
     );
@@ -208,7 +208,7 @@ export const BlogPostDetail = () => {
       <div className="breadcrumbs">
         <Link to="/">Home</Link>
         <span className="breadcrumbs-separator">/</span>
-        <Link to="/articles">Articles</Link>
+        <Link to="/blog">Blog</Link>
         <span className="breadcrumbs-separator">/</span>
         <span className="current">{post.title}</span>
       </div>
@@ -263,7 +263,7 @@ export const BlogPostDetail = () => {
         <div className="blog-post-tags">
           <span>Tags:</span>
           {post.tags_detail.map(tag => (
-            <Link key={tag.id} to={`/articles?tag=${tag.slug}`} className="tag-btn" style={{ textDecoration: 'none' }}>
+            <Link key={tag.id} to={`/blog?tag=${tag.slug}`} className="tag-btn" style={{ textDecoration: 'none' }}>
               {tag.name}
             </Link>
           ))}
@@ -295,8 +295,8 @@ export const BlogPostDetail = () => {
           aria-expanded={commentsExpanded}
         >
           <span>Comments ({comments.length})</span>
-          <span style={{ fontSize: '1rem', color: 'var(--text-muted)' }}>
-            {commentsExpanded ? 'Hide Comments ▲' : 'Show Comments ▼'}
+          <span style={{ fontSize: '1rem', color: 'var(--text-muted)', fontFamily: 'var(--font-sans)' }}>
+            {commentsExpanded ? 'Hide comments ▲' : 'Click to view/add comments ▼'}
           </span>
         </button>
 
@@ -418,7 +418,7 @@ export const BlogPostDetail = () => {
           <h3>Related Articles</h3>
           <div className="cards-grid" style={{ marginTop: '1rem' }}>
             {relatedPosts.map(related => (
-              <Link to={`/articles/${related.slug}`} key={related.id} className="editorial-card" style={{ textDecoration: 'none' }}>
+              <Link to={`/blog/${related.slug}`} key={related.id} className="editorial-card" style={{ textDecoration: 'none' }}>
                 <span className="blog-card-category" style={{ fontSize: '0.65rem' }}>{related.category_name}</span>
                 <h4 className="card-title" style={{ fontSize: '1.1rem', margin: '0.25rem 0 0.5rem 0' }}>{related.title}</h4>
                 <p className="card-content" style={{ fontSize: '0.85rem', color: 'var(--text-muted)', WebkitLineClamp: 2, display: '-webkit-box', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>

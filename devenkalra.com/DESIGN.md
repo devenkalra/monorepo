@@ -182,7 +182,8 @@ See `backend/.env.template` (and host `.env`):
 
 - Django / DB / `ALLOWED_HOSTS`
 - `FRONTEND_URL` (blog preview links)
-- `GOOGLE_CLIENT_ID`, `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (OAuth redirect to `{origin}/login/google/callback`; register that exact URI in Google Cloud Console)
+- `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`
 - `SOCIAL_SUPERUSERS`
 - ClickUp tokens (projects / contacts apps)
 
@@ -211,3 +212,5 @@ See `backend/.env.template` (and host `.env`):
 | Dockerfile | `devenkalra.com/Dockerfile` |
 | Local compose | monorepo `docker-compose.local.yml` (`devenkalra-app`) |
 | Notes menu seed | `backend/add_notes_menu.py` |
+| Targeted prod deploy | monorepo `scripts/deploy_app.sh` (FF-merges `origin/<branch>`, rebuilds selected services) |
+| Devenkalra-only deploy | `scripts/deploy-devenkalra-prod.sh` (`git pull --ff-only` then rebuild) |
