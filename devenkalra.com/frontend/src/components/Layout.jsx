@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { trackPageView } from '../utils/pageAnalytics';
 
 export const Layout = ({ children, menuItems, menuLoading }) => {
-  const { isAuthenticated, user, logout } = useAuth();
+  const { isAuthenticated, user, logout, token } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -21,6 +22,11 @@ export const Layout = ({ children, menuItems, menuLoading }) => {
     setIsMenuOpen(false);
     setExpandedItems([]); // Reset expanded submenus on navigation
   }, [location]);
+
+  // First-party page views (pathname only; see pageAnalytics.js)
+  useEffect(() => {
+    trackPageView({ path: location.pathname, token });
+  }, [location.pathname, token]);
 
   // Recursive menu renderer
   const renderMenuItems = (items, level = 1) => {

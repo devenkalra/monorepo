@@ -7,7 +7,7 @@ from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from .models import Page, MenuItem, StaticFile, Project, WorkflowIdea, Subscription
+from .models import Page, MenuItem, StaticFile, Project, WorkflowIdea, Subscription, SiteEvent, BlogPost, BlogCategory
 
 class PersonalWebsiteTests(APITestCase):
 
@@ -865,6 +865,66 @@ class PersonalWebsiteTests(APITestCase):
         url = reverse('api-me-preferences')
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_analytics_page_view_records_blog_post(self):
+        category = BlogCategory.objects.create(name='General', slug='general')
+        post = BlogPost.objects.create(
+            title='Tracked Post',
+            slug='tracked-post',
+            content='Hello',
+            category=category,
+            is_published=True,
+        )
+        url = reverse('api-analytics-events')
+        response = self.client.post(
+            url,
+            {
+                'event': 'page_view',
+                'path': '/blog/tracked-post',
+                'referrer': 'https://example.com/',
+                'session_key': 'sess-abc',
+            },
+            format='json',
+            HTTP_USER_AGENT='Mozilla/5.0 TestBrowser',
+            HTTP_CF_CONNECTING_IP='203.0.113.9',
+            HTTP_CF_IPCOUNTRY='US',
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        event = SiteEvent.objects.get()
+        self.assertEqual(event.path, '/blog/tracked-post')
+        self.assertEqual(event.post, post)
+        self.assertEqual(event.ip, '203.0.113.9')
+        self.assertEqual(event.country, 'US')
+        self.assertEqual(event.session_key, 'sess-abc')
+        self.assertIsNone(event.user)
+
+    def test_analytics_page_view_links_authenticated_user(self):
+        token = Token.objects.create(user=self.user)
+        Subscription.objects.create(email=self.user.email, name='Test')
+        url = reverse('api-analytics-events')
+        response = self.client.post(
+            url,
+            {'event': 'page_view', 'path': '/p/1/public-info', 'session_key': 'sess-user'},
+            format='json',
+            HTTP_AUTHORIZATION=f'Token {token.key}',
+            HTTP_USER_AGENT='Mozilla/5.0 TestBrowser',
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        event = SiteEvent.objects.get()
+        self.assertEqual(event.user, self.user)
+        self.assertEqual(event.page, self.public_page)
+        self.assertEqual(event.subscription.email, self.user.email)
+
+    def test_analytics_skips_bots(self):
+        url = reverse('api-analytics-events')
+        response = self.client.post(
+            url,
+            {'event': 'page_view', 'path': '/blog/anything'},
+            format='json',
+            HTTP_USER_AGENT='Googlebot/2.1',
+        )
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(SiteEvent.objects.count(), 0)
 
     def test_social_login_preserves_existing_blog_prefs(self):
         """Re-login must not overwrite an existing blog opt-in."""

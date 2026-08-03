@@ -1,6 +1,6 @@
 # devenkalra.com — Design Doc
 
-Last updated: 2026-08-01
+Last updated: 2026-08-02
 
 ## 1. Purpose
 
@@ -38,6 +38,8 @@ Browser (React SPA)
 
 Volumes typically mounted: `db.sqlite3`, `media/`. Locally, admin templates may also be bind-mounted for live edit.
 
+Changing backend/frontend code requires rebuilding `devenkalra-app` (only templates are live-mounted locally).
+
 ---
 
 ## 3. Content and navigation model
@@ -52,6 +54,8 @@ Volumes typically mounted: `db.sqlite3`, `media/`. Locally, admin templates may 
 - Literal `\n` sequences in pasted content are normalized to real newlines on save
 
 Public/read URL key is **slug** (`GET /api/pages/<slug>/`). Site routes: `/p/<menuItemId>/<slug>`.
+
+Superusers can edit page content from the SPA (breadcrumb pencil / Notes pencil) with `?page_edit=1` or `?edit=1` and debounced autosave (~10s).
 
 ### 3.2 Menu tree
 
@@ -70,9 +74,24 @@ Public/read URL key is **slug** (`GET /api/pages/<slug>/`). Site routes: `/p/<me
 
 Frontend: `Layout.jsx` (menu), `Breadcrumbs.jsx`, `PageView.jsx` (folder directory cards when no page).
 
+The SPA refetches `GET /api/menu/` when auth/role changes so role-gated items (e.g. `roles_with_access=superuser`) appear or disappear after login/logout.
+
 ### 3.3 Blog / Articles
 
-Separate content type: `BlogPost` (+ categories, tags, comments). Routes `/articles`, `/articles/:slug`. Publishing uses `is_published` / `publish_date`; preview via `preview_token`. Admin supports Substack import.
+Separate content type: `BlogPost` (+ categories, tags, comments).
+
+| Route | Notes |
+|-------|--------|
+| `/blog`, `/blog/:slug` | Primary |
+| `/articles`, `/articles/:slug` | Legacy aliases |
+
+Publishing uses `is_published` / `publish_date`; preview via `preview_token`. Admin supports Substack import.
+
+**Subscribe UI** lives near the top of the blog catalog (`BlogCatalog.jsx`):
+
+- Logged out → social login, then opt in  
+- Logged in → toggle prefs via `/api/me/preferences/`  
+- Intent survives OAuth redirect via `sessionStorage` (`pendingBlogSubscribe`)
 
 ### 3.4 Notes (Notebook → Notes)
 
@@ -82,11 +101,53 @@ Internal organizational tree **independent of the site menu**:
 |-------|------|
 | `NoteNode` | Folder (`page=null`) or link to a selected `Page` |
 
-UI: `NotesApp` on page slug `notes` — collapsible left tree, right preview, create/link pages into the current folder. Selection and sidebar collapse are stored in query params (`node`, `doc`, `sidebar`, `new`) for bookmarks and history.
+UI: `NotesApp` on page slug `notes` — collapsible left tree (folders first, then A–Z), right preview, create/link/edit pages. Selection and sidebar collapse are stored in query params (`node`, `doc`, `sidebar`, `new`, `edit`) for bookmarks and history.
 
 Seed/repair menu: `backend/add_notes_menu.py`.
 
-### 3.5 Other structured content
+### 3.5 Subscription / contact preferences
+
+`Subscription` is the email-keyed **contact preferences** record (not Django `User` profile fields):
+
+| Field | Purpose |
+|-------|---------|
+| `email` (unique) | Stable identity for social + staff |
+| `user` (nullable FK) | Linked Django/token user when known |
+| `name`, `provider` | Display / last auth provider |
+| `is_active` | Master switch — inactive contacts excluded from outreach |
+| `blog_subscribed` | Opted in to the blog list |
+| `notify_on_article` | Email when a new article is published |
+| `subscribed_at`, `updated_at` | Audit |
+
+**Opt-in rules:**
+
+- Social login **creates/updates** the contact row (name, provider, user link) but does **not** set `blog_subscribed` / `notify_on_article`.
+- Subscribe on `/blog` sets both true; unsubscribe clears both; notify can be toggled while subscribed.
+- Existing active contacts were grandfathered into blog + notify prefs by migration `0025`.
+
+Article email sending on publish is **not** wired yet; `notify_on_article` is the flag for that later job.
+
+### 3.6 First-party analytics (`SiteEvent`)
+
+Append-only page-view log for **any SPA route** (not blog-only):
+
+| Field | Notes |
+|-------|--------|
+| `event` | Currently `page_view` |
+| `path` | Pathname (query ignored to avoid Notes UI spam) |
+| `page` / `post` | Optional FKs when path resolves to `Page` or `BlogPost` |
+| `ip`, `country` | From `CF-Connecting-IP` / `CF-IPCountry` when present |
+| `user_agent`, `referrer`, `session_key` | Client / request metadata |
+| `user`, `subscription` | Filled when Token (or matching email) is known |
+
+- Ingest: `POST /api/analytics/events/` (`AllowAny`; Token optional)
+- SPA: `Layout` → `trackPageView` on `location.pathname` change; tab-session dedupe
+- Skips OAuth callbacks and obvious bot UAs; soft per-IP rate limit
+- Browse in Django admin → **Site events**
+
+Complements Cloudflare zone analytics; Cloudflare alone often only sees the SPA shell.
+
+### 3.7 Other structured content
 
 | Model | Typical use |
 |-------|-------------|
@@ -95,7 +156,6 @@ Seed/repair menu: `backend/add_notes_menu.py`.
 | `BookReview`, `MusicTrack`, `Recipe` | Catalog UIs |
 | `StaticFile` | Uploads or fetch-from-URL → `/api/media/` |
 | `PageData` | JSON blob keyed by `page_slug` (e.g. exercise planner) |
-| `Subscription` | Newsletter / social subscribers |
 
 ---
 
@@ -127,15 +187,18 @@ After rendering page content, `PageView.jsx` mounts React apps by **page slug**:
 | Mechanism | Behavior |
 |-----------|----------|
 | Password login | Django user → DRF **Token** (+ session); FE stores `authToken` |
-| Social | Google ID token / GitHub OAuth → token + session `social_user` |
-| Role | `None` \| `user` \| `superuser` (`get_user_role`) |
+| Social Google | OAuth **authorization-code** redirect → `/login/google/callback` → backend exchanges `code` + `redirect_uri` (legacy GIS `id_token` still accepted) |
+| Social GitHub | OAuth code → `/login/github/callback` |
+| Role | `None` (logged out) \| `user` (any authenticated) \| `superuser` |
 | Superuser | Django staff/superuser **or** email in `SOCIAL_SUPERUSERS` |
-| `roles_with_access` | Comma-separated; blank = public; superuser bypasses |
+| `roles_with_access` | Comma-separated; blank = public; **`user`** = any logged-in person; superuser bypasses |
 | `allowed_emails` | Optional extra allowlist on pages |
+
+Display names prefer real name / email over internal usernames like `google_<sub>`.
 
 Mutating Notes/page APIs use **Token** auth. Prefer `credentials: 'omit'` with `Authorization: Token …` for POSTs so session CSRF does not block the SPA.
 
-Endpoints: `/api/auth/login|logout|status|csrf|config/`, `/api/auth/social/google|github/`.
+Endpoints: `/api/auth/login|logout|status|csrf|config/`, `/api/auth/social/google|github/`, `/api/me/preferences/`.
 
 ---
 
@@ -148,6 +211,8 @@ Base: `/api/`. Interactive docs: `/api/docs/` (schema `/api/schema/`).
 | Menu | `GET /menu/`; CRUD `/menu-items/` |
 | Pages | CRUD `/pages/` (slug lookup) |
 | Notes | CRUD `/note-nodes/`; `GET /note-nodes/tree/` |
+| Preferences | `GET\|PATCH /me/preferences/` (Token; `blog_subscribed`, `notify_on_article`, …) |
+| Analytics | `POST /analytics/events/` (page views; anonymous OK) |
 | PageData | `GET\|POST /page-data/<slug>/` |
 | Catalogs | `/projects/`, `/ideas/`, `/books/`, `/tracks/`, `/recipes/` |
 | Blog | `/blog/categories|tags|posts/`, comments |
@@ -160,8 +225,9 @@ List/retrieve for pages and menu are generally public (retrieve still enforces p
 
 ## 7. Admin and markdown editing
 
-- **Page admin** (`admin/core/page/change_form.html`): split editor + live preview (Marked iframe for Markdown; HTML mode injects editorial styles). Matches site fonts (Inter / Lora) rather than GitHub Markdown CSS.
+- **Page admin** (`admin/core/page/change_form.html`): split editor + live preview (Marked iframe for Markdown; HTML mode injects editorial styles). Matches site fonts (Newsreader / Source Sans 3) rather than GitHub Markdown CSS.
 - **Blog admin**: similar preview + Substack import + preview URL.
+- **Subscription admin**: contact prefs (`blog_subscribed`, `notify_on_article`, linked `user`).
 - **Frontend Markdown**: `MarkdownBody` + `remark-gfm` + `rehype-raw`; heading anchors via `## Title [#id]` (`utils/markdown.js`).
 - Cheat sheet seed: `backend/seed_data/markdown-cheat-sheet.md`.
 - Editorial CSS for HTML iframes: `frontend/public/iframe-editorial.css` (keep in sync with `frontend/src/index.css` typography).
@@ -193,10 +259,12 @@ See `backend/.env.template` (and host `.env`):
 
 1. **Menu for navigation, models for domain data** — don’t overload the menu tree for app-internal structure (Notes uses `NoteNode`).  
 2. **Slug is the stable app contract** — custom UIs mount by page slug.  
-3. **Access is declarative** — roles + optional emails on pages/menu items.  
-4. **Markdown by default, HTML when needed** — `render_as_html` + shared editorial styles.  
-5. **SPA + API in one deployable** — single container serves API, admin, media, and built frontend.  
-6. **Bookmarkable app state** — Notes encodes selection/UI in the query string.
+3. **Access is declarative** — roles + optional emails on pages/menu items; use `user` for “any logged-in person”.  
+4. **Email-keyed prefs, not User columns** — contact/marketing flags live on `Subscription`; auth stays on Django `User` / token.  
+5. **Explicit blog opt-in** — social login links identity; Subscribe sets prefs.  
+6. **Markdown by default, HTML when needed** — `render_as_html` + shared editorial styles.  
+7. **SPA + API in one deployable** — single container serves API, admin, media, and built frontend.  
+8. **Bookmarkable app state** — Notes encodes selection/UI in the query string.
 
 ---
 
@@ -208,6 +276,9 @@ See `backend/.env.template` (and host `.env`):
 | Models | `backend/core/models.py` |
 | API routes | `backend/core/urls.py`, `backend/backend/urls.py` |
 | SPA shell | `frontend/src/App.jsx`, `views/PageView.jsx` |
+| Auth | `frontend/src/context/AuthContext.jsx`, `utils/googleOAuth.js`, `views/GoogleCallback.jsx` |
+| Blog catalog / subscribe | `frontend/src/views/BlogCatalog.jsx` |
+| Page analytics | `frontend/src/utils/pageAnalytics.js` (hooked from `Layout.jsx`) |
 | Notes UI | `frontend/src/components/NotesApp.jsx` |
 | Dockerfile | `devenkalra.com/Dockerfile` |
 | Local compose | monorepo `docker-compose.local.yml` (`devenkalra-app`) |

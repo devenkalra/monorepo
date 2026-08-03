@@ -482,6 +482,69 @@ class Subscription(models.Model):
         return f"{self.email} ({status}; {flag_s})"
 
 
+class SiteEvent(models.Model):
+    """Append-only first-party page-view (and similar) events.
+
+    Fired by the SPA on route changes. Optional FKs are filled when the path
+    resolves to a known Page or BlogPost.
+    """
+    EVENT_PAGE_VIEW = 'page_view'
+    EVENT_CHOICES = [
+        (EVENT_PAGE_VIEW, 'Page view'),
+    ]
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    event = models.CharField(max_length=32, choices=EVENT_CHOICES, default=EVENT_PAGE_VIEW, db_index=True)
+    path = models.CharField(max_length=500, db_index=True)
+    page = models.ForeignKey(
+        Page,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='site_events',
+    )
+    post = models.ForeignKey(
+        BlogPost,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='site_events',
+    )
+    ip = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+    user_agent = models.CharField(max_length=400, blank=True, default='')
+    country = models.CharField(max_length=8, blank=True, default='', help_text='CF-IPCountry when present')
+    referrer = models.CharField(max_length=500, blank=True, default='')
+    session_key = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='site_events',
+    )
+    subscription = models.ForeignKey(
+        Subscription,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='site_events',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Site event'
+        verbose_name_plural = 'Site events'
+        indexes = [
+            models.Index(fields=['-created_at', 'event']),
+            models.Index(fields=['post', '-created_at']),
+            models.Index(fields=['page', '-created_at']),
+        ]
+
+    def __str__(self):
+        target = self.post or self.page or self.path
+        return f"{self.event} {target} @ {self.created_at:%Y-%m-%d %H:%M}"
+
+
 class NoteNode(models.Model):
     """Folder or page link in the Notebook → Notes tree.
 

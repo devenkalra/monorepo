@@ -14,7 +14,7 @@ from rest_framework.authentication import TokenAuthentication
 from drf_spectacular.utils import extend_schema, extend_schema_view, OpenApiParameter, OpenApiTypes
 
 
-from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription, NoteNode
+from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription, SiteEvent, NoteNode
 from .serializers import (
     PageSerializer, MenuItemSerializer, MenuItemCRUDSerializer, ProjectSerializer,
     WorkflowIdeaSerializer, BookReviewSerializer, MusicTrackSerializer, RecipeSerializer,
@@ -1155,6 +1155,126 @@ def _preferences_payload(sub):
         'subscribed_at': sub.subscribed_at,
         'updated_at': sub.updated_at,
     }
+
+
+_BOT_UA_MARKERS = (
+    'bot', 'spider', 'crawl', 'slurp', 'facebookexternalhit',
+    'preview', 'headless', 'phantom', 'selenium',
+)
+
+
+def _client_ip(request):
+    """Prefer Cloudflare / proxy headers, then REMOTE_ADDR."""
+    cf = (request.META.get('HTTP_CF_CONNECTING_IP') or '').strip()
+    if cf:
+        return cf[:45]
+    xff = (request.META.get('HTTP_X_FORWARDED_FOR') or '').strip()
+    if xff:
+        return xff.split(',')[0].strip()[:45]
+    return (request.META.get('REMOTE_ADDR') or '').strip()[:45] or None
+
+
+def _is_bot_ua(user_agent):
+    ua = (user_agent or '').lower()
+    return any(marker in ua for marker in _BOT_UA_MARKERS)
+
+
+def _resolve_content_from_path(path, slug_hint=''):
+    """Best-effort Page / BlogPost resolution from SPA path."""
+    path = (path or '').split('?', 1)[0]
+    parts = [p for p in path.strip('/').split('/') if p]
+    page = None
+    post = None
+    slug = (slug_hint or '').strip()
+
+    if len(parts) >= 2 and parts[0] in ('blog', 'articles'):
+        slug = slug or parts[1]
+        post = BlogPost.objects.filter(slug=slug).first()
+    elif len(parts) >= 3 and parts[0] == 'p':
+        # /p/<menuItemId>/<pageSlug>
+        slug = slug or parts[2]
+        page = Page.objects.filter(slug=slug).first()
+    elif len(parts) == 1 and parts[0] not in ('blog', 'articles', 'login', 'p'):
+        slug = slug or parts[0]
+        page = Page.objects.filter(slug=slug).first()
+    elif slug and not post and not page:
+        post = BlogPost.objects.filter(slug=slug).first()
+        if not post:
+            page = Page.objects.filter(slug=slug).first()
+
+    return page, post
+
+
+class AnalyticsEventView(APIView):
+    """Lightweight first-party analytics ingest (page views)."""
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [permissions.AllowAny]
+
+    # Soft rate limit: events per IP per minute (in-process cache).
+    RATE_LIMIT = 60
+
+    def post(self, request):
+        from django.core.cache import cache
+
+        data = request.data or {}
+        event_type = (data.get('event') or SiteEvent.EVENT_PAGE_VIEW).strip()
+        if event_type not in {c[0] for c in SiteEvent.EVENT_CHOICES}:
+            return Response({"detail": "Unsupported event type."}, status=status.HTTP_400_BAD_REQUEST)
+
+        path = (data.get('path') or '').strip()[:500]
+        if not path.startswith('/'):
+            return Response({"detail": "path must be an absolute site path."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Skip auth callback noise
+        if path.startswith('/login/google/callback') or path.startswith('/login/github/callback'):
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        ua = (request.META.get('HTTP_USER_AGENT') or '')[:400]
+        if _is_bot_ua(ua):
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        ip = _client_ip(request)
+        if ip:
+            cache_key = f'analytics_rl:{ip}'
+            count = cache.get(cache_key, 0)
+            if count >= self.RATE_LIMIT:
+                return Response(status=status.HTTP_204_NO_CONTENT)
+            try:
+                cache.set(cache_key, count + 1, timeout=60)
+            except Exception:
+                pass
+
+        page, post = _resolve_content_from_path(path, data.get('slug') or '')
+        referrer = (data.get('referrer') or request.META.get('HTTP_REFERER') or '')[:500]
+        session_key = (data.get('session_key') or '')[:64]
+        country = (request.META.get('HTTP_CF_IPCOUNTRY') or '')[:8]
+        if country in ('XX', 'T1'):
+            country = ''
+
+        user = request.user if getattr(request.user, 'is_authenticated', False) else None
+        subscription = None
+        if user and user.email:
+            subscription = Subscription.objects.filter(email__iexact=user.email).first()
+        elif not user:
+            social = request.session.get('social_user') or {}
+            email = (social.get('email') or '').strip()
+            if email:
+                subscription = Subscription.objects.filter(email__iexact=email).first()
+
+        SiteEvent.objects.create(
+            event=event_type,
+            path=path,
+            page=page,
+            post=post,
+            ip=ip,
+            user_agent=ua,
+            country=country,
+            referrer=referrer,
+            session_key=session_key,
+            user=user,
+            subscription=subscription,
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class MePreferencesView(APIView):

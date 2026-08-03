@@ -3,7 +3,7 @@ from django.utils.html import format_html
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 from django import forms
-from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, StaticFile, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription, NoteNode
+from .models import Page, MenuItem, Project, WorkflowIdea, BookReview, MusicTrack, Recipe, StaticFile, PageData, BlogCategory, BlogTag, BlogPost, Comment, Subscription, SiteEvent, NoteNode
 
 class BulkUpdateForm(forms.Form):
     status = forms.ChoiceField(
@@ -94,6 +94,59 @@ class SubscriptionAdmin(admin.ModelAdmin):
     raw_id_fields = ('user',)
     ordering = ('-subscribed_at',)
     readonly_fields = ('subscribed_at', 'updated_at')
+
+
+@admin.register(SiteEvent)
+class SiteEventAdmin(admin.ModelAdmin):
+    list_display = (
+        'created_at',
+        'event',
+        'path',
+        'post',
+        'page',
+        'ip',
+        'country',
+        'user',
+        'subscription',
+        'session_key_short',
+    )
+    list_filter = ('event', 'country', 'created_at')
+    search_fields = (
+        'path',
+        'ip',
+        'referrer',
+        'user_agent',
+        'session_key',
+        'post__slug',
+        'post__title',
+        'page__slug',
+        'page__title',
+        'user__email',
+        'subscription__email',
+    )
+    raw_id_fields = ('page', 'post', 'user', 'subscription')
+    readonly_fields = (
+        'created_at',
+        'event',
+        'path',
+        'page',
+        'post',
+        'ip',
+        'user_agent',
+        'country',
+        'referrer',
+        'session_key',
+        'user',
+        'subscription',
+    )
+    ordering = ('-created_at',)
+    date_hierarchy = 'created_at'
+
+    @admin.display(description='Session')
+    def session_key_short(self, obj):
+        key = obj.session_key or ''
+        return f'{key[:8]}…' if len(key) > 8 else key
+
 
 @admin.register(MenuItem)
 class MenuItemAdmin(admin.ModelAdmin):
