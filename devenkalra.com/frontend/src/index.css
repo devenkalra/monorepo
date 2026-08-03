@@ -1550,3 +1550,148 @@ a.accent-link:hover,
 a.accent-link:focus-visible {
   color: var(--accent-hover) !important;
 }
+
+/* ==========================================
+   VACATION LIST / ASSET MANAGER APPS
+   ========================================== */
+
+.vac-app,
+.asset-app {
+  margin-top: 1.5rem;
+}
+
+.vac-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+@media (max-width: 720px) {
+  .vac-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.vac-sidebar h3 {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.vac-new-list {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.vac-list-nav {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.vac-list-nav button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: none;
+  background: transparent;
+  padding: 0.45rem 0.25rem;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.vac-list-nav button.active {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.vac-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.vac-filters button {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  text-transform: capitalize;
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+
+.vac-filters button.active {
+  border-color: var(--text-strong);
+  background: var(--text-strong);
+  color: var(--surface-color);
+}
+
+.vac-items,
+.asset-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.vac-items li,
+.asset-items li {
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.vac-items li.done span {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.vac-items label {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+}
+
+.vac-items em,
+.asset-items em {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 0.85rem;
+}
+
+.asset-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.asset-toolbar .form-input {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+
+.asset-items li {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.asset-items span {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.asset-items code {
+  font-size: 0.8rem;
+  color: var(--accent-color);
+}

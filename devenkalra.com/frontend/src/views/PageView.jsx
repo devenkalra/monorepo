@@ -6,6 +6,8 @@ import { TimeKeeperApp } from '../components/TimeKeeperApp';
 import { ExercisePlannerApp } from '../components/ExercisePlannerApp';
 import { NotesApp } from '../components/NotesApp';
 import { NotesPageEditor } from '../components/NotesPageEditor';
+import { VacationListApp } from '../components/VacationListApp';
+import { AssetManagerApp } from '../components/AssetManagerApp';
 import { MarkdownBody } from '../components/MarkdownBody';
 
 export const PageView = ({ menuItems }) => {
@@ -648,6 +650,14 @@ export const PageView = ({ menuItems }) => {
 
       {activeSlug === 'notes' && (
         <NotesApp />
+      )}
+
+      {activeSlug === 'vacation-list' && (
+        <VacationListApp />
+      )}
+
+      {activeSlug === 'asset-manager' && (
+        <AssetManagerApp />
       )}
 
       {activeSlug === 'creative-projects' && (

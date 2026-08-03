@@ -94,6 +94,8 @@ urlpatterns = [
     path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
     path('api/', include('core.urls')),
+    path('api/vacation/', include('vacation_list.urls')),
+    path('api/assets/', include('asset_manager.urls')),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     re_path(r'^(?P<path>.*)$', serve_spa_or_asset),
 ]

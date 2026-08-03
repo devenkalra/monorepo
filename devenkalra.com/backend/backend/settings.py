@@ -48,6 +48,8 @@ ALLOWED_HOSTS = ['*']
 
 INSTALLED_APPS = [
     'core',  # Placed first to allow overriding admin templates
+    'vacation_list',
+    'asset_manager',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -165,6 +167,8 @@ SPECTACULAR_SETTINGS = {
         {'name': 'auth', 'description': 'Login, logout, CSRF, social auth'},
         {'name': 'content', 'description': 'Projects, ideas, books, tracks, recipes'},
         {'name': 'clickup', 'description': 'ClickUp integrations'},
+        {'name': 'vacation-list', 'description': 'Packing lists (Vac* models)'},
+        {'name': 'asset-manager', 'description': 'Physical asset inventory'},
     ],
 }
 

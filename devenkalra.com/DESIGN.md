@@ -1,6 +1,6 @@
 # devenkalra.com — Design Doc
 
-Last updated: 2026-08-02
+Last updated: 2026-08-03
 
 ## 1. Purpose
 
@@ -147,7 +147,43 @@ Append-only page-view log for **any SPA route** (not blog-only):
 
 Complements Cloudflare zone analytics; Cloudflare alone often only sees the SPA shell.
 
-### 3.7 Other structured content
+### 3.7 Vacation List (`vacation_list` app)
+
+Ported from `lister` packing-list domain with **`Vac*` prefixes** (avoids colliding with blog/menu names):
+
+| Model | Role |
+|-------|------|
+| `VacTag` / `VacCategory` | Catalog taxonomy |
+| `VacItem` | Reusable packing catalog item (`name_group`, tags, category) |
+| `VacList` | Trip list; `initial_tags` used to seed membership |
+| `VacListItem` | Item on a list (`need` / `done`); FK `in_list` only (no redundant M2M) |
+
+- API (Token required): `/api/vacation/tags|categories|items|lists|list-items/`
+- List helpers: `GET …/lists/<id>/items/`, `POST …/lists/<id>/seed/`, `POST …/lists/<id>/bulk/`
+- SPA: slug `vacation-list` → `VacationListApp`
+- Seed pages/menu: `backend/add_vacation_asset_pages.py`
+- Data import from legacy lister DB: `backend/scripts/import_lister_data.py` (scoped tables only)
+- Prod sync wrapper (does **not** replace `db.sqlite3`): monorepo `scripts/sync_devenkalra_lister_data.sh`
+
+### 3.8 Asset Manager (`asset_manager` app)
+
+Ported from `lister` inventory domain:
+
+| Model | Role |
+|-------|------|
+| `AssetPhoto` | GFK photos (`upload_to=ass_photos/`) |
+| `AssetBase` | Abstract: name, description, category, tags, locator |
+| `AssetCategory` / `AssetTag` | Unique taxonomy |
+| `AssetArea` | Nested areas (`parent_area`) |
+| `AssetBox` | Nested boxes; in parent box **xor** area |
+| `AssetItem` | In box **xor** area (orphan allowed) |
+
+- API (Token required): `/api/assets/categories|tags|areas|boxes|items/`
+- Admin: full CRUD + photo inlines (richer workflows than the SPA v1)
+- SPA: slug `asset-manager` → `AssetManagerApp` (search / quick-add)
+- Requires **Pillow** for `ImageField`
+
+### 3.9 Other structured content
 
 | Model | Typical use |
 |-------|-------------|
@@ -168,6 +204,8 @@ After rendering page content, `PageView.jsx` mounts React apps by **page slug**:
 | `time-keeper` | Clock / world clock / stopwatch / timer |
 | `exercise-planner` | Workouts (`PageData`) |
 | `notes` | Notes folder tree + editor |
+| `vacation-list` | Packing lists (`vacation_list`) |
+| `asset-manager` | Physical inventory (`asset_manager`) |
 | `creative-projects` | ClickUp-backed projects |
 | `contacts` | ClickUp-backed contacts |
 | `book-reviews`, `indian-music`, `cooking-snacks`, `track-ideas` | Inline catalog UIs |
@@ -213,6 +251,8 @@ Base: `/api/`. Interactive docs: `/api/docs/` (schema `/api/schema/`).
 | Notes | CRUD `/note-nodes/`; `GET /note-nodes/tree/` |
 | Preferences | `GET\|PATCH /me/preferences/` (Token; `blog_subscribed`, `notify_on_article`, …) |
 | Analytics | `POST /analytics/events/` (page views; anonymous OK) |
+| Vacation | `/vacation/tags|categories|items|lists|list-items/` (auth) |
+| Assets | `/assets/categories|tags|areas|boxes|items/` (auth) |
 | PageData | `GET\|POST /page-data/<slug>/` |
 | Catalogs | `/projects/`, `/ideas/`, `/books/`, `/tracks/`, `/recipes/` |
 | Blog | `/blog/categories|tags|posts/`, comments |
@@ -280,6 +320,9 @@ See `backend/.env.template` (and host `.env`):
 | Blog catalog / subscribe | `frontend/src/views/BlogCatalog.jsx` |
 | Page analytics | `frontend/src/utils/pageAnalytics.js` (hooked from `Layout.jsx`) |
 | Notes UI | `frontend/src/components/NotesApp.jsx` |
+| Vacation list | `backend/vacation_list/`, `frontend/src/components/VacationListApp.jsx` |
+| Asset manager | `backend/asset_manager/`, `frontend/src/components/AssetManagerApp.jsx` |
+| Vac/Asset page seed | `backend/add_vacation_asset_pages.py` |
 | Dockerfile | `devenkalra.com/Dockerfile` |
 | Local compose | monorepo `docker-compose.local.yml` (`devenkalra-app`) |
 | Notes menu seed | `backend/add_notes_menu.py` |
