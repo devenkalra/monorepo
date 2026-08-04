@@ -23,7 +23,7 @@ APPS = [
     {
         'title': 'Asset Manager',
         'slug': 'asset-manager',
-        'content': 'Physical inventory: areas, boxes, and items. Full editing also available in Django admin.',
+        'content': 'Physical inventory: nested areas (folders) and items. Full editing also available in Django admin.',
         'roles_with_access': 'user,superuser',
     },
 ]

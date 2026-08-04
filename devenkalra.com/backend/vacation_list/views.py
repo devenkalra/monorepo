@@ -1,3 +1,4 @@
+from django.db.models import Q
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -35,11 +36,19 @@ class VacItemViewSet(VacAuthMixin, viewsets.ModelViewSet):
         category = self.request.query_params.get('category')
         q = self.request.query_params.get('q')
         if tag:
-            qs = qs.filter(tags__id=tag)
+            # Multi-select: ?tag=1,2 (OR — item matching any selected tag)
+            tag_ids = [t.strip() for t in str(tag).split(',') if t.strip()]
+            if tag_ids:
+                qs = qs.filter(tags__id__in=tag_ids)
         if category:
             qs = qs.filter(category_id=category)
         if q:
-            qs = qs.filter(name__icontains=q)
+            qs = qs.filter(
+                Q(name__icontains=q)
+                | Q(name_group__icontains=q)
+                | Q(description__icontains=q)
+                | Q(tags__name__icontains=q)
+            )
         return qs.distinct()
 
 
@@ -47,10 +56,72 @@ class VacListViewSet(VacAuthMixin, viewsets.ModelViewSet):
     queryset = VacList.objects.prefetch_related('initial_tags').all()
     serializer_class = VacListSerializer
 
-    def perform_create(self, serializer):
+    def get_queryset(self):
+        qs = VacList.objects.prefetch_related('initial_tags').all()
+        # Only the collection endpoint hides archived lists by default.
+        # Detail/actions can still target an archived list (e.g. unarchive).
+        if self.action != 'list':
+            return qs
+        archived = self.request.query_params.get('archived')
+        if archived is None:
+            return qs.filter(is_archived=False)
+        if str(archived).lower() in ('1', 'true', 'yes'):
+            return qs.filter(is_archived=True)
+        if str(archived).lower() in ('0', 'false', 'no'):
+            return qs.filter(is_archived=False)
+        if str(archived).lower() in ('all', '*'):
+            return qs
+        return qs.filter(is_archived=False)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        vac_list = self.get_object()
+        vac_list.is_archived = True
+        vac_list.save(update_fields=['is_archived', 'modified_on'])
+        return Response(self.get_serializer(vac_list).data)
+
+    @action(detail=True, methods=['post'], url_path='unarchive')
+    def unarchive(self, request, pk=None):
+        vac_list = self.get_object()
+        vac_list.is_archived = False
+        vac_list.save(update_fields=['is_archived', 'modified_on'])
+        return Response(self.get_serializer(vac_list).data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        populate = serializer.validated_data.pop('populate', 'blank') or 'blank'
+        copy_from_id = serializer.validated_data.pop('copy_from_id', None)
+
+        if populate == 'copy':
+            if not copy_from_id:
+                return Response(
+                    {'detail': 'copy_from_id is required when populate=copy.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            source_qs = VacList.objects.filter(pk=copy_from_id, is_archived=False)
+            if not source_qs.exists():
+                return Response(
+                    {'detail': 'Source list not found (or is archived).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         vac_list = serializer.save()
-        if vac_list.initial_tags.exists():
-            vac_list.seed_from_initial_tags()
+        added = 0
+        if vac_list.initial_tags.exists() and populate == 'blank':
+            # Keep legacy tag-seed behavior only for blank creates that set tags
+            added = vac_list.seed_from_initial_tags()
+        elif populate == 'all_items':
+            added = vac_list.populate_all_catalog_items()
+        elif populate == 'copy':
+            source = VacList.objects.get(pk=copy_from_id)
+            added = vac_list.copy_items_from(source)
+
+        headers = self.get_success_headers(serializer.data)
+        data = self.get_serializer(vac_list).data
+        data['added'] = added
+        data['populate'] = populate
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(detail=True, methods=['get'])
     def items(self, request, pk=None):
@@ -88,6 +159,31 @@ class VacListViewSet(VacAuthMixin, viewsets.ModelViewSet):
             updated = qs.update(**updates)
             return Response({'updated': updated})
         return Response({'detail': 'No changes specified.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='add-items')
+    def add_items(self, request, pk=None):
+        """Add catalog VacItems to this list: { item_ids: [] }."""
+        vac_list = self.get_object()
+        item_ids = request.data.get('item_ids') or []
+        if not item_ids:
+            return Response({'detail': 'item_ids required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = set(
+            vac_list.list_items.filter(item_id__in=item_ids).values_list('item_id', flat=True)
+        )
+        to_create = []
+        for item in VacItem.objects.filter(id__in=item_ids):
+            if item.id in existing:
+                continue
+            to_create.append(
+                VacListItem(item=item, in_list=vac_list, need=True, done=False)
+            )
+            existing.add(item.id)
+        VacListItem.objects.bulk_create(to_create)
+        return Response({
+            'added': len(to_create),
+            'skipped': len(item_ids) - len(to_create),
+        })
 
 
 class VacListItemViewSet(VacAuthMixin, viewsets.ModelViewSet):

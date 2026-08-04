@@ -171,16 +171,20 @@ Ported from `lister` inventory domain:
 
 | Model | Role |
 |-------|------|
-| `AssetPhoto` | GFK photos (`upload_to=ass_photos/`) |
+| `AssetPhoto` | GFK photos (`upload_to=ass_photos/`); `sort_order` for cover |
 | `AssetBase` | Abstract: name, description, category, tags, locator |
 | `AssetCategory` / `AssetTag` | Unique taxonomy |
-| `AssetArea` | Nested areas (`parent_area`) |
-| `AssetBox` | Nested boxes; in parent box **xor** area |
-| `AssetItem` | In box **xor** area (orphan allowed) |
+| `AssetArea` | Nested containers (`parent_area`) |
+| `AssetItem` | In an area, or unlocated (orphan) |
 
-- API (Token required): `/api/assets/categories|tags|areas|boxes|items/`
-- Admin: full CRUD + photo inlines (richer workflows than the SPA v1)
-- SPA: slug `asset-manager` → `AssetManagerApp` (search / quick-add)
+- API (Token required): `/api/assets/categories|tags|areas|items/`
+  - Browse filters: areas `?parent_area=` (`null` = root), items `?area=&unlocated=1`
+  - Photos: `POST/DELETE …/photos/`, `POST …/reorder-photos/`
+- Admin: full CRUD + photo inlines
+- SPA: slug `asset-manager` → `AssetManagerApp`
+  - **List / Icons**: areas = containers, items = files; single-click opens details (desktop popup, mobile full overlay)
+  - Detail actions: Open (containers), Edit, Move, Delete
+- Legacy boxes were converted into nested areas (migration `0003`)
 - Requires **Pillow** for `ImageField`
 
 ### 3.9 Other structured content
@@ -252,7 +256,7 @@ Base: `/api/`. Interactive docs: `/api/docs/` (schema `/api/schema/`).
 | Preferences | `GET\|PATCH /me/preferences/` (Token; `blog_subscribed`, `notify_on_article`, …) |
 | Analytics | `POST /analytics/events/` (page views; anonymous OK) |
 | Vacation | `/vacation/tags|categories|items|lists|list-items/` (auth) |
-| Assets | `/assets/categories|tags|areas|boxes|items/` (auth) |
+| Assets | `/assets/categories|tags|areas|items/` (auth) |
 | PageData | `GET\|POST /page-data/<slug>/` |
 | Catalogs | `/projects/`, `/ideas/`, `/books/`, `/tracks/`, `/recipes/` |
 | Blog | `/blog/categories|tags|posts/`, comments |

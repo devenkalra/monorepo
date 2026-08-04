@@ -1,14 +1,17 @@
 from django.db import models
-from django.db.models import Q
 from django.contrib.contenttypes.fields import GenericRelation, GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.utils.html import format_html
 
 
 class AssetPhoto(models.Model):
-    """Generic photo attached to AssetItem, AssetBox, or AssetArea."""
+    """Generic photo attached to AssetItem or AssetArea."""
     image = models.ImageField(upload_to='ass_photos/')
     description = models.CharField(max_length=255, blank=True)
+    sort_order = models.PositiveIntegerField(
+        default=0,
+        help_text='Lower values appear first; the first image is used as the cover.',
+    )
 
     content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
     object_id = models.PositiveIntegerField()
@@ -20,7 +23,7 @@ class AssetPhoto(models.Model):
     class Meta:
         verbose_name = 'Asset photo'
         verbose_name_plural = 'Asset photos'
-        ordering = ['-created_at']
+        ordering = ['sort_order', 'id']
 
     def __str__(self):
         return self.description or f'Photo {self.pk}'
@@ -113,6 +116,7 @@ class AssetBase(models.Model):
 
 
 class AssetArea(AssetBase):
+    """Container that can nest inside another area (folder paradigm)."""
     parent_area = models.ForeignKey(
         'self',
         on_delete=models.CASCADE,
@@ -137,107 +141,22 @@ class AssetArea(AssetBase):
         return ' / '.join(reversed(parts))
 
 
-class AssetBox(AssetBase):
-    """
-    A box can be alone, in another box, or in an area — not both box and area.
-    """
-    parent_box = models.ForeignKey(
-        'self',
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name='child_boxes',
-        help_text='If this box is inside another box.',
-    )
-    area = models.ForeignKey(
-        AssetArea,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name='boxes',
-        help_text='If this box is directly in an area.',
-    )
-
-    class Meta:
-        verbose_name = 'Asset box'
-        verbose_name_plural = 'Asset boxes'
-        constraints = [
-            models.CheckConstraint(
-                condition=~(Q(parent_box__isnull=False) & Q(area__isnull=False)),
-                name='asset_manager_box_not_in_box_and_area',
-            ),
-        ]
-
-    def root_box(self):
-        seen = set()
-        box = self
-        while box.parent_box is not None and box.pk not in seen:
-            seen.add(box.pk)
-            box = box.parent_box
-        return box
-
-    def root_area(self):
-        if self.area:
-            return self.area
-        return self.root_box().area
-
-    def full_path(self):
-        parts = []
-        box = self
-        seen = set()
-        while box is not None and box.pk not in seen:
-            parts.append(box.name)
-            seen.add(box.pk)
-            box = box.parent_box
-
-        area = self.root_area()
-        if area:
-            area_parts = []
-            a = area
-            a_seen = set()
-            while a is not None and a.pk not in a_seen:
-                area_parts.append(a.name)
-                a_seen.add(a.pk)
-                a = a.parent_area
-            parts.extend(reversed(area_parts))
-
-        return ' / '.join(reversed(parts))
-
-
 class AssetItem(AssetBase):
-    """
-    An item may be in a box or an area (not both). Neither is allowed (orphan).
-    """
-    box = models.ForeignKey(
-        AssetBox,
-        on_delete=models.CASCADE,
-        null=True,
-        blank=True,
-        related_name='items',
-        help_text='Box containing this item (if any).',
-    )
+    """An item lives in an area, or is unlocated (orphan)."""
     area = models.ForeignKey(
         AssetArea,
         on_delete=models.CASCADE,
         null=True,
         blank=True,
         related_name='items',
-        help_text='Area containing this item (if not in a box).',
+        help_text='Area containing this item (optional orphan if blank).',
     )
 
     class Meta:
         verbose_name = 'Asset item'
         verbose_name_plural = 'Asset items'
-        constraints = [
-            models.CheckConstraint(
-                condition=~(Q(box__isnull=False) & Q(area__isnull=False)),
-                name='asset_manager_item_not_in_both_box_and_area',
-            ),
-        ]
 
     def full_path(self):
-        if self.box_id:
-            return f'{self.box.full_path()} / {self.name}'
         if self.area_id:
             return f'{self.area.full_path()} / {self.name}'
         return self.name

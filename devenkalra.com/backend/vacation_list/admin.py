@@ -31,11 +31,12 @@ class VacListItemInline(admin.TabularInline):
 
 @admin.register(VacList)
 class VacListAdmin(admin.ModelAdmin):
-    list_display = ('name', 'item_count', 'modified_on', 'created_at')
+    list_display = ('name', 'is_archived', 'item_count', 'modified_on', 'created_at')
+    list_filter = ('is_archived',)
     search_fields = ('name',)
     filter_horizontal = ('initial_tags',)
     inlines = [VacListItemInline]
-    actions = ['seed_from_tags']
+    actions = ['seed_from_tags', 'archive_lists', 'unarchive_lists']
 
     @admin.display(description='Items')
     def item_count(self, obj):
@@ -47,6 +48,16 @@ class VacListAdmin(admin.ModelAdmin):
         for vac_list in queryset:
             total += vac_list.seed_from_initial_tags()
         self.message_user(request, f'Added {total} list item(s).')
+
+    @admin.action(description='Archive selected lists')
+    def archive_lists(self, request, queryset):
+        updated = queryset.update(is_archived=True)
+        self.message_user(request, f'Archived {updated} list(s).')
+
+    @admin.action(description='Unarchive selected lists')
+    def unarchive_lists(self, request, queryset):
+        updated = queryset.update(is_archived=False)
+        self.message_user(request, f'Unarchived {updated} list(s).')
 
 
 @admin.register(VacListItem)

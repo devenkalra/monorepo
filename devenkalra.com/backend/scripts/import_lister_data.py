@@ -37,7 +37,7 @@ from django.db import connection, transaction
 
 from vacation_list.models import VacCategory, VacTag, VacItem, VacList, VacListItem
 from asset_manager.models import (
-    AssetCategory, AssetTag, AssetArea, AssetBox, AssetItem, AssetPhoto,
+    AssetCategory, AssetTag, AssetArea, AssetItem, AssetPhoto,
 )
 
 
@@ -51,7 +51,6 @@ def clear_target():
     print('Clearing existing vacation_list / asset_manager rows…')
     AssetPhoto.objects.all().delete()
     AssetItem.objects.all().delete()
-    AssetBox.objects.all().delete()
     AssetArea.objects.all().delete()
     AssetTag.objects.all().delete()
     AssetCategory.objects.all().delete()
@@ -244,40 +243,66 @@ def import_assets(conn, media_source: Path, media_root: Path):
         for r in area_tags
     ], ignore_conflicts=True)
 
+    # Lister boxes become nested AssetAreas (containership via parent_area only).
     boxes = fetchall(conn, 'SELECT * FROM listmanager_assbox ORDER BY id')
-    AssetBox.objects.bulk_create([
-        AssetBox(
-            id=r['id'],
-            name=r['name'] or '',
-            description=r['description'] or '',
-            locator_code=r['locator_code'],
-            locator_type=r['locator_type'] or '',
-            category_id=r['category_id'],
-            parent_box_id=None,
-            area_id=None,
-            created_at=r['created_at'],
-            modified_at=r['modified_at'],
-        )
-        for r in boxes
-    ])
-    for r in boxes:
-        # Enforce xor: prefer parent_box over area if both set (shouldn't happen)
-        parent_box_id = r['parent_box_id']
-        area_id = r['area_id']
-        if parent_box_id and area_id:
-            print(f'  WARN box {r["id"]} had both parent_box and area; keeping parent_box')
-            area_id = None
-        AssetBox.objects.filter(pk=r['id']).update(
-            parent_box_id=parent_box_id,
-            area_id=area_id,
-        )
-    print(f'  AssetBox: {len(boxes)}')
+    box_to_area = {}
+    next_area_id = max([r['id'] for r in areas], default=0) + 1
+    remaining = list(boxes)
+    converted_boxes = []
+    while remaining:
+        still = []
+        progress = False
+        for r in remaining:
+            parent_box_id = r['parent_box_id']
+            area_id = r['area_id']
+            if parent_box_id and area_id:
+                print(f'  WARN box {r["id"]} had both parent_box and area; keeping parent_box')
+                area_id = None
+            if parent_box_id and parent_box_id not in box_to_area:
+                still.append(r)
+                continue
+            parent_area_id = box_to_area[parent_box_id] if parent_box_id else area_id
+            new_id = next_area_id
+            next_area_id += 1
+            converted_boxes.append(AssetArea(
+                id=new_id,
+                name=r['name'] or '',
+                description=r['description'] or '',
+                locator_code=r['locator_code'],
+                locator_type=r['locator_type'] or '',
+                category_id=r['category_id'],
+                parent_area_id=parent_area_id,
+                created_at=r['created_at'],
+                modified_at=r['modified_at'],
+            ))
+            box_to_area[r['id']] = new_id
+            progress = True
+        if not progress:
+            for r in still:
+                new_id = next_area_id
+                next_area_id += 1
+                converted_boxes.append(AssetArea(
+                    id=new_id,
+                    name=r['name'] or '',
+                    description=r['description'] or '',
+                    locator_code=r['locator_code'],
+                    locator_type=r['locator_type'] or '',
+                    category_id=r['category_id'],
+                    parent_area_id=r['area_id'],
+                    created_at=r['created_at'],
+                    modified_at=r['modified_at'],
+                ))
+                box_to_area[r['id']] = new_id
+            break
+        remaining = still
+    AssetArea.objects.bulk_create(converted_boxes)
+    print(f'  AssetArea from boxes: {len(converted_boxes)}')
 
-    BoxThrough = AssetBox.tags.through
     box_tags = fetchall(conn, 'SELECT assbox_id, assettag_id FROM listmanager_assbox_tags')
-    BoxThrough.objects.bulk_create([
-        BoxThrough(assetbox_id=r['assbox_id'], assettag_id=r['assettag_id'])
+    AreaThrough.objects.bulk_create([
+        AreaThrough(assetarea_id=box_to_area[r['assbox_id']], assettag_id=r['assettag_id'])
         for r in box_tags
+        if r['assbox_id'] in box_to_area
     ], ignore_conflicts=True)
 
     items = fetchall(conn, 'SELECT * FROM listmanager_assitem ORDER BY id')
@@ -285,9 +310,10 @@ def import_assets(conn, media_source: Path, media_root: Path):
     for r in items:
         box_id = r['box_id']
         area_id = r['area_id']
-        if box_id and area_id:
-            print(f'  WARN item {r["id"]} had both box and area; keeping box')
-            area_id = None
+        if box_id:
+            area_id = box_to_area.get(box_id)
+            if area_id is None:
+                print(f'  WARN item {r["id"]}: unknown box_id={box_id}; leaving unlocated')
         asset_items.append(AssetItem(
             id=r['id'],
             name=r['name'] or '',
@@ -295,7 +321,6 @@ def import_assets(conn, media_source: Path, media_root: Path):
             locator_code=r['locator_code'],
             locator_type=r['locator_type'] or '',
             category_id=r['category_id'],
-            box_id=box_id,
             area_id=area_id,
             created_at=r['created_at'],
             modified_at=r['modified_at'],
@@ -310,7 +335,7 @@ def import_assets(conn, media_source: Path, media_root: Path):
         for r in item_tags
     ], ignore_conflicts=True)
 
-    # Remap Photo GFK content types
+    # Remap Photo GFK content types (lister boxes → AssetArea ids via box_to_area)
     src_cts = {
         row['model']: row['id']
         for row in fetchall(
@@ -318,26 +343,19 @@ def import_assets(conn, media_source: Path, media_root: Path):
             "SELECT id, model FROM django_content_type WHERE app_label='listmanager'",
         )
     }
-    dest_cts = {
-        'assarea': ContentType.objects.get_for_model(AssetArea).id,
-        'assbox': ContentType.objects.get_for_model(AssetBox).id,
-        'assitem': ContentType.objects.get_for_model(AssetItem).id,
-        # our models use assetarea etc.
-        'assetarea': ContentType.objects.get_for_model(AssetArea).id,
-        'assetbox': ContentType.objects.get_for_model(AssetBox).id,
-        'assetitem': ContentType.objects.get_for_model(AssetItem).id,
-    }
-    # map source model name -> dest CT id
+    area_ct_id = ContentType.objects.get_for_model(AssetArea).id
+    item_ct_id = ContentType.objects.get_for_model(AssetItem).id
     model_map = {
-        'assarea': dest_cts['assetarea'],
-        'assbox': dest_cts['assetbox'],
-        'assitem': dest_cts['assetitem'],
+        'assarea': area_ct_id,
+        'assbox': area_ct_id,
+        'assitem': item_ct_id,
     }
     src_id_to_dest_ct = {
         src_cts[model]: dest_ct
         for model, dest_ct in model_map.items()
         if model in src_cts
     }
+    box_src_ct = src_cts.get('assbox')
 
     photos = fetchall(conn, 'SELECT * FROM listmanager_photo ORDER BY id')
     photo_objs = []
@@ -346,6 +364,12 @@ def import_assets(conn, media_source: Path, media_root: Path):
         if not dest_ct:
             print(f'  WARN skip photo {r["id"]}: unknown content_type_id={r["content_type_id"]}')
             continue
+        object_id = r['object_id']
+        if box_src_ct is not None and r['content_type_id'] == box_src_ct:
+            object_id = box_to_area.get(object_id)
+            if object_id is None:
+                print(f'  WARN skip photo {r["id"]}: unknown box object_id={r["object_id"]}')
+                continue
         rel = copy_media_file(r['image'], media_source, media_root)
         if not rel:
             continue
@@ -354,7 +378,7 @@ def import_assets(conn, media_source: Path, media_root: Path):
             image=rel,
             description=r['description'] or '',
             content_type_id=dest_ct,
-            object_id=r['object_id'],
+            object_id=object_id,
             created_at=r['created_at'],
             modified_at=r['modified_at'],
         ))
@@ -407,7 +431,6 @@ def main():
         'asset_manager_assetcategory',
         'asset_manager_assettag',
         'asset_manager_assetarea',
-        'asset_manager_assetbox',
         'asset_manager_assetitem',
         'asset_manager_assetphoto',
     ])

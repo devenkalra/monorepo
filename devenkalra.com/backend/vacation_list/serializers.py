@@ -76,11 +76,21 @@ class VacListSerializer(serializers.ModelSerializer):
     )
     initial_tags_detail = VacTagSerializer(source='initial_tags', many=True, read_only=True)
     item_count = serializers.IntegerField(source='list_items.count', read_only=True)
+    # Create-only population options (not stored on the model)
+    populate = serializers.ChoiceField(
+        choices=['blank', 'all_items', 'copy'],
+        required=False,
+        write_only=True,
+        default='blank',
+    )
+    copy_from_id = serializers.IntegerField(required=False, allow_null=True, write_only=True)
 
     class Meta:
         model = VacList
         fields = [
-            'id', 'name', 'initial_tags', 'initial_tag_ids', 'initial_tags_detail',
+            'id', 'name', 'is_archived',
+            'initial_tags', 'initial_tag_ids', 'initial_tags_detail',
             'item_count', 'created_at', 'modified_on',
+            'populate', 'copy_from_id',
         ]
         read_only_fields = ['initial_tags']

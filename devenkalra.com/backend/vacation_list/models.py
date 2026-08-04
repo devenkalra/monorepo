@@ -59,6 +59,11 @@ class VacList(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     modified_on = models.DateTimeField(auto_now=True)
     name = models.CharField(max_length=255)
+    is_archived = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='Archived lists are hidden from the default list picker.',
+    )
     initial_tags = models.ManyToManyField(VacTag, blank=True, related_name='lists')
 
     class Meta:
@@ -81,6 +86,36 @@ class VacList(models.Model):
                 continue
             to_add.append(VacListItem(item=item, in_list=self, need=True, done=False))
             existing.add(item.id)
+        VacListItem.objects.bulk_create(to_add)
+        return len(to_add)
+
+    def populate_all_catalog_items(self):
+        """Add every VacItem from the master catalog (need=True, done=False)."""
+        existing = set(self.list_items.values_list('item_id', flat=True))
+        to_add = [
+            VacListItem(item=item, in_list=self, need=True, done=False)
+            for item in VacItem.objects.all()
+            if item.id not in existing
+        ]
+        VacListItem.objects.bulk_create(to_add)
+        return len(to_add)
+
+    def copy_items_from(self, source_list):
+        """Copy membership from another list. Preserves need; resets done."""
+        existing = set(self.list_items.values_list('item_id', flat=True))
+        to_add = []
+        for li in source_list.list_items.select_related('item'):
+            if li.item_id in existing:
+                continue
+            to_add.append(
+                VacListItem(
+                    item_id=li.item_id,
+                    in_list=self,
+                    need=li.need,
+                    done=False,
+                )
+            )
+            existing.add(li.item_id)
         VacListItem.objects.bulk_create(to_add)
         return len(to_add)
 
