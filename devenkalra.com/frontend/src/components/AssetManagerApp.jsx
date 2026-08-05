@@ -91,6 +91,22 @@ function truncate(name, max = 22) {
   return name.length > max ? `${name.slice(0, max - 1)}…` : name;
 }
 
+function areaCounts(entity) {
+  return {
+    containers: Number(entity?.descendant_container_count) || 0,
+    items: Number(entity?.descendant_item_count) || 0,
+  };
+}
+
+function formatCounts({ containers, items }, { compact = false } = {}) {
+  if (compact) {
+    return `${containers} ▤ · ${items} ▭`;
+  }
+  const cLabel = containers === 1 ? 'container' : 'containers';
+  const iLabel = items === 1 ? 'item' : 'items';
+  return `${containers} ${cLabel} · ${items} ${iLabel}`;
+}
+
 const ROOT = { type: 'root' };
 
 function ContainerIcon() {
@@ -129,9 +145,7 @@ function buildContainmentTrail(kind, entity, areas) {
   }
 
   const areaId = entity.area ?? null;
-  if (areaId == null) {
-    trail.push({ label: 'Unlocated', loc: null });
-  } else {
+  if (areaId != null) {
     resolveAreaChain(areaId, areas).forEach((a) => {
       trail.push({ label: a.name, loc: { type: 'area', id: a.id } });
     });
@@ -867,6 +881,11 @@ export function AssetManagerApp() {
   const [allAreas, setAllAreas] = useState([]);
   const [categories, setCategories] = useState([]);
   const [tags, setTags] = useState([]);
+  const [inventorySummary, setInventorySummary] = useState({
+    container_count: 0,
+    item_count: 0,
+    unlocated_item_count: 0,
+  });
   const [crumbs, setCrumbs] = useState([{ label: 'Inventory', loc: ROOT }]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -879,14 +898,20 @@ export function AssetManagerApp() {
 
   const refreshMeta = useCallback(async () => {
     if (!token) return;
-    const [a, c, t] = await Promise.all([
+    const [a, c, t, summary] = await Promise.all([
       api('areas/', { token }),
       api('categories/', { token }),
       api('tags/', { token }),
+      api('areas/summary/', { token }),
     ]);
     setAllAreas(asList(a));
     setCategories(asList(c));
     setTags(asList(t));
+    setInventorySummary({
+      container_count: Number(summary?.container_count) || 0,
+      item_count: Number(summary?.item_count) || 0,
+      unlocated_item_count: Number(summary?.unlocated_item_count) || 0,
+    });
   }, [token]);
 
   const buildCrumbs = useCallback((loc, areas) => {
@@ -990,6 +1015,18 @@ export function AssetManagerApp() {
     setLocation({ type: 'area', id: folder.data.id });
   };
 
+  const goUp = () => {
+    if (location.type !== 'area') return;
+    const area = allAreas.find((a) => a.id === location.id);
+    setQ('');
+    setSelected(null);
+    if (area?.parent_area) {
+      setLocation({ type: 'area', id: area.parent_area });
+    } else {
+      setLocation(ROOT);
+    }
+  };
+
   const createContainer = async (name) => {
     await api('areas/', {
       token,
@@ -1011,6 +1048,7 @@ export function AssetManagerApp() {
     await api('items/', { token, method: 'POST', body });
     setCreateModal(null);
     setStatus(`Created item “${name}”.`);
+    await refreshMeta();
     await loadContents();
   };
 
@@ -1030,6 +1068,17 @@ export function AssetManagerApp() {
     if (location.type !== 'area') return null;
     return allAreas.find((a) => a.id === location.id) || null;
   }, [location, allAreas]);
+
+  const locationCounts = useMemo(() => {
+    if (location.type === 'root') {
+      return {
+        containers: inventorySummary.container_count,
+        items: inventorySummary.item_count,
+      };
+    }
+    if (!currentArea) return null;
+    return areaCounts(currentArea);
+  }, [location, currentArea, inventorySummary]);
 
   const isEditingCurrentArea = (entity) => (
     entity?.kind === 'area'
@@ -1136,23 +1185,48 @@ export function AssetManagerApp() {
         </form>
       </div>
 
-      <nav className="asset-breadcrumbs" aria-label="Location">
-        {crumbs.map((c, i) => (
-          <React.Fragment key={`${c.label}-${i}`}>
-            {i > 0 && <span className="asset-crumb-sep">/</span>}
+      <div className="asset-location-bar">
+        <div className="asset-location-nav">
+          {location.type !== 'root' && (
             <button
               type="button"
-              className={i === crumbs.length - 1 ? 'current' : ''}
-              onClick={() => {
-                setQ('');
-                setLocation(c.loc);
-              }}
+              className="asset-up-btn"
+              onClick={goUp}
+              aria-label="Go up one container"
             >
-              {c.label}
+              ↑ Up
             </button>
-          </React.Fragment>
-        ))}
-      </nav>
+          )}
+          <nav className="asset-breadcrumbs" aria-label="Location">
+            {crumbs.map((c, i) => {
+              const isCurrent = i === crumbs.length - 1;
+              return (
+                <React.Fragment key={`${c.label}-${i}`}>
+                  {i > 0 && <span className="asset-crumb-sep">/</span>}
+                  <button
+                    type="button"
+                    className={isCurrent ? 'current' : ''}
+                    disabled={isCurrent}
+                    onClick={() => {
+                      if (!c.loc || isCurrent) return;
+                      setQ('');
+                      setSelected(null);
+                      setLocation(c.loc);
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                </React.Fragment>
+              );
+            })}
+          </nav>
+        </div>
+        {locationCounts && (
+          <p className="asset-location-counts" aria-live="polite">
+            {formatCounts(locationCounts)}
+          </p>
+        )}
+      </div>
 
       <div className="asset-actions">
         <button
@@ -1192,6 +1266,8 @@ export function AssetManagerApp() {
         <div className="asset-browser-list" role="list">
           {folders.map((folder) => {
             const key = `area:${folder.data.id}`;
+            const data = allAreas.find((a) => a.id === folder.data.id) || folder.data;
+            const counts = areaCounts(data);
             return (
               <button
                 key={key}
@@ -1202,7 +1278,9 @@ export function AssetManagerApp() {
               >
                 <ContainerIcon />
                 <span className="asset-row-name">{folder.data.name}</span>
-                <span className="asset-row-meta">Container</span>
+                <span className="asset-row-meta asset-row-counts" title={formatCounts(counts)}>
+                  {formatCounts(counts, { compact: true })}
+                </span>
               </button>
             );
           })}
@@ -1258,20 +1336,23 @@ export function AssetManagerApp() {
               <h4>Containers</h4>
               <div className="asset-icon-grid">
                 {folders.map((folder) => {
-                  const src = photoUrl(folder.data);
+                  const data = allAreas.find((a) => a.id === folder.data.id) || folder.data;
+                  const src = photoUrl(data);
                   const key = `area:${folder.data.id}`;
+                  const counts = areaCounts(data);
                   return (
                     <button
                       key={key}
                       type="button"
                       className={`asset-tile asset-tile--folder${selectedKey === key ? ' selected' : ''}`}
                       onClick={() => openFolder(folder)}
-                      title={folder.data.name}
+                      title={`${folder.data.name} — ${formatCounts(counts)}`}
                     >
                       <span className="asset-tile-media">
                         {src ? <img src={src} alt="" /> : <span className="asset-tile-placeholder" aria-hidden>▤</span>}
                       </span>
                       <span className="asset-tile-name">{truncate(folder.data.name)}</span>
+                      <span className="asset-tile-counts">{formatCounts(counts, { compact: true })}</span>
                     </button>
                   );
                 })}

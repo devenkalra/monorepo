@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
+from .counts import compute_area_descendant_counts, inventory_summary
 from .models import (
     AssetPhoto, AssetCategory, AssetTag, AssetArea, AssetItem,
 )
@@ -109,6 +110,13 @@ class AssetAreaViewSet(AssetAuthMixin, AssetPhotoActionsMixin, viewsets.ModelVie
     queryset = AssetArea.objects.select_related('category', 'parent_area').prefetch_related('tags', 'photos')
     serializer_class = AssetAreaSerializer
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        # One tree walk per request; shared across all serialized areas.
+        if 'area_counts' not in ctx:
+            ctx['area_counts'] = compute_area_descendant_counts()
+        return ctx
+
     def get_queryset(self):
         qs = super().get_queryset()
         parent = self.request.query_params.get('parent_area')
@@ -121,6 +129,16 @@ class AssetAreaViewSet(AssetAuthMixin, AssetPhotoActionsMixin, viewsets.ModelVie
         if q:
             qs = qs.filter(name__icontains=q)
         return qs
+
+    @action(detail=False, methods=['get'])
+    def summary(self, request):
+        """Inventory-wide totals for the root location display."""
+        data = inventory_summary()
+        return Response({
+            'container_count': data['container_count'],
+            'item_count': data['item_count'],
+            'unlocated_item_count': data['unlocated_item_count'],
+        })
 
 
 class AssetItemViewSet(AssetAuthMixin, AssetPhotoActionsMixin, viewsets.ModelViewSet):

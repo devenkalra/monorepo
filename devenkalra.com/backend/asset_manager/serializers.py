@@ -61,6 +61,8 @@ class AssetAreaSerializer(AssetBaseFieldsMixin):
         required=False,
         write_only=True,
     )
+    descendant_container_count = serializers.SerializerMethodField()
+    descendant_item_count = serializers.SerializerMethodField()
 
     class Meta:
         model = AssetArea
@@ -71,9 +73,27 @@ class AssetAreaSerializer(AssetBaseFieldsMixin):
             'locator_code', 'locator_type',
             'parent_area', 'parent_area_id',
             'photos', 'full_path',
+            'descendant_container_count', 'descendant_item_count',
             'created_at', 'modified_at',
         ]
-        read_only_fields = ['category', 'tags', 'parent_area']
+        read_only_fields = [
+            'category', 'tags', 'parent_area',
+            'descendant_container_count', 'descendant_item_count',
+        ]
+
+    def _area_count(self, obj, key):
+        counts = self.context.get('area_counts')
+        if counts is None:
+            from .counts import compute_area_descendant_counts
+            counts = compute_area_descendant_counts()
+            self.context['area_counts'] = counts
+        return counts.get(obj.id, {}).get(key, 0)
+
+    def get_descendant_container_count(self, obj):
+        return self._area_count(obj, 'containers')
+
+    def get_descendant_item_count(self, obj):
+        return self._area_count(obj, 'items')
 
 
 class AssetItemSerializer(AssetBaseFieldsMixin):

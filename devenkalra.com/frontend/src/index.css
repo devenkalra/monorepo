@@ -854,6 +854,10 @@ p {
 
 
 @media (max-width: 768px) {
+  :root {
+    --site-header-offset: 3.75rem;
+  }
+
   .main-content {
     padding: 1.5rem 1.1rem 3rem;
   }
@@ -2169,30 +2173,73 @@ a.accent-link:focus-visible {
   color: var(--text-strong);
 }
 
+.asset-location-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.35rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.asset-location-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.65rem;
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.asset-up-btn {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+  color: var(--text-strong);
+  padding: 0.3rem 0.65rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.asset-up-btn:hover {
+  background: color-mix(in srgb, var(--surface-color) 88%, var(--text-muted));
+}
+
 .asset-breadcrumbs {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.25rem 0.35rem;
-  margin-bottom: 0.75rem;
+  margin-bottom: 0;
   font-size: 0.95rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.asset-location-counts {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .asset-breadcrumbs button {
   border: none;
   background: none;
-  padding: 0;
+  padding: 0.15rem 0;
   color: var(--text-muted);
   cursor: pointer;
   font: inherit;
 }
 
-.asset-breadcrumbs button:hover {
+.asset-breadcrumbs button:hover:not(:disabled) {
   color: var(--text-strong);
   text-decoration: underline;
 }
 
-.asset-breadcrumbs button.current {
+.asset-breadcrumbs button.current,
+.asset-breadcrumbs button:disabled {
   color: var(--text-strong);
   cursor: default;
   text-decoration: none;
@@ -2305,6 +2352,12 @@ a.accent-link:focus-visible {
   letter-spacing: 0.03em;
 }
 
+.asset-row-counts {
+  text-transform: none;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 .asset-glyph {
   display: inline-flex;
   align-items: center;
@@ -2386,6 +2439,14 @@ a.accent-link:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.asset-tile-counts {
+  max-width: 6.5rem;
+  font-size: 0.68rem;
+  line-height: 1.2;
+  color: var(--text-muted);
+  text-align: center;
 }
 
 .asset-detail-backdrop {
@@ -2471,17 +2532,17 @@ a.accent-link:focus-visible {
 
 .asset-detail-cover {
   position: relative;
+  z-index: 0;
   width: 100%;
-  flex: 1 1 14rem;
-  min-height: 12rem;
-  max-height: 22rem;
+  flex: 0 0 auto;
+  aspect-ratio: 4 / 3;
+  max-height: min(22rem, 42vh);
   border: 1px solid var(--border-color);
   background: color-mix(in srgb, var(--surface-color) 94%, var(--text-muted));
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  isolation: isolate;
 }
 
 .asset-detail-cover img {
@@ -2553,16 +2614,16 @@ a.accent-link:focus-visible {
   margin: 0;
   white-space: pre-wrap;
   line-height: 1.45;
-  position: relative;
-  z-index: 0;
 }
 
 .asset-detail-location {
   display: grid;
   gap: 0.25rem;
   position: relative;
-  z-index: 0;
+  z-index: 1;
   flex: 0 0 auto;
+  background: var(--surface-color);
+  padding-bottom: 0.15rem;
 }
 
 .asset-detail-meta {
@@ -2693,6 +2754,39 @@ a.accent-link:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .asset-location-bar {
+    position: sticky;
+    top: var(--site-header-offset);
+    z-index: 40;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+    margin: 0 -1.1rem 0.75rem;
+    padding: 0.55rem 1.1rem;
+    background: color-mix(in srgb, var(--bg-color) 92%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .asset-location-nav {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .asset-breadcrumbs {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .asset-breadcrumbs button {
+    padding: 0.25rem 0;
+    min-height: 2rem;
+  }
+
+  .asset-location-counts {
+    white-space: normal;
+  }
+
   .asset-detail-backdrop {
     padding: 0;
     align-items: stretch;
@@ -2708,7 +2802,7 @@ a.accent-link:focus-visible {
   }
 
   .asset-detail-cover {
-    aspect-ratio: 4 / 3;
+    max-height: min(16rem, 36vh);
   }
 }
 
