@@ -107,6 +107,24 @@ function formatCounts({ containers, items }, { compact = false } = {}) {
   return `${containers} ${cLabel} · ${items} ${iLabel}`;
 }
 
+function CountsBadge({ containers = 0, items = 0, className = '' }) {
+  const label = formatCounts({ containers, items });
+  return (
+    <p className={`asset-location-counts ${className}`.trim()} aria-live="polite" title={label}>
+      <span className="asset-count-chip">
+        <ContainerIcon />
+        <span>{containers}</span>
+        <span className="visually-hidden"> {containers === 1 ? 'container' : 'containers'}</span>
+      </span>
+      <span className="asset-count-chip">
+        <FileIcon />
+        <span>{items}</span>
+        <span className="visually-hidden"> {items === 1 ? 'item' : 'items'}</span>
+      </span>
+    </p>
+  );
+}
+
 const ROOT = { type: 'root' };
 
 function ContainerIcon() {
@@ -1015,18 +1033,6 @@ export function AssetManagerApp() {
     setLocation({ type: 'area', id: folder.data.id });
   };
 
-  const goUp = () => {
-    if (location.type !== 'area') return;
-    const area = allAreas.find((a) => a.id === location.id);
-    setQ('');
-    setSelected(null);
-    if (area?.parent_area) {
-      setLocation({ type: 'area', id: area.parent_area });
-    } else {
-      setLocation(ROOT);
-    }
-  };
-
   const createContainer = async (name) => {
     await api('areas/', {
       token,
@@ -1151,52 +1157,8 @@ export function AssetManagerApp() {
 
   return (
     <div className="asset-app">
-      <div className="asset-toolbar asset-toolbar--top">
-        <div className="asset-view-toggle" role="group" aria-label="View mode">
-          <button
-            type="button"
-            className={viewMode === 'list' ? 'active' : ''}
-            onClick={() => setViewMode('list')}
-          >
-            List
-          </button>
-          <button
-            type="button"
-            className={viewMode === 'icons' ? 'active' : ''}
-            onClick={() => setViewMode('icons')}
-          >
-            Icons
-          </button>
-        </div>
-        <form
-          className="asset-search"
-          onSubmit={(e) => {
-            e.preventDefault();
-            loadContents();
-          }}
-        >
-          <input
-            className="form-input"
-            placeholder="Search items here…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <button type="submit" className="asset-btn-muted">Search</button>
-        </form>
-      </div>
-
-      <div className="asset-location-bar">
-        <div className="asset-location-nav">
-          {location.type !== 'root' && (
-            <button
-              type="button"
-              className="asset-up-btn"
-              onClick={goUp}
-              aria-label="Go up one container"
-            >
-              ↑ Up
-            </button>
-          )}
+      <header className="asset-chrome">
+        <div className="asset-chrome-location">
           <nav className="asset-breadcrumbs" aria-label="Location">
             {crumbs.map((c, i) => {
               const isCurrent = i === crumbs.length - 1;
@@ -1220,42 +1182,76 @@ export function AssetManagerApp() {
               );
             })}
           </nav>
+          {locationCounts && <CountsBadge {...locationCounts} />}
         </div>
-        {locationCounts && (
-          <p className="asset-location-counts" aria-live="polite">
-            {formatCounts(locationCounts)}
-          </p>
-        )}
-      </div>
 
-      <div className="asset-actions">
-        <button
-          type="button"
-          className="editorial-button asset-btn"
-          onClick={() => setCreateModal('container')}
-        >
-          New container
-        </button>
-        <button
-          type="button"
-          className="editorial-button asset-btn"
-          onClick={() => setCreateModal('item')}
-        >
-          New item
-        </button>
-        {currentArea && (
+        <div className="asset-chrome-actions">
           <button
             type="button"
-            className="asset-btn-muted"
-            onClick={() => {
-              setSelected({ kind: 'area', data: currentArea });
-              setEditModal(true);
+            className="editorial-button asset-btn"
+            onClick={() => setCreateModal('container')}
+          >
+            <span className="asset-btn-label-full">New container</span>
+            <span className="asset-btn-label-short">+ Container</span>
+          </button>
+          <button
+            type="button"
+            className="editorial-button asset-btn"
+            onClick={() => setCreateModal('item')}
+          >
+            <span className="asset-btn-label-full">New item</span>
+            <span className="asset-btn-label-short">+ Item</span>
+          </button>
+          {currentArea && (
+            <button
+              type="button"
+              className="asset-btn-muted"
+              onClick={() => {
+                setSelected({ kind: 'area', data: currentArea });
+                setEditModal(true);
+              }}
+            >
+              <span className="asset-btn-label-full">Edit container</span>
+              <span className="asset-btn-label-short">Edit</span>
+            </button>
+          )}
+        </div>
+
+        <div className="asset-chrome-tools">
+          <div className="asset-view-toggle" role="group" aria-label="View mode">
+            <button
+              type="button"
+              className={viewMode === 'list' ? 'active' : ''}
+              onClick={() => setViewMode('list')}
+            >
+              List
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'icons' ? 'active' : ''}
+              onClick={() => setViewMode('icons')}
+            >
+              Icons
+            </button>
+          </div>
+          <form
+            className="asset-search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              loadContents();
             }}
           >
-            Edit container
-          </button>
-        )}
-      </div>
+            <input
+              className="form-input"
+              placeholder="Search items…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              aria-label="Search items"
+            />
+            <button type="submit" className="asset-btn-muted">Search</button>
+          </form>
+        </div>
+      </header>
 
       {status && <div className="asset-status">{status}</div>}
       {error && <div className="error-message">{error}</div>}
