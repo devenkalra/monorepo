@@ -1,5 +1,5 @@
 import { getApiBaseUrl } from '../utils/apiUrl';
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
 
 const AuthContext = createContext(null);
@@ -9,109 +9,20 @@ export const AuthProvider = ({ children }) => {
   const [accessToken, setAccessToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const clearTokens = () => {
+  const clearTokens = useCallback(() => {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
     localStorage.removeItem('current_user');
     setAccessToken(null);
     setUser(null);
-  };
-
-  const loadAuth = () => {
-    const token = localStorage.getItem('access_token');
-    const userStr = localStorage.getItem('current_user');
-    if (token && userStr) {
-      try {
-        const decoded = jwtDecode(token);
-        if (decoded.exp * 1000 > Date.now()) {
-          setAccessToken(token);
-          setUser(JSON.parse(userStr));
-        } else {
-          refreshToken().then((newToken) => {
-            if (newToken && userStr) {
-              setAccessToken(newToken);
-              setUser(JSON.parse(userStr));
-            }
-          });
-        }
-      } catch (error) {
-        console.error('Invalid token:', error);
-        clearTokens();
-      }
-      setLoading(false);
-      return;
-    }
-    fetch(`${getApiBaseUrl()}/api/auth/user/`, { credentials: 'include' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((userData) => { if (userData) setUser(userData); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    loadAuth();
-    const onTokenReceived = () => {
-      const token = localStorage.getItem('access_token');
-      const userStr = localStorage.getItem('current_user');
-      if (token && userStr) {
-        try {
-          const decoded = jwtDecode(token);
-          if (decoded.exp * 1000 > Date.now()) {
-            setAccessToken(token);
-            setUser(JSON.parse(userStr));
-          }
-        } catch (_) {}
-      }
-    };
-    window.addEventListener('bldrdojo-auth-token-received', onTokenReceived);
-    return () => window.removeEventListener('bldrdojo-auth-token-received', onTokenReceived);
   }, []);
 
-  const logout = async () => {
-    if (accessToken) {
-      try {
-        await fetch(`${getApiBaseUrl()}/api/auth/logout/`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        });
-      } catch (error) { console.error('Logout error:', error); }
-    }
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    localStorage.removeItem('current_user');
-    setAccessToken(null);
-    setUser(null);
-    if (typeof window !== 'undefined') {
-      const next = encodeURIComponent(window.location.pathname || '/gmail-app/');
-      window.location.href = window.location.origin + '/login/?next=' + next;
-    }
-  };
-
-  const updateUser = async (updates) => {
-    const token = accessToken || localStorage.getItem('access_token');
-    const headers = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (!token && !user) throw new Error('Not authenticated');
-    const response = await fetch(`${getApiBaseUrl()}/api/auth/user/`, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify(updates),
-      credentials: 'include',
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.displayname?.[0] || error.username?.[0] || error.detail || 'Update failed');
-    }
-    const data = await response.json();
-    const updatedUser = { ...user, ...data };
-    localStorage.setItem('current_user', JSON.stringify(updatedUser));
-    setUser(updatedUser);
-    return updatedUser;
-  };
-
-  const refreshToken = async () => {
+  const refreshToken = useCallback(async () => {
     const refresh = localStorage.getItem('refresh_token');
-    if (!refresh) { clearTokens(); return null; }
+    if (!refresh) {
+      clearTokens();
+      return null;
+    }
     try {
       const response = await fetch(`${getApiBaseUrl()}/api/auth/token/refresh/`, {
         method: 'POST',
@@ -128,10 +39,127 @@ export const AuthProvider = ({ children }) => {
       clearTokens();
       return null;
     }
+  }, [clearTokens]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAuth = async () => {
+      const token = localStorage.getItem('access_token');
+      const userStr = localStorage.getItem('current_user');
+
+      if (token && userStr) {
+        try {
+          const decoded = jwtDecode(token);
+          if (decoded.exp * 1000 > Date.now()) {
+            if (!cancelled) {
+              setAccessToken(token);
+              setUser(JSON.parse(userStr));
+            }
+          } else {
+            // Keep loading=true until refresh settles so we don't bounce to /login.
+            const newToken = await refreshToken();
+            if (!cancelled && newToken) {
+              setAccessToken(newToken);
+              setUser(JSON.parse(userStr));
+            }
+          }
+        } catch (error) {
+          console.error('Invalid token:', error);
+          if (!cancelled) clearTokens();
+        }
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
+      try {
+        const r = await fetch(`${getApiBaseUrl()}/api/auth/user/`, { credentials: 'include' });
+        const userData = r.ok ? await r.json() : null;
+        if (!cancelled && userData) setUser(userData);
+      } catch (_) {
+        /* ignore */
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    loadAuth();
+
+    const onTokenReceived = () => {
+      const token = localStorage.getItem('access_token');
+      const userStr = localStorage.getItem('current_user');
+      if (!token || !userStr) return;
+      try {
+        const decoded = jwtDecode(token);
+        if (decoded.exp * 1000 > Date.now()) {
+          setAccessToken(token);
+          setUser(JSON.parse(userStr));
+        }
+      } catch (_) {
+        /* ignore */
+      }
+    };
+    window.addEventListener('bldrdojo-auth-token-received', onTokenReceived);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('bldrdojo-auth-token-received', onTokenReceived);
+    };
+  }, [clearTokens, refreshToken]);
+
+  const logout = async () => {
+    if (accessToken) {
+      try {
+        await fetch(`${getApiBaseUrl()}/api/auth/logout/`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+      } catch (error) {
+        console.error('Logout error:', error);
+      }
+    }
+    clearTokens();
+    if (typeof window !== 'undefined') {
+      const next = encodeURIComponent(window.location.pathname || '/gmail-app/');
+      window.location.href = `${window.location.origin}/login/?next=${next}`;
+    }
+  };
+
+  const updateUser = async (updates) => {
+    const token = accessToken || localStorage.getItem('access_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (!token && !user) throw new Error('Not authenticated');
+    const response = await fetch(`${getApiBaseUrl()}/api/auth/user/`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(updates),
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(
+        error.displayname?.[0] || error.username?.[0] || error.detail || 'Update failed'
+      );
+    }
+    const data = await response.json();
+    const updatedUser = { ...user, ...data };
+    localStorage.setItem('current_user', JSON.stringify(updatedUser));
+    setUser(updatedUser);
+    return updatedUser;
   };
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, loading, logout, updateUser, refreshToken, isAuthenticated: !!user }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        accessToken,
+        loading,
+        logout,
+        updateUser,
+        refreshToken,
+        isAuthenticated: !!user,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

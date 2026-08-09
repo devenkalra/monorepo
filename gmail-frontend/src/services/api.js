@@ -12,8 +12,8 @@ const api = {
     }
     const res = await fetch(fullUrl, { ...options, headers, credentials: 'include' });
     if (res.status === 401) {
-      const next = encodeURIComponent(window.location.pathname || '/gmail-app/');
-      window.location.href = `${window.location.origin}/login/?next=${next}`;
+      // Let the caller surface the error; AuthContext/GmailApp own login redirects.
+      // Hard-navigating here races token refresh and causes login loops.
       throw new Error('Unauthorized');
     }
     return res;

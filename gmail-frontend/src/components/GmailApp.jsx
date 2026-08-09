@@ -69,6 +69,12 @@ export default function GmailApp() {
   }, [])
 
   useEffect(() => {
+    if (loading || isAuthenticated) return
+    const next = encodeURIComponent('/gmail-app/')
+    window.location.replace(`${window.location.origin}/login/?next=${next}`)
+  }, [loading, isAuthenticated])
+
+  useEffect(() => {
     if (!isAuthenticated) return
     loadStatus()
       .then(() => loadPrompts())
@@ -378,19 +384,10 @@ export default function GmailApp() {
     setAnchorIndex(idx)
   }
 
-  if (loading) {
+  if (loading || !isAuthenticated) {
     return (
       <div className="flex h-full items-center justify-center text-stone-500">
-        Loading…
-      </div>
-    )
-  }
-  if (!isAuthenticated) {
-    const next = encodeURIComponent('/gmail-app/')
-    window.location.href = `${window.location.origin}/login/?next=${next}`
-    return (
-      <div className="flex h-full items-center justify-center text-stone-500">
-        Redirecting to login…
+        {loading ? 'Loading…' : 'Redirecting to login…'}
       </div>
     )
   }
