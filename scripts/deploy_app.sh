@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Targeted production deployment for monorepo apps.
 #
-# This script updates only selected app paths from origin/<branch>
-# and recreates only the corresponding Docker services.
+# This script fetches origin/<branch>, fast-forwards HEAD when the selected
+# app has remote changes, and recreates only the corresponding Docker services.
+#
+# (Older versions used `git restore --worktree` without moving HEAD, which left
+# the restored files looking "modified" and forced a stash before every deploy.)
 #
 # Examples:
 #   ./scripts/deploy_app.sh --app bldrdojo
@@ -124,6 +127,7 @@ data-backend/cad
 data-backend/food
 data-backend/wa_assistant
 data-backend/mail_archive
+data-backend/gmail_assistant
 data-backend/static
 data-backend/requirements.txt
 data-backend/Dockerfile
@@ -133,6 +137,7 @@ frontend
 people-frontend
 cad-frontend
 food-frontend
+gmail-frontend
 scripts
 EOF
       ;;
@@ -234,8 +239,17 @@ deploy_one_app() {
     exit 1
   fi
 
-  print_step "[$app] Updating only selected paths from origin/$BRANCH"
-  run_cmd git restore --source "origin/$BRANCH" --worktree -- "${paths[@]}"
+  # Advance HEAD with a fast-forward merge. Using only
+  # `git restore --source origin/<branch> --worktree` leaves HEAD behind origin,
+  # so the restored files show as "modified" forever and force a stash before
+  # the next deploy. FF-merge keeps the tree clean while we still rebuild only
+  # this app's services below.
+  print_step "[$app] Fast-forwarding HEAD to origin/$BRANCH (keeps git status clean)"
+  if ! run_cmd git merge --ff-only "origin/$BRANCH"; then
+    print_err "[$app] Could not fast-forward to origin/$BRANCH."
+    print_info "Resolve/commit/stash unrelated local changes, then retry. Avoid stashing the restored app files — that undoes the deploy checkout."
+    exit 1
+  fi
 
   print_step "[$app] Rebuilding and recreating services: $services"
   run_shell "docker compose -p \"$PROJECT\" -f \"$COMPOSE_FILE\" up -d --build --force-recreate --no-deps $services"
