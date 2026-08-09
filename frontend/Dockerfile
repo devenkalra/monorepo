@@ -23,9 +23,15 @@ RUN cd food-frontend && npm ci
 COPY food-frontend/ ./food-frontend/
 RUN cd food-frontend && npm run build
 
-# Combine outputs: people at /people-app/, cad at /cad-app/, food at /food-app/
+# Build gmail-frontend
+COPY gmail-frontend/package*.json ./gmail-frontend/
+RUN cd gmail-frontend && npm ci
+COPY gmail-frontend/ ./gmail-frontend/
+RUN cd gmail-frontend && npm run build
+
+# Combine outputs: people/cad/food/gmail apps
 # Root / and /login/ are proxied to Django for auth
-RUN mkdir -p /out/people-app /out/cad-app /out/food-app && \
+RUN mkdir -p /out/people-app /out/cad-app /out/food-app /out/gmail-app && \
     cp people-frontend/dist/index.html /out/people-app/ && \
     cp -r people-frontend/dist/assets /out/people-app/ 2>/dev/null || true && \
     cp people-frontend/dist/favicon.svg /out/people-app/ 2>/dev/null || true && \
@@ -34,7 +40,10 @@ RUN mkdir -p /out/people-app /out/cad-app /out/food-app && \
     cp cad-frontend/dist/favicon.svg /out/cad-app/ 2>/dev/null || true && \
     cp food-frontend/dist/index.html /out/food-app/ && \
     cp -r food-frontend/dist/assets /out/food-app/ 2>/dev/null || true && \
-    cp food-frontend/dist/favicon.svg /out/food-app/ 2>/dev/null || true
+    cp food-frontend/dist/favicon.svg /out/food-app/ 2>/dev/null || true && \
+    cp gmail-frontend/dist/index.html /out/gmail-app/ && \
+    cp -r gmail-frontend/dist/assets /out/gmail-app/ 2>/dev/null || true && \
+    cp gmail-frontend/dist/favicon.svg /out/gmail-app/ 2>/dev/null || true
 
 # Final nginx image
 FROM nginx:alpine

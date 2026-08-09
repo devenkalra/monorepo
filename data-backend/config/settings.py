@@ -98,6 +98,25 @@ ENABLE_WA_ASSISTANT = os.environ.get('ENABLE_WA_ASSISTANT', 'False') == 'True'
 if ENABLE_WA_ASSISTANT:
     INSTALLED_APPS.append('wa_assistant.apps.WaAssistantConfig')
 
+ENABLE_GMAIL_ASSISTANT = os.environ.get('ENABLE_GMAIL_ASSISTANT', 'False') == 'True'
+if ENABLE_GMAIL_ASSISTANT:
+    INSTALLED_APPS.append('gmail_assistant.apps.GmailAssistantConfig')
+
+# Shared Google OAuth client (login + Gmail API). Gmail redirect is separate.
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+GMAIL_OAUTH_REDIRECT_URI = os.environ.get(
+    'GMAIL_OAUTH_REDIRECT_URI',
+    'http://localhost:8000/api/gmail/oauth/callback/',
+)
+# Where OAuth callback should send the browser (Vite :5177 in local; empty = same-origin /gmail-app/)
+GMAIL_UI_ORIGIN = os.environ.get('GMAIL_UI_ORIGIN', '').rstrip('/')
+LOCALAI_URL = os.environ.get('LOCALAI_URL', '')
+LOCALAI_API_KEY = os.environ.get('LOCALAI_API_KEY', '')
+GMAIL_LOCALAI_MODEL = os.environ.get('GMAIL_LOCALAI_MODEL', 'qwen3-32b')
+GMAIL_OPENAI_MODEL = os.environ.get('GMAIL_OPENAI_MODEL', 'gpt-4o-mini')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+
 SITE_ID = 1
 
 MIDDLEWARE = [
@@ -237,6 +256,7 @@ else:
         "http://localhost:5174",
         "http://localhost:5175",
         "http://localhost:5176",
+        "http://localhost:5177",
         "http://127.0.0.1",
         "http://127.0.0.1:80",
         "http://127.0.0.1:3000",
@@ -244,6 +264,7 @@ else:
         "http://127.0.0.1:5174",
         "http://127.0.0.1:5175",
         "http://127.0.0.1:5176",
+        "http://127.0.0.1:5177",
     ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [

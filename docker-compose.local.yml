@@ -81,7 +81,7 @@ services:
       - NEO4J_USER=neo4j
       - NEO4J_PASSWORD=localneo4jpass
       - VECTOR_SERVICE_URL=http://vector-service:5000
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175,http://127.0.0.1:5176,http://127.0.0.1:5177
       - GOOGLE_OAUTH_CALLBACK_URL=http://localhost/people-app/auth/google/callback
     depends_on:
       db:
@@ -112,6 +112,8 @@ services:
       context: ./data-backend
       dockerfile: Dockerfile
     container_name: bldrdojo-local-celery-worker
+    env_file:
+      - data-backend/.env
     restart: unless-stopped
     volumes:
       - ./data-backend:/app
@@ -127,7 +129,9 @@ services:
       - POSTGRES_PASSWORD=dbpassword
       - POSTGRES_HOST=db
       - POSTGRES_PORT=5432
+      # Must override env_file REDIS_PASSWORD (prod value) for local redis
       - REDIS_URL=redis://:localredispass@redis:6379/0
+      - REDIS_PASSWORD=localredispass
       - MEILISEARCH_URL=http://meilisearch:7700
       - MEILI_MASTER_KEY=localmeilikey
       - NEO4J_URI=bolt://neo4j:7687

@@ -5,9 +5,11 @@
     "dev:people": "cd people-frontend && npm run dev",
     "dev:cad": "cd cad-frontend && npm run dev",
     "dev:food": "cd food-frontend && npm run dev",
+    "dev:gmail": "cd gmail-frontend && npm run dev",
     "build:people": "cd people-frontend && npm run build",
     "build:cad": "cd cad-frontend && npm run build",
     "build:food": "cd food-frontend && npm run build",
-    "build:all": "npm run build:people && npm run build:cad && npm run build:food"
+    "build:gmail": "cd gmail-frontend && npm run build",
+    "build:all": "npm run build:people && npm run build:cad && npm run build:food && npm run build:gmail"
   }
 }

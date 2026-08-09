@@ -61,3 +61,6 @@ if getattr(settings, 'ENABLE_MAIL_ARCHIVE', False):
 
 if getattr(settings, 'ENABLE_WA_ASSISTANT', False):
     urlpatterns.insert(-1, path('api/wa-assistant/', include('wa_assistant.urls')))
+
+if getattr(settings, 'ENABLE_GMAIL_ASSISTANT', False):
+    urlpatterns.insert(-1, path('api/gmail/', include('gmail_assistant.urls')))
