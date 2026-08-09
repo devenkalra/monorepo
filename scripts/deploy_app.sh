@@ -51,6 +51,9 @@ Options:
   --with-edge          Recreate edge-nginx (devenkalra only)
   --edge-compose <f>   Edge compose file (default: docker-compose.edge.yml)
   --edge-conf <path>   Edge nginx conf passed via EDGE_NGINX_CONF
+  --discard-local      Discard local changes in app paths that would be
+                       overwritten by this deploy (default: on for those files)
+  --keep-local         Refuse to deploy if app-path files have local changes
   --dry-run, -n        Show actions, do not change files/containers
   --help, -h           Show help
 
@@ -138,7 +141,7 @@ people-frontend
 cad-frontend
 food-frontend
 gmail-frontend
-scripts
+scripts/deploy_app.sh
 EOF
       ;;
     devenkalra)
@@ -201,6 +204,93 @@ paths_have_local_changes() {
   return 1
 }
 
+list_dirty_paths() {
+  # Unique dirty paths (worktree + index) under the given pathspecs.
+  {
+    git diff --name-only -- "$@" || true
+    git diff --cached --name-only -- "$@" || true
+  } | awk 'NF && !seen[$0]++'
+}
+
+force_reset_paths_to_head() {
+  local f
+  for f in "$@"; do
+    [[ -n "$f" ]] || continue
+    git update-index --no-skip-worktree -- "$f" 2>/dev/null || true
+    git update-index --no-assume-unchanged -- "$f" 2>/dev/null || true
+    if git cat-file -e "HEAD:$f" 2>/dev/null; then
+      # Rewrite via object DB — survives sticky worktree / filter oddities better
+      # than restore alone on some hosts.
+      git cat-file -p "HEAD:$f" >"$f"
+      git add -- "$f"
+      git reset -q HEAD -- "$f"
+    else
+      rm -f -- "$f"
+      git rm -f --ignore-unmatch -- "$f" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+discard_overwritten_local_changes() {
+  local app="$1"
+  shift
+  local -a paths=("$@")
+  local diff_out="$DIFF_OUT_FOR_DISCARD"
+  local -a dirty=()
+  local -a to_reset=()
+  local f
+
+  while IFS= read -r f; do
+    [[ -n "$f" ]] && dirty+=("$f")
+  done < <(list_dirty_paths "${paths[@]}")
+
+  if [[ "${#dirty[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  for f in "${dirty[@]}"; do
+    if grep -Fxq -- "$f" <<<"$diff_out"; then
+      to_reset+=("$f")
+    fi
+  done
+
+  local -a leftover=()
+  for f in "${dirty[@]}"; do
+    if ! grep -Fxq -- "$f" <<<"$diff_out"; then
+      leftover+=("$f")
+    fi
+  done
+
+  if [[ "${#to_reset[@]}" -gt 0 ]]; then
+    if [[ "$DISCARD_LOCAL" == true ]]; then
+      print_info "[$app] Discarding local changes that would be overwritten by deploy:"
+      printf '  - %s\n' "${to_reset[@]}"
+      if [[ "$DRY_RUN" == true ]]; then
+        echo "[dry-run] reset ${#to_reset[@]} path(s) to HEAD"
+      else
+        force_reset_paths_to_head "${to_reset[@]}"
+        if paths_have_local_changes "${to_reset[@]}"; then
+          print_info "[$app] Hard reset failed; stashing overwrite candidates instead"
+          git stash push -m "deploy_app auto-discard $(date +%Y%m%d%H%M%S)" -- "${to_reset[@]}" || true
+        fi
+      fi
+    else
+      print_err "[$app] Local changes exist in files this deploy would overwrite. Re-run with --discard-local, or stash/discard them."
+      printf '  - %s\n' "${to_reset[@]}"
+      git status --short -- "${to_reset[@]}" || true
+      exit 1
+    fi
+  fi
+
+  if [[ "${#leftover[@]}" -gt 0 ]]; then
+    print_err "[$app] Local changes exist in targeted paths (not in incoming revision). Commit, stash, or discard them before deploying."
+    printf '  - %s\n' "${leftover[@]}"
+    git status --short -- "${leftover[@]}" || true
+    print_info "Tip: git stash push -u -m pre-deploy -- <paths>   OR   re-run with only overwrite-safe dirties"
+    exit 1
+  fi
+}
+
 deploy_one_app() {
   local app="$1"
   local paths=()
@@ -233,9 +323,13 @@ deploy_one_app() {
   print_info "[$app] Files to update:"
   echo "$diff_out" | sed 's/^/  - /'
 
+  DIFF_OUT_FOR_DISCARD="$diff_out"
+  discard_overwritten_local_changes "$app" "${paths[@]}"
+
   if paths_have_local_changes "${paths[@]}"; then
-    print_err "[$app] Local changes exist in targeted paths. Commit, stash, or discard them before deploying this app."
+    print_err "[$app] Local changes still exist in targeted paths after cleanup."
     git status --short -- "${paths[@]}" || true
+    print_info "Nuclear option: git stash push -u -m pre-deploy && re-run deploy"
     exit 1
   fi
 
@@ -281,6 +375,8 @@ EDGE_COMPOSE="docker-compose.edge.yml"
 EDGE_CONF="./scripts/nginx/multi-domain-edge-example.conf"
 DRY_RUN=false
 WITH_EDGE=false
+DISCARD_LOCAL=true
+DIFF_OUT_FOR_DISCARD=""
 
 APPS=()
 
@@ -324,6 +420,14 @@ while [[ $# -gt 0 ]]; do
       [[ $# -lt 2 ]] && { print_err "--edge-conf requires a value"; usage; exit 1; }
       EDGE_CONF="$2"
       shift 2
+      ;;
+    --discard-local)
+      DISCARD_LOCAL=true
+      shift
+      ;;
+    --keep-local)
+      DISCARD_LOCAL=false
+      shift
       ;;
     --dry-run|-n)
       DRY_RUN=true
