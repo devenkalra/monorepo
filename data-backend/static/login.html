@@ -1016,7 +1016,15 @@
     function getRedirectUrl() {
         const params = new URLSearchParams(window.location.search);
         const next = params.get('next');
-        if (next && (next.startsWith('/people-app') || next.startsWith('/cad-app') || next.startsWith('/food-app'))) {
+        // Only allow same-origin app paths (prevent open redirects).
+        if (
+            next &&
+            (next.startsWith('/people-app') ||
+                next.startsWith('/cad-app') ||
+                next.startsWith('/food-app') ||
+                next.startsWith('/email-app') ||
+                next.startsWith('/gmail-app'))
+        ) {
             return next.startsWith('/') ? next : '/' + next;
         }
         return '/people-app/';
