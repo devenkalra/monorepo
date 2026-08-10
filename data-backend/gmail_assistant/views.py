@@ -26,7 +26,12 @@ from .serializers import (
     SummarizeScheduleSerializer,
     UserPreferenceSerializer,
 )
-from .services import get_active_account, get_or_create_prefs, set_active_account
+from .services import (
+    get_active_account,
+    get_or_create_prefs,
+    scrub_zero_knowledge_data,
+    set_active_account,
+)
 from .tasks import process_emails_task, run_summarize_schedule, summarize_emails_task
 
 logger = logging.getLogger(__name__)
@@ -67,10 +72,41 @@ def preferences_view(request):
     prefs = get_or_create_prefs(request.user)
     if request.method == 'GET':
         return Response(UserPreferenceSerializer(prefs).data)
+
+    enabling_zk = (
+        'zero_knowledge' in request.data
+        and bool(request.data.get('zero_knowledge'))
+        and not prefs.zero_knowledge
+    )
+    if enabling_zk and not request.data.get('confirm_scrub'):
+        return Response(
+            {
+                'detail': (
+                    'Turning on zero-knowledge permanently deletes stored summaries '
+                    'and process results for your account. Retry with confirm_scrub=true.'
+                ),
+                'requires_confirm_scrub': True,
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
     ser = UserPreferenceSerializer(prefs, data=request.data, partial=True)
     ser.is_valid(raise_exception=True)
     ser.save()
-    return Response(ser.data)
+
+    scrub_stats = None
+    if enabling_zk:
+        scrub_stats = scrub_zero_knowledge_data(request.user)
+        logger.info(
+            'ZK enabled for user=%s scrub=%s',
+            request.user.id,
+            scrub_stats,
+        )
+
+    payload = dict(ser.data)
+    if scrub_stats is not None:
+        payload['scrubbed'] = scrub_stats
+    return Response(payload)
 
 
 @api_view(['GET'])
@@ -234,12 +270,11 @@ def search(request):
     for gid in ids:
         meta = gmail_api.fetch_message_metadata(service, gid)
         row = summaries.get(gid)
+        # has_summary means "summary text is available to show".
+        # In ZK that text is browser-local only — never claim true from DB category.
         has_summary = False
-        if row:
-            if prefs.zero_knowledge:
-                has_summary = bool(row.category)
-            else:
-                has_summary = bool((row.brief_summary or '').strip())
+        if row and not prefs.zero_knowledge:
+            has_summary = bool((row.brief_summary or '').strip())
         meta['has_summary'] = has_summary
         if row and not prefs.zero_knowledge:
             meta['brief_summary'] = row.brief_summary
@@ -253,12 +288,14 @@ def search(request):
             meta['brief_summary'] = ''
             meta['key_points'] = []
             meta['details'] = ''
+            meta['has_category'] = bool(row.category)
         else:
             meta['brief_summary'] = ''
             meta['key_points'] = []
             meta['details'] = ''
             meta['category'] = ''
             meta['category_confidence'] = 0
+            meta['has_category'] = False
         emails.append(meta)
 
     emails.sort(key=lambda m: int(m.get('internal_date_ms') or 0), reverse=True)
@@ -336,19 +373,23 @@ def email_detail(request, gmail_id):
     prefs = get_or_create_prefs(request.user)
     row = EmailSummary.objects.filter(account=account, gmail_id=gid).first()
     if row:
-        message['has_summary'] = True
         message['category'] = row.category
         message['category_confidence'] = row.category_confidence
         if prefs.zero_knowledge:
+            # Summary text lives in the browser only.
+            message['has_summary'] = False
+            message['has_category'] = bool(row.category)
             message['brief_summary'] = ''
             message['key_points'] = []
             message['details'] = ''
         else:
+            message['has_summary'] = bool((row.brief_summary or '').strip())
             message['brief_summary'] = row.brief_summary
             message['key_points'] = row.key_points
             message['details'] = row.details
     else:
         message['has_summary'] = False
+        message['has_category'] = False
         message['category'] = ''
         message['category_confidence'] = 0
         message['brief_summary'] = ''

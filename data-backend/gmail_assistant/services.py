@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from django.utils import timezone
 
-from .models import EmailSummary, GmailAccount, UserPreference
+from .models import EmailSummary, GmailAccount, LlmJob, UserPreference
 
 
 def get_or_create_prefs(user) -> UserPreference:
@@ -26,6 +26,23 @@ def set_active_account(user, account: GmailAccount) -> None:
     GmailAccount.objects.filter(user=user, is_active=True).update(is_active=False)
     account.is_active = True
     account.save(update_fields=['is_active', 'updated_at'])
+
+
+def scrub_zero_knowledge_data(user) -> dict[str, int]:
+    """Delete persisted email/LLM content for a user when enabling ZK.
+
+    Removes EmailSummary rows (subjects, snippets, summaries, categories) and
+    clears stored process/summarize job result payloads that may contain email text.
+    Does not touch Gmail, OAuth accounts, saved prompts, or schedules.
+    """
+    summaries_deleted, _ = EmailSummary.objects.filter(user=user).delete()
+    jobs_scrubbed = LlmJob.objects.filter(user=user).update(
+        result='', progress={}, errors=[]
+    )
+    return {
+        'summaries_deleted': int(summaries_deleted),
+        'jobs_scrubbed': int(jobs_scrubbed),
+    }
 
 
 def upsert_summary(

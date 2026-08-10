@@ -56,6 +56,8 @@ def summarize_emails_task(self, job_id: str, user_id: int, force: bool = False):
     done = []
     skipped = []
     errors = []
+    # Full summary payloads for the client (esp. ZK: not persisted, shown this session).
+    summaries_out: dict = {}
 
     try:
         service = gmail_api.build_gmail_service(job.account.refresh_token)
@@ -76,21 +78,14 @@ def summarize_emails_task(self, job_id: str, user_id: int, force: bool = False):
             existing = EmailSummary.objects.filter(
                 account=job.account, gmail_id=gid
             ).first()
+            # Non-ZK: skip when we already have stored summary text.
+            # ZK: never skip — text is not in DB; client needs a fresh payload.
             if (
                 existing
                 and not force
                 and not prefs.zero_knowledge
                 and (existing.brief_summary or '').strip()
             ):
-                skipped.append(gid)
-                continue
-            if (
-                existing
-                and not force
-                and prefs.zero_knowledge
-                and existing.category
-            ):
-                # Session chip is client-side; still skip re-LLM if we have category.
                 skipped.append(gid)
                 continue
 
@@ -104,6 +99,16 @@ def summarize_emails_task(self, job_id: str, user_id: int, force: bool = False):
                 summary=summary,
                 zero_knowledge=prefs.zero_knowledge,
             )
+            summaries_out[gid] = {
+                'brief_summary': summary.get('brief_summary') or '',
+                'key_points': summary.get('key_points') or [],
+                'details': summary.get('details') or '',
+                'category': summary.get('category') or '',
+                'category_confidence': float(
+                    summary.get('category_confidence') or 0
+                ),
+                'has_summary': True,
+            }
             done.append(gid)
         except Exception as exc:  # noqa: BLE001
             logger.exception('summarize failed for %s', gid)
@@ -111,7 +116,12 @@ def summarize_emails_task(self, job_id: str, user_id: int, force: bool = False):
 
     job.status = LlmJob.STATUS_COMPLETED if not errors else LlmJob.STATUS_FAILED
     job.errors = errors
-    job.progress = {'done': done, 'skipped': skipped}
+    # Do not persist summary text on the job in ZK mode.
+    job.progress = {
+        'done': done,
+        'skipped': skipped,
+        **({'summaries': summaries_out} if not prefs.zero_knowledge else {}),
+    }
     job.save(update_fields=['status', 'errors', 'progress', 'updated_at'])
     result = {
         'ok': True,
@@ -119,6 +129,7 @@ def summarize_emails_task(self, job_id: str, user_id: int, force: bool = False):
         'skipped': skipped,
         'errors': errors,
         'zero_knowledge': prefs.zero_knowledge,
+        'summaries': summaries_out,
     }
     update_task_progress(
         task_id,

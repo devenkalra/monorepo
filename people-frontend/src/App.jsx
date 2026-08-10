@@ -8,6 +8,7 @@ import EntityDetail from './components/EntityDetail';
 import UserMenu from './components/UserMenu';
 import ConversationImport from './components/ConversationImport';
 import HelpModal from './components/HelpModal';
+import AppsMenu from './components/AppsMenu';
 import ProfileEdit from './components/ProfileEdit';
 import { useAuth } from './contexts/AuthContext';
 import { useEncryption } from './contexts/EncryptionContext';
@@ -526,9 +527,7 @@ function App() {
             <h1 className="text-xl font-semibold">Entity Browser</h1>
           </div>
           <nav className="flex items-center gap-2 text-sm">
-            <a href="/cad-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">CAD</a>
-            <span className="text-gray-400">|</span>
-            <a href="/food-app/" className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Food</a>
+            <AppsMenu current="people" />
             <span className="text-gray-400">|</span>
             <button onClick={() => setShowHelp(true)} className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Help</button>
           </nav>

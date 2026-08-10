@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import EntityList from './components/EntityList';
 import SearchBar from './components/SearchBar';
 import ThemeToggle from './components/ThemeToggle';
 import EntityDetail from './components/EntityDetail';
 import UserMenu from './components/UserMenu';
+import AppsMenu from './components/AppsMenu';
 import ConversationImport from './components/ConversationImport';
 import api from './services/api';
 
@@ -411,34 +412,7 @@ function App() {
             <h1 className="text-xl font-semibold">Entity Browser</h1>
           </div>
           <nav className="flex items-center gap-2 text-sm">
-            <Link
-              to="/"
-              className={`font-medium ${location.pathname === '/' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
-            >
-              People
-            </Link>
-            <span className="text-gray-400">|</span>
-            <Link
-              to="/cad"
-              className={`font-medium ${location.pathname.startsWith('/cad') ? 'text-blue-600 dark:text-blue-400' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100'}`}
-            >
-              CAD
-            </Link>
-            <span className="text-gray-400">|</span>
-            <a
-              href={window.location.hostname === 'localhost' && window.location.port === '5173' ? 'http://localhost:5176' : '/email-app/'}
-              className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-              target={window.location.hostname === 'localhost' && window.location.port === '5173' ? '_blank' : '_self'}
-            >
-              Email
-            </a>
-            <span className="text-gray-400">|</span>
-            <a
-              href="/food-app/"
-              className="font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-            >
-              Food
-            </a>
+            <AppsMenu current={location.pathname.startsWith('/cad') ? 'cad' : 'people'} />
           </nav>
         </div>
         <div className="flex items-center gap-2">

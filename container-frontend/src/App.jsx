@@ -1,19 +1,22 @@
 import React, { useEffect } from 'react';
-import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
 import Login from './components/Login';
 import Register from './components/Register';
 import GoogleCallback from './components/GoogleCallback';
+import AppsMenu from './components/AppsMenu';
 
 const AUTH_MESSAGE_TYPE = 'bldrdojo-auth-token';
 
 function AppShell({ children }) {
   const location = useLocation();
   const { user, logout, accessToken } = useAuth();
-  const isPeople = location.pathname.startsWith('/people-app');
-  const isCad = location.pathname.startsWith('/cad-app');
-  const isFood = location.pathname.startsWith('/food-app');
+  const current = location.pathname.startsWith('/cad-app')
+    ? 'cad'
+    : location.pathname.startsWith('/food-app')
+      ? 'food'
+      : 'people';
 
   useEffect(() => {
     const handler = (event) => {
@@ -34,36 +37,7 @@ function AppShell({ children }) {
     <div className="min-h-screen flex flex-col bg-gray-100 dark:bg-gray-900">
       <header className="flex items-center justify-between gap-4 px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
         <nav className="flex items-center gap-4">
-          {!isPeople && (
-            <>
-              <Link
-                to="/people-app"
-                className="text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-              >
-                People
-              </Link>
-              {(!isCad || !isFood) && <span className="text-gray-400">|</span>}
-            </>
-          )}
-          {!isCad && (
-            <>
-              <Link
-                to="/cad-app"
-                className="text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-              >
-                CAD
-              </Link>
-              {!isFood && <span className="text-gray-400">|</span>}
-            </>
-          )}
-          {!isFood && (
-            <Link
-              to="/food-app"
-              className="text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-            >
-              Food
-            </Link>
-          )}
+          <AppsMenu current={current} />
         </nav>
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-[180px]">

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import UserMenu from './UserMenu';
+import AppsMenu from './AppsMenu';
 import api from '../services/api';
 import CadViewer from './cad/CadViewer';
 import CadScriptEditor from './cad/CadScriptEditor';
@@ -34,7 +34,6 @@ def build(params):
 `;
 
 export default function CadApp() {
-  const location = useLocation();
   const [models, setModels] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
   const [script, setScript] = useState('');
@@ -274,18 +273,7 @@ export default function CadApp() {
     <div className="min-h-screen bg-[#0d1117] text-[#e6edf3] flex flex-col">
       <header className="flex items-center justify-between gap-3 p-4 border-b border-[#30363d] bg-[#161b22]">
         <nav className="flex items-center gap-4">
-          <Link
-            to="/"
-            className={`text-sm font-medium ${location.pathname === '/' ? 'text-[#58a6ff]' : 'text-[#8b949e] hover:text-[#e6edf3]'}`}
-          >
-            People
-          </Link>
-          <Link
-            to="/cad"
-            className={`text-sm font-medium ${location.pathname.startsWith('/cad') ? 'text-[#58a6ff]' : 'text-[#8b949e] hover:text-[#e6edf3]'}`}
-          >
-            CAD
-          </Link>
+          <AppsMenu current="cad" />
         </nav>
         <div className="flex items-center gap-2">
           <ThemeToggle />

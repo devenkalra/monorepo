@@ -8,6 +8,7 @@ import CadScriptEditor from './cad/CadScriptEditor';
 import CadParamsForm from './cad/CadParamsForm';
 import CadDocsPanel from './cad/CadDocsPanel';
 import HelpModal from './HelpModal';
+import AppsMenu from './AppsMenu';
 
 const API_BASE = '/api/cad';
 
@@ -293,9 +294,7 @@ export default function CadApp() {
     <div className="min-h-screen bg-gray-100 dark:bg-[#0d1117] text-gray-900 dark:text-[#e6edf3] flex flex-col">
       <header className="flex items-center justify-between gap-3 p-4 border-b border-gray-200 dark:border-[#30363d] bg-white dark:bg-[#161b22]">
         <nav className="flex items-center gap-4">
-          <a href="/people-app/" className="text-sm font-medium text-gray-500 dark:text-[#8b949e] hover:text-gray-900 dark:hover:text-[#e6edf3]">People</a>
-          <span className="text-gray-300 dark:text-[#30363d]">|</span>
-          <a href="/food-app/" className="text-sm font-medium text-gray-500 dark:text-[#8b949e] hover:text-gray-900 dark:hover:text-[#e6edf3]">Food</a>
+          <AppsMenu current="cad" />
           <span className="text-gray-300 dark:text-[#30363d]">|</span>
           <button onClick={() => setShowHelp(true)} className="text-sm font-medium text-gray-500 dark:text-[#8b949e] hover:text-gray-900 dark:hover:text-[#e6edf3]">Help</button>
         </nav>
