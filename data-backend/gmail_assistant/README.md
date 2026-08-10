@@ -67,17 +67,22 @@ Production path: `/gmail-app/` (nginx + frontend Dockerfile).
    - Add redirect URI: `https://bldrdojo.com/api/gmail/oauth/callback/`
    - Consent screen scopes: `gmail.modify`, `gmail.labels`
    - If app is in Testing, add production test users
-4. **Rebuild** backend + Celery (new Python deps) and frontend (embeds `/gmail-app/`):
+4. **Rebuild** backend + Celery worker/beat and frontend (embeds `/gmail-app/`):
    ```bash
-   docker compose -p <project> -f <prod-compose> build backend celery-worker frontend
-   docker compose -p <project> -f <prod-compose> up -d --force-recreate backend celery-worker frontend
+   # preferred
+   ./scripts/deploy_app.sh --app bldrdojo
+   # or manually:
+   docker compose -p <project> -f <prod-compose> up -d --build --force-recreate \
+     --no-deps backend celery-worker celery-beat frontend
    ```
 5. **Migrate**:
    ```bash
    docker compose ... exec backend python manage.py migrate gmail_assistant
    ```
-6. Confirm Celery can reach Redis and that `gmail_assistant.tasks.summarize_emails_task` is listed in worker logs.
-7. Smoke test: `https://bldrdojo.com/gmail-app/` → login → Connect Gmail → search → summarize.
+6. Confirm worker lists `gmail_assistant.tasks.summarize_emails_task` and beat is running (`celery-beat` container).
+7. Smoke test: `https://bldrdojo.com/gmail-app/` → login → Connect Gmail → search → summarize → Schedules.
+
+Design overview: [`docs/mailmanager.md`](../../docs/mailmanager.md).
 
 ## API
 

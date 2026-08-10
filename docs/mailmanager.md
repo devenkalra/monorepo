@@ -1,102 +1,169 @@
-# Port: Gmail Inbox Assistant app for bldrdojo.com
+# Gmail Assistant — Design (bldrdojo)
+
+As-built design for the Gmail Inbox Assistant on **bldrdojo.com**.  
+Operator/setup details: `data-backend/gmail_assistant/README.md`.
 
 ## Goal
-Recreate the Gmail parsing / inbox-assistant UX from the local AI gateway project as a first-class **bldrdojo app**:
-- Frontend: new sibling Vite React SPA (or extend `email-frontend` if that’s clearly better)
-- Backend: new Django + DRF module under `data-backend/` (or extend `mail_archive` only if Gmail API OAuth fits cleanly there)
-- Mount like other apps: `/gmail-app/` (or `/email-app/` if extending email) + `/api/gmail/` (or `/api/mail/…`)
-- Auth: use existing bldrdojo JWT (`AuthContext`, Bearer token) — do **not** invent a separate login
-- Follow wiring pattern of **`food` + `food-frontend`** (INSTALLED_APPS, urls, nginx, Dockerfile, package.json scripts)
-- Model UI/API behavior on the reference implementation below — do **not** reinvent product behavior
 
-## Reference implementation (source of truth for behavior)
-Local path (read these files; port behavior, don’t copy FastAPI/SQLite literally):
-- `c:\code\aiserver\ui\gmail.html`
-- `c:\code\aiserver\ui\gmail.js`
-- `c:\code\aiserver\ui\gmail.css`
-- `c:\code\aiserver\workflows\gmail\routes.py`
-- `c:\code\aiserver\workflows\gmail\nl_query.py`
-- `c:\code\aiserver\workflows\gmail\search.py`
-- `c:\code\aiserver\workflows\gmail\workflow.py`
-- `c:\code\aiserver\workflows\gmail\client.py`
-- `c:\code\aiserver\workflows\gmail\oauth.py`
-- `c:\code\aiserver\workflows\gmail\db.py`
+First-class bldrdojo app for search → select → act on Gmail (labels, archive, trash, LLM summarize/process), with optional **scheduled summarize** jobs.
 
-Also check existing monorepo email work so we don’t duplicate the wrong thing:
-- bldrdojo IMAP archive: `data-backend/mail_archive/` + `email-frontend/` (IMAP/app-password — **not** this product)
-- devenkalra Gmail API processor: `devenkalra.com/backend/email_processor/` + EmailProcessorApp (reuse OAuth/Gmail API ideas if helpful, but ship as a **bldrdojo** app)
+Distinct from:
 
-## Product (must match)
-An inbox-style Gmail assistant:
+| App | Mechanism | Purpose |
+|-----|-----------|---------|
+| **Gmail Assistant** (this) | Gmail API + OAuth | Live inbox ops + LLM |
+| `mail_archive` + `email-frontend` | IMAP / app password | Archive import |
+| devenkalra `email_processor` | Gmail API | Separate product on devenkalra.com |
 
-1. **Connect Gmail** via Google OAuth with scopes allowing read + modify labels/archive/trash  
-   (`gmail.modify`, `gmail.labels` in the reference). Store tokens per bldrdojo user (Postgres), refreshable.
+## Architecture
 
-2. **Natural-language search** (rule-based, **no LLM** for query building) → Gmail `q=` operators.
-   - Freeform prompt examples:
-     - `find email from smithsonian, borowitz, infoq in inbox`
-     - `Get emails from the last day in inbox`
-     - raw escape: `q:in:inbox newer_than:2d`
-   - Live query preview under the prompt.
-   - **Qualifiers** (UI fields, merged into the Gmail query):
-     - Start date → `after:YYYY/MM/DD`
-     - End date → `before:YYYY/MM/DD`
-     - Days → `newer_than:Nd` (overrides NL time window when set)
-     - Keyword → subject/body term (quote if multi-word)
-   - Search allowed with prompt and/or qualifiers.
+```
+Browser  /gmail-app/  (Vite SPA, JWT in localStorage)
+    │
+    ├─ /login/          Django static login.html (same JWT as other apps)
+    └─ /api/gmail/      Django DRF (feature-flagged)
+              │
+              ├─ Gmail API (OAuth refresh tokens per user/account)
+              ├─ Postgres (accounts, prefs, prompts, summaries, jobs, schedules)
+              ├─ Celery worker  (summarize / process / run schedule)
+              └─ Celery beat    (every 15m: enqueue due summarize schedules)
+                        │
+                        └─ LocalAI first → OpenAI fallback
+```
 
-3. **Results list** like Gmail: checkbox, From, Subject, short snippet, smart date  
-   (today → time; this year → Mon D; older → yy/mm/dd).  
-   Chip when already summarized.
+| Layer | Path |
+|-------|------|
+| Frontend | `gmail-frontend/` → Vite base `/gmail-app/` |
+| Backend | `data-backend/gmail_assistant/` |
+| API mount | `/api/gmail/` when `ENABLE_GMAIL_ASSISTANT=True` |
+| Auth | Existing bldrdojo JWT (`Authorization: Bearer`); no separate login |
+| Wiring | Same pattern as food: `INSTALLED_APPS`, urls, nginx, `frontend/Dockerfile`, `npm run dev:gmail` |
 
-4. **Selection**: checkboxes, select-all, **shift-click range select**, row click focuses + selects.
+## Product behavior
 
-5. **Bulk actions on selected**:
-   - Archive (remove INBOX)
-   - Delete (trash, confirm)
-   - Assign label (add labels; keep in inbox)
-   - **Move to** = assign label(s) **and** archive (remove INBOX) — same dialog pattern as Assign label
-   - Summarize
-   - Process
+### Connect & accounts
 
-6. **Saved prompts**: save labeled NL prompts; selecting one fills the prompt box but does **not** auto-run; delete supported.
+- Google OAuth scopes: `gmail.modify`, `gmail.labels`
+- Multiple Gmail accounts per bldrdojo user; one **active** at a time
+- Tokens stored in Postgres (`GmailAccount.refresh_token`); refreshable
+- Redirect URI env: `GMAIL_OAUTH_REDIRECT_URI`  
+  - Local: `http://localhost:8000/api/gmail/oauth/callback/`  
+  - Prod: `https://bldrdojo.com/api/gmail/oauth/callback/`  
+- After OAuth, browser returns to SPA (`GMAIL_UI_ORIGIN` locally; empty in prod = same origin)
 
-7. **Summarize** (LLM, per email):
-   - Only selected emails
-   - Skip if already summarized (unless force)
-   - Persist: brief summary, key points, details, category + confidence
-   - Categories roughly: Marketing, Newsletter, Offer, Receipt, Important, Personal, Work, Social, Spam, Other
-   - Stream progress to the UI
+### Search
 
-8. **Process** (LLM, free-form prompt on selected emails):
-   - Dialog: user prompt like “extract the books mentioned in these emails”
-   - Combine email bodies; **pack into as few batches as fit model context**; run prompt per batch; merge answers when possible
-   - Stream progress; show result in detail pane (need not persist unless easy)
+- Rule-based NL → Gmail `q=` (**no LLM** for query building): `nl_query.py`
+- Qualifiers: start/end date, days (`newer_than`), keyword
+- Live query preview; search with prompt and/or qualifiers
+- Results: From, Subject, snippet, smart date, “Summarized” chip
 
-9. **UX details to preserve**:
-   - Subject is a link to open the thread in Gmail (`mail.google.com/.../#all/{threadId}`) in a new tab; clicking the link must not toggle row selection
-   - Autolink `http(s)://` and `www.` URLs in snippets, summaries, key points, details, process result
-   - Archive / delete / move remove rows from the current result list
+### Selection & bulk actions
 
-## Technical constraints for bldrdojo
-- Postgres models instead of SQLite; associate Gmail connection + saved prompts + summaries with the logged-in user
-- LLM calls: use whatever LLM/gateway pattern bldrdojo already has (or a clear env-configured OpenAI-compatible endpoint). Do not hardcode LocalAI from aiserver unless that’s already how bldrdojo talks to models
-- Prefer Celery for long summarize/process jobs if that matches existing patterns; otherwise streaming SSE/websocket consistent with the stack
-- Feature-flag if other optional apps do (`ENABLE_…`)
-- Wire nginx + frontend Dockerfile + root package scripts like food/email
-- Document env vars: Google OAuth client for **Gmail API** (separate from login-only Google OAuth if needed), redirect URI, LLM base URL/model
+- Checkbox, select-all, **shift-click range**, row click focuses + selects
+- Archive, Delete (toolbar confirms; detail **Delete & next** does not), Assign label, Move to (label + archive), Summarize, Process
 
-## Implementation plan
-1. Explore `food`/`food-frontend` and `mail_archive`/`email-frontend` wiring; skim devenkalra `email_processor` for Gmail OAuth patterns
-2. Propose short design (app name, URL paths, models, OAuth storage) — then implement
-3. Port NL query logic from `nl_query.py` (keep deterministic)
-4. Build API + SPA matching the reference UX
-5. End-to-end: Connect → Search with qualifiers → Select → Move/Label → Summarize → Process
+### Detail pane
+
+- Clicking a row loads full message via `GET /api/gmail/emails/<id>/`
+- HTML body in a **sandboxed iframe** (formatting preserved); plain text fallback
+- Summary fields shown above the body when present
+- **Expand** → full-viewport view; **Next** / **Delete & next** walk search results
+- Optional **Open in Gmail ↗** (thread URL); subject no longer navigates away by default
+
+### Saved prompts
+
+- Named NL prompts; load fills the box, does **not** auto-run
+
+### Summarize (Celery)
+
+- Selected emails only (or schedule-selected set)
+- Skip if already summarized unless `force`
+- Persist: brief summary, key points, details, category + confidence
+- Categories: Marketing, Newsletter, Offer, Receipt, Important, Personal, Work, Social, Spam, Other
+- Progress polled from Redis-backed task progress
+
+### Process (Celery)
+
+- Free-form prompt over selected emails
+- Bodies packed into batches by configured context size (8192–64000)
+- Result in detail pane; discarded from DB when zero-knowledge is on
+
+### Scheduled summarize
+
+- UI: **Schedules** — create from current search filters + `interval_hours` (1–168)
+- Model: `SummarizeSchedule` (filter fields, account, enabled, force, last run/status)
+- Beat task `run_due_summarize_schedules` every **15 minutes** → `run_summarize_schedule` → existing summarize task
+- Requires `celery-beat` service (compose + `deploy_app.sh` for bldrdojo)
+
+### Zero-knowledge (default off)
+
+- Preference: do not persist email content / summary text
+- Category + confidence OK; process result not stored; UI may show session-only chips
+
+## Data model (Postgres)
+
+| Model | Role |
+|-------|------|
+| `GmailAccount` | Per-user connected mailbox + refresh token |
+| `UserPreference` | ZK flag, LLM context size |
+| `SavedPrompt` | Named NL prompts |
+| `EmailSummary` | Per-message summary / category |
+| `LlmJob` | Summarize/process job + progress metadata |
+| `SummarizeSchedule` | Repeatable filter + interval |
+
+## LLM
+
+- `LOCALAI_URL` + `LOCALAI_API_KEY` + `GMAIL_LOCALAI_MODEL` tried first
+- Fallback: `OPENAI_API_KEY` + `GMAIL_OPENAI_MODEL` (default `gpt-4o-mini`)
+- Celery worker must have these env vars (from `data-backend/.env`)
+
+## Auth / local UX notes
+
+- Login allowlist includes `/gmail-app/` (`data-backend/static/login.html`)
+- Vite `:5177` proxies `/api`, `/login`, `/accounts`, `/static` to Django `:8000`
+- Django `DEBUG`: `/gmail-app/` redirects to `http://localhost:5177/gmail-app/` (SPA not served by Django alone)
+- Prod: nginx serves SPA from frontend image; login + API on same origin
+
+## Deploy
+
+```bash
+# on server
+bash ./scripts/deploy_app.sh --app bldrdojo
+# rebuilds backend, frontend, celery-worker, celery-beat
+```
+
+Env on server `data-backend/.env` must include `ENABLE_GMAIL_ASSISTANT=True`, OAuth redirect, and LLM settings. Google Console must list the prod redirect URI on the **same** OAuth client as login.
+
+If migrate reports table/index already exists from a partial apply, fake the conflicting migration then continue (`migrate gmail_assistant 0002 --fake`, etc.).
+
+## API surface (JWT)
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/api/gmail/status/` | Connection + prefs |
+| GET/PATCH | `/api/gmail/preferences/` | ZK, context size |
+| * | `/api/gmail/accounts/…` | List / activate / disconnect |
+| GET | `/api/gmail/oauth/start/` | Begin Gmail OAuth |
+| GET | `/api/gmail/oauth/callback/` | OAuth return |
+| POST | `/api/gmail/query/preview/` | NL → q preview |
+| POST | `/api/gmail/search/` | Search messages |
+| GET | `/api/gmail/emails/<id>/` | Full message + summary for detail pane |
+| POST | `/api/gmail/emails/bulk/` | archive / delete / labels / move |
+| GET/POST | `/api/gmail/schedules/` | List / create schedules |
+| PATCH/DELETE | `/api/gmail/schedules/<id>/` | Update / delete |
+| POST | `/api/gmail/schedules/<id>/run/` | Run schedule now |
+| POST | `/api/gmail/summarize/` | Summarize selected |
+| POST | `/api/gmail/process/` | Process selected |
+| GET | `/api/gmail/tasks/<id>/progress/` | Poll Celery progress |
 
 ## Out of scope
-- Replacing the IMAP `mail_archive` importer
-- Auto-processing every email on sync (this app is search → select → act)
-- LocalAI-specific Docker from aiserver
+
+- Replacing IMAP `mail_archive`
+- Auto-summarizing every new mail without a schedule/filter
+- Embedding LocalAI itself in this compose stack
+- Google app verification for unrestricted public OAuth (Testing + test users is enough for private use)
 
 ## Definition of done
-Logged-in bldrdojo user can connect Gmail, search with NL + date/days/keyword qualifiers, select messages, archive/delete/label/move, summarize selected mail into Postgres, and run a custom Process prompt with context-aware batching — all from a mounted SPA under bldrdojo.com with JWT auth.
+
+A logged-in bldrdojo user can connect Gmail, search with NL + qualifiers, inspect full HTML mail in-pane, archive/delete/label/move, summarize/process via Celery, and create interval schedules that summarize matching mail — all under `/gmail-app/` with JWT auth on bldrdojo.com.
