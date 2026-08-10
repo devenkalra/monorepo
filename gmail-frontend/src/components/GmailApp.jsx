@@ -46,6 +46,7 @@ export default function GmailApp() {
   const [labels, setLabels] = useState([])
   const [labelMode, setLabelMode] = useState(null) // 'labels' | 'move'
   const [labelOpen, setLabelOpen] = useState(false)
+  const [labelSearch, setLabelSearch] = useState('')
   const [checkedLabels, setCheckedLabels] = useState(() => new Set())
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveLabel, setSaveLabel] = useState('')
@@ -438,6 +439,7 @@ export default function GmailApp() {
 
   const openLabelPicker = async (mode) => {
     setLabelMode(mode)
+    setLabelSearch('')
     flash('Loading labels…')
     try {
       const data = await api.json(
@@ -451,6 +453,13 @@ export default function GmailApp() {
       flash(String(e.message || e), 'error')
     }
   }
+
+  const selectableLabels = useMemo(() => {
+    const q = labelSearch.trim().toLowerCase()
+    return labels
+      .filter((l) => l.type === 'user' || ['STARRED', 'IMPORTANT'].includes(l.id))
+      .filter((l) => !q || (l.name || '').toLowerCase().includes(q))
+  }, [labels, labelSearch])
 
   const applyLabels = async () => {
     const ids = [...checkedLabels]
@@ -1224,7 +1233,10 @@ export default function GmailApp() {
       {labelOpen && (
         <Modal
           title={labelMode === 'move' ? 'Move to' : 'Assign labels'}
-          onClose={() => setLabelOpen(false)}
+          onClose={() => {
+            setLabelOpen(false)
+            setLabelSearch('')
+          }}
           actionLabel={labelMode === 'move' ? 'Move' : 'Apply'}
           onAction={applyLabels}
         >
@@ -1233,10 +1245,25 @@ export default function GmailApp() {
               Adds selected label(s) and archives (removes from Inbox).
             </p>
           )}
+          <input
+            type="search"
+            autoFocus
+            className="mb-2 w-full rounded-lg border border-stone-200 px-2 py-1.5 text-sm"
+            placeholder="Search labels…"
+            value={labelSearch}
+            onChange={(e) => setLabelSearch(e.target.value)}
+          />
+          {checkedLabels.size > 0 && (
+            <p className="mb-2 text-xs text-stone-500">
+              {checkedLabels.size} selected
+              {labelSearch.trim() ? ' (selection kept while filtering)' : ''}
+            </p>
+          )}
           <div className="max-h-64 space-y-1 overflow-auto">
-            {labels
-              .filter((l) => l.type === 'user' || ['STARRED', 'IMPORTANT'].includes(l.id))
-              .map((l) => (
+            {selectableLabels.length === 0 ? (
+              <p className="py-3 text-center text-sm text-stone-500">No labels match.</p>
+            ) : (
+              selectableLabels.map((l) => (
                 <label key={l.id} className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -1252,7 +1279,8 @@ export default function GmailApp() {
                   />
                   {l.name}
                 </label>
-              ))}
+              ))
+            )}
           </div>
         </Modal>
       )}
