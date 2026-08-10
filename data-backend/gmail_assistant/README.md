@@ -26,6 +26,17 @@ cd data-backend
 python manage.py migrate gmail_assistant
 ```
 
+## Scheduled summarize
+
+Create schedules in the UI (**Schedules**) or via `POST /api/gmail/schedules/`. Each schedule stores the same filter fields as search (`prompt`, `days`, `keyword`, dates) plus `interval_hours` (1–168).
+
+Requires **Celery Beat** (`celery -A config beat`) in addition to the worker. Beat polls every 15 minutes and enqueues due schedules.
+
+```bash
+# local example
+docker compose -f docker-compose.local.yml up -d celery-beat celery-worker
+```
+
 ## Frontend
 
 ```bash

@@ -162,7 +162,7 @@ app_services() {
   local app="$1"
   case "$app" in
     bldrdojo)
-      echo "backend frontend celery-worker"
+      echo "backend frontend celery-worker celery-beat"
       ;;
     devenkalra)
       echo "devenkalra-app"

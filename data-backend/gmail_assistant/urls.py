@@ -26,6 +26,18 @@ urlpatterns = [
     path('prompts/<uuid:prompt_id>/', views.prompt_delete, name='gmail-prompt-delete'),
     path('labels/', views.labels_view, name='gmail-labels'),
     path('emails/bulk/', views.bulk_action, name='gmail-bulk'),
+    path('emails/<str:gmail_id>/', views.email_detail, name='gmail-email-detail'),
+    path('schedules/', views.schedules_view, name='gmail-schedules'),
+    path(
+        'schedules/<uuid:schedule_id>/',
+        views.schedule_detail,
+        name='gmail-schedule-detail',
+    ),
+    path(
+        'schedules/<uuid:schedule_id>/run/',
+        views.schedule_run_now,
+        name='gmail-schedule-run',
+    ),
     path('summarize/', views.summarize, name='gmail-summarize'),
     path('process/', views.process_prompt, name='gmail-process'),
     path('tasks/<str:task_id>/progress/', views.task_progress, name='gmail-task-progress'),

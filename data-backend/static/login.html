@@ -1015,17 +1015,30 @@
 
     function getRedirectUrl() {
         const params = new URLSearchParams(window.location.search);
-        const next = params.get('next');
+        let next = params.get('next');
         // Only allow same-origin app paths (prevent open redirects).
+        // Also allow local Vite gmail-frontend (port 5177).
         if (
             next &&
             (next.startsWith('/people-app') ||
                 next.startsWith('/cad-app') ||
                 next.startsWith('/food-app') ||
                 next.startsWith('/email-app') ||
-                next.startsWith('/gmail-app'))
+                next.startsWith('/gmail-app') ||
+                /^https?:\/\/(localhost|127\.0\.0\.1):5177\/gmail-app(\/|$|\?)/i.test(next))
         ) {
-            return next.startsWith('/') ? next : '/' + next;
+            if (/^https?:\/\//i.test(next)) return next;
+            next = next.startsWith('/') ? next : '/' + next;
+            // Django on :8000 does not serve the Vite SPA — send gmail-app to :5177.
+            if (
+                next.startsWith('/gmail-app') &&
+                /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) &&
+                (window.location.port === '8000' || window.location.port === '')
+            ) {
+                const host = window.location.hostname;
+                return `http://${host}:5177${next}`;
+            }
+            return next;
         }
         return '/people-app/';
     }

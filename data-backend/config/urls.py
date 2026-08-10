@@ -19,7 +19,12 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework_simplejwt.views import TokenRefreshView
-from people.static_views import login_page, api_tester_page, csrf_cookie
+from people.static_views import (
+    login_page,
+    api_tester_page,
+    csrf_cookie,
+    gmail_app_dev_redirect,
+)
 from people.social_auth_views import GoogleLogin, google_login_redirect, google_callback
 from people.health_views import health_check, health_detailed
 
@@ -34,6 +39,9 @@ urlpatterns = [
     path('', login_page, name='login'),
     path('login/', login_page, name='login_page'),
     path('api-tester/', api_tester_page, name='api_tester'),
+    # Local: Vite serves the SPA on :5177 (Django alone would 404)
+    path('gmail-app/', gmail_app_dev_redirect),
+    path('gmail-app/<path:rest>', gmail_app_dev_redirect),
     
     # CSRF cookie for SPAs (cad-app, people-app)
     path('api/auth/csrf/', csrf_cookie, name='csrf_cookie'),

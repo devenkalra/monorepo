@@ -1,15 +1,18 @@
-"""Celery tasks for summarize / process."""
+"""Celery tasks for summarize / process / scheduled summarize."""
 
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from celery import shared_task
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.utils import timezone
 
 from . import gmail_api, llm
-from .models import GmailAccount, LlmJob
+from .models import LlmJob, SummarizeSchedule
+from .nl_query import nl_to_gmail_query
 from .services import get_or_create_prefs, upsert_summary
 
 logger = logging.getLogger(__name__)
@@ -42,6 +45,13 @@ def summarize_emails_task(self, job_id: str, user_id: int, force: bool = False):
     prefs = get_or_create_prefs(job.user)
     ids = list(job.gmail_ids or [])
     total = max(1, len(ids))
+    logger.info(
+        'summarize job=%s emails=%s force=%s localai_url=%s',
+        job_id,
+        len(ids),
+        force,
+        bool(llm._localai_url()),
+    )
     update_task_progress(task_id, 0, total, 'Starting summarize…')
     done = []
     skipped = []
@@ -187,3 +197,123 @@ def process_emails_task(self, job_id: str):
         extra=payload,
     )
     return payload
+
+
+def _schedule_is_due(schedule: SummarizeSchedule, now) -> bool:
+    if not schedule.enabled:
+        return False
+    if not schedule.last_run_at:
+        return True
+    return schedule.last_run_at <= now - timedelta(hours=schedule.interval_hours)
+
+
+@shared_task
+def run_due_summarize_schedules():
+    """Beat tick: enqueue any enabled schedules whose interval has elapsed."""
+    now = timezone.now()
+    due_ids = []
+    for sched in SummarizeSchedule.objects.filter(enabled=True).select_related(
+        'account'
+    ):
+        if _schedule_is_due(sched, now):
+            due_ids.append(str(sched.id))
+            run_summarize_schedule.delay(str(sched.id))
+    logger.info('summarize schedule tick: due=%s', len(due_ids))
+    return {'due': due_ids}
+
+
+@shared_task(bind=True)
+def run_summarize_schedule(self, schedule_id: str):
+    """Resolve schedule filter → message ids → summarize_emails_task."""
+    try:
+        schedule = SummarizeSchedule.objects.select_related('account', 'user').get(
+            id=schedule_id
+        )
+    except SummarizeSchedule.DoesNotExist:
+        logger.warning('summarize schedule missing: %s', schedule_id)
+        return {'ok': False, 'error': 'not_found'}
+
+    if not schedule.enabled:
+        return {'ok': False, 'error': 'disabled'}
+    if not schedule.has_filter():
+        schedule.last_status = 'failed'
+        schedule.last_error = 'Schedule has no search filter'
+        schedule.last_run_at = timezone.now()
+        schedule.save(
+            update_fields=['last_status', 'last_error', 'last_run_at', 'updated_at']
+        )
+        return {'ok': False, 'error': 'no_filter'}
+
+    try:
+        parsed = nl_to_gmail_query(
+            schedule.prompt or '',
+            start_date=schedule.start_date or None,
+            end_date=schedule.end_date or None,
+            days=schedule.days,
+            keyword=schedule.keyword or None,
+        )
+        service = gmail_api.build_gmail_service(schedule.account.refresh_token)
+        ids = gmail_api.list_message_ids(
+            service,
+            query=parsed['query'],
+            max_results=max(1, min(int(schedule.max_results or 100), 200)),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('summarize schedule search failed: %s', schedule_id)
+        schedule.last_status = 'failed'
+        schedule.last_error = str(exc)[:500]
+        schedule.last_run_at = timezone.now()
+        schedule.save(
+            update_fields=['last_status', 'last_error', 'last_run_at', 'updated_at']
+        )
+        return {'ok': False, 'error': str(exc)}
+
+    if not ids:
+        schedule.last_status = 'completed'
+        schedule.last_error = ''
+        schedule.last_run_at = timezone.now()
+        schedule.save(
+            update_fields=['last_status', 'last_error', 'last_run_at', 'updated_at']
+        )
+        logger.info('summarize schedule %s: no matching emails', schedule_id)
+        return {'ok': True, 'count': 0}
+
+    job = LlmJob.objects.create(
+        user=schedule.user,
+        account=schedule.account,
+        kind=LlmJob.KIND_SUMMARIZE,
+        gmail_ids=ids,
+        prompt=schedule.prompt or '',
+    )
+    async_result = summarize_emails_task.delay(
+        str(job.id), schedule.user_id, schedule.force
+    )
+    job.celery_task_id = async_result.id
+    job.save(update_fields=['celery_task_id', 'updated_at'])
+
+    schedule.last_status = 'queued'
+    schedule.last_error = ''
+    schedule.last_run_at = timezone.now()
+    schedule.last_job = job
+    schedule.save(
+        update_fields=[
+            'last_status',
+            'last_error',
+            'last_run_at',
+            'last_job',
+            'updated_at',
+        ]
+    )
+    logger.info(
+        'summarize schedule %s queued job=%s emails=%s',
+        schedule_id,
+        job.id,
+        len(ids),
+    )
+    return {
+        'ok': True,
+        'job_id': str(job.id),
+        'task_id': async_result.id,
+        'count': len(ids),
+        'query': parsed['query'],
+    }

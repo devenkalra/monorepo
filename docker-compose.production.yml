@@ -40,6 +40,15 @@ services:
     build:
       context: ./data-backend
       dockerfile: Dockerfile
+  celery-beat:
+    extends:
+      file: data-backend/docker-compose.yml
+      service: celery-beat
+    env_file:
+      - data-backend/.env
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile
   frontend:
     extends:
       file: data-backend/docker-compose.yml

@@ -86,16 +86,21 @@ def chat_completion(
     errors: list[str] = []
     local_url = _localai_url()
     if local_url:
+        model = _localai_model()
+        endpoint = f'{local_url}/v1/chat/completions'
+        logger.info('LLM request provider=localai model=%s url=%s', model, endpoint)
         try:
-            return _post_chat(
-                url=f'{local_url}/v1/chat/completions',
+            content = _post_chat(
+                url=endpoint,
                 api_key=_localai_key(),
-                model=_localai_model(),
+                model=model,
                 prompt=prompt,
                 system=system,
                 json_mode=json_mode,
                 timeout=timeout,
             )
+            logger.info('LLM success provider=localai model=%s', model)
+            return content
         except Exception as exc:  # noqa: BLE001
             logger.warning('LocalAI chat failed: %s', exc)
             errors.append(f'localai: {exc}')
@@ -107,15 +112,19 @@ def chat_completion(
             + (f' ({"; ".join(errors)})' if errors else '')
             + ' and OPENAI_API_KEY is not set'
         )
-    return _post_chat(
+    model = _openai_model()
+    logger.info('LLM request provider=openai model=%s', model)
+    content = _post_chat(
         url='https://api.openai.com/v1/chat/completions',
         api_key=openai_key,
-        model=_openai_model(),
+        model=model,
         prompt=prompt,
         system=system,
         json_mode=json_mode,
         timeout=timeout,
     )
+    logger.info('LLM success provider=openai model=%s', model)
+    return content
 
 
 def _post_chat(
@@ -164,6 +173,9 @@ def summarize_email_text(body_block: str) -> dict[str, Any]:
         f'category (one of: {cats}), category_confidence (0-1 number).\n\n'
         f'{body_block}'
     )
+    # Prefer recording whichever endpoint is configured first; chat_completion
+    # logs the actual provider used (LocalAI vs OpenAI fallback).
+    used_model = _localai_model() if _localai_url() else _openai_model()
     raw = chat_completion(prompt=prompt, system=system, json_mode=True)
     try:
         data = json.loads(raw)
@@ -184,7 +196,7 @@ def summarize_email_text(body_block: str) -> dict[str, Any]:
         'details': str(data.get('details') or '').strip(),
         'category': category,
         'category_confidence': conf,
-        'model': _localai_model() if _localai_url() else _openai_model(),
+        'model': used_model,
     }
 
 

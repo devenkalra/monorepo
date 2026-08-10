@@ -242,6 +242,15 @@ def fetch_message(service: Any, gmail_id: str) -> dict[str, Any]:
     headers = header_map(payload)
     text_plain, text_html = _walk_parts(payload)
     body = (text_plain or html_to_text(text_html) or msg.get('snippet') or '').strip()
+    html_body = (text_html or '').strip()
+    if not html_body and text_plain:
+        # Preserve plain-text line breaks when no HTML part exists.
+        escaped = (
+            text_plain.replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+        )
+        html_body = f'<pre style="white-space:pre-wrap;font-family:inherit">{escaped}</pre>'
     date_hdr = headers.get('date') or ''
     date_iso = ''
     if date_hdr:
@@ -264,6 +273,7 @@ def fetch_message(service: Any, gmail_id: str) -> dict[str, Any]:
         'internal_date_ms': internal,
         'snippet': msg.get('snippet') or '',
         'body_text': body[:20000],
+        'body_html': html_body[:500000],
         'label_ids': list(msg.get('labelIds') or []),
     }
 

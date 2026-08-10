@@ -18,15 +18,16 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from . import gmail_api
-from .models import EmailSummary, GmailAccount, LlmJob, SavedPrompt
+from .models import EmailSummary, GmailAccount, LlmJob, SavedPrompt, SummarizeSchedule
 from .nl_query import nl_to_gmail_query
 from .serializers import (
     GmailAccountSerializer,
     SavedPromptSerializer,
+    SummarizeScheduleSerializer,
     UserPreferenceSerializer,
 )
 from .services import get_active_account, get_or_create_prefs, set_active_account
-from .tasks import process_emails_task, summarize_emails_task
+from .tasks import process_emails_task, run_summarize_schedule, summarize_emails_task
 
 logger = logging.getLogger(__name__)
 
@@ -315,6 +316,47 @@ def labels_view(request):
     return Response({'labels': labels})
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def email_detail(request, gmail_id):
+    """Full message body for the detail pane (live from Gmail; not persisted)."""
+    account = _account_from_request(request)
+    if not account:
+        return Response({'detail': 'Connect a Gmail account first.'}, status=400)
+    gid = (gmail_id or '').strip()
+    if not gid:
+        return Response({'detail': 'gmail_id required'}, status=400)
+    try:
+        service = gmail_api.build_gmail_service(account.refresh_token)
+        message = gmail_api.fetch_message(service, gid)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception('email_detail failed for %s', gid)
+        return Response({'detail': str(exc)}, status=400)
+
+    prefs = get_or_create_prefs(request.user)
+    row = EmailSummary.objects.filter(account=account, gmail_id=gid).first()
+    if row:
+        message['has_summary'] = True
+        message['category'] = row.category
+        message['category_confidence'] = row.category_confidence
+        if prefs.zero_knowledge:
+            message['brief_summary'] = ''
+            message['key_points'] = []
+            message['details'] = ''
+        else:
+            message['brief_summary'] = row.brief_summary
+            message['key_points'] = row.key_points
+            message['details'] = row.details
+    else:
+        message['has_summary'] = False
+        message['category'] = ''
+        message['category_confidence'] = 0
+        message['brief_summary'] = ''
+        message['key_points'] = []
+        message['details'] = ''
+    return Response({'email': message, 'zero_knowledge': prefs.zero_knowledge})
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def bulk_action(request):
@@ -365,6 +407,65 @@ def bulk_action(request):
     return Response(
         {'ok': True, 'action': action, 'done': ok_ids, 'errors': errors}
     )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def schedules_view(request):
+    if request.method == 'GET':
+        rows = SummarizeSchedule.objects.filter(user=request.user).select_related(
+            'account'
+        )
+        return Response(
+            {'schedules': SummarizeScheduleSerializer(rows, many=True).data}
+        )
+
+    ser = SummarizeScheduleSerializer(data=request.data)
+    ser.is_valid(raise_exception=True)
+    account = get_active_account(
+        request.user, ser.validated_data.pop('account_id', None)
+    )
+    if not account:
+        return Response({'detail': 'Connect a Gmail account first.'}, status=400)
+    obj = SummarizeSchedule.objects.create(
+        user=request.user,
+        account=account,
+        **ser.validated_data,
+    )
+    return Response(
+        {'schedule': SummarizeScheduleSerializer(obj).data},
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def schedule_detail(request, schedule_id):
+    obj = get_object_or_404(SummarizeSchedule, id=schedule_id, user=request.user)
+    if request.method == 'DELETE':
+        obj.delete()
+        return Response({'ok': True, 'id': str(schedule_id)})
+
+    ser = SummarizeScheduleSerializer(obj, data=request.data, partial=True)
+    ser.is_valid(raise_exception=True)
+    account_id = ser.validated_data.pop('account_id', None)
+    if account_id is not None:
+        account = get_active_account(request.user, account_id)
+        if not account:
+            return Response({'detail': 'Unknown Gmail account.'}, status=400)
+        obj.account = account
+    for key, value in ser.validated_data.items():
+        setattr(obj, key, value)
+    obj.save()
+    return Response({'schedule': SummarizeScheduleSerializer(obj).data})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def schedule_run_now(request, schedule_id):
+    obj = get_object_or_404(SummarizeSchedule, id=schedule_id, user=request.user)
+    async_result = run_summarize_schedule.delay(str(obj.id))
+    return Response({'ok': True, 'task_id': async_result.id, 'schedule_id': str(obj.id)})
 
 
 @api_view(['POST'])

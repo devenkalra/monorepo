@@ -149,6 +149,34 @@ services:
     networks:
       - backend-network
     command: celery -A config worker --loglevel=info --concurrency=2
+  celery-beat:
+    build:
+      context: ./data-backend
+      dockerfile: Dockerfile
+    container_name: bldrdojo-local-celery-beat
+    env_file:
+      - data-backend/.env
+    restart: unless-stopped
+    volumes:
+      - ./data-backend:/app
+    environment:
+      - DJANGO_SETTINGS_MODULE=config.settings
+      - DJANGO_DEBUG=True
+      - POSTGRES_DB=entitydb
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=dbpassword
+      - POSTGRES_HOST=db
+      - POSTGRES_PORT=5432
+      - REDIS_URL=redis://:localredispass@redis:6379/0
+      - REDIS_PASSWORD=localredispass
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend-network
+    command: celery -A config beat --loglevel=info
   email-frontend-dev:
     build:
       context: ./email-frontend

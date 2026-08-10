@@ -156,6 +156,70 @@ class EmailSummary(models.Model):
         return self.gmail_id
 
 
+class SummarizeSchedule(models.Model):
+    """Repeatable job: search by filter, summarize matching emails every N hours."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='gmail_summarize_schedules',
+    )
+    account = models.ForeignKey(
+        GmailAccount,
+        on_delete=models.CASCADE,
+        related_name='summarize_schedules',
+    )
+    label = models.CharField(max_length=120)
+    # Same filter fields as interactive search
+    prompt = models.TextField(blank=True, default='')
+    start_date = models.CharField(max_length=32, blank=True, default='')
+    end_date = models.CharField(max_length=32, blank=True, default='')
+    days = models.PositiveIntegerField(null=True, blank=True)
+    keyword = models.CharField(max_length=200, blank=True, default='')
+    max_results = models.PositiveIntegerField(default=100)
+    interval_hours = models.PositiveIntegerField(default=24)
+    force = models.BooleanField(default=False)
+    enabled = models.BooleanField(default=True)
+    last_run_at = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=40, blank=True, default='')
+    last_error = models.TextField(blank=True, default='')
+    last_job = models.ForeignKey(
+        'LlmJob',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='+',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['label']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'label'],
+                name='gmail_assistant_schedule_user_label_uniq',
+            ),
+            models.CheckConstraint(
+                check=models.Q(interval_hours__gte=1) & models.Q(interval_hours__lte=168),
+                name='gmail_assistant_schedule_interval_1_168',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.label} every {self.interval_hours}h'
+
+    def has_filter(self) -> bool:
+        return bool(
+            (self.prompt or '').strip()
+            or (self.start_date or '').strip()
+            or (self.end_date or '').strip()
+            or self.days is not None
+            or (self.keyword or '').strip()
+        )
+
+
 class LlmJob(models.Model):
     KIND_SUMMARIZE = 'summarize'
     KIND_PROCESS = 'process'

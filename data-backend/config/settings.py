@@ -428,6 +428,16 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
 CELERY_RESULT_EXPIRES = 3600  # Results expire after 1 hour
 
+# Beat: poll DB-backed Gmail summarize schedules (needs celery-beat service).
+from datetime import timedelta  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {}
+if ENABLE_GMAIL_ASSISTANT:
+    CELERY_BEAT_SCHEDULE['gmail-summarize-schedules'] = {
+        'task': 'gmail_assistant.tasks.run_due_summarize_schedules',
+        'schedule': timedelta(minutes=15),
+    }
+
 # CAD app - render cache, textures, scene configs
 CAD_RENDER_CACHE = BASE_DIR / 'cad' / 'render_cache'
 CAD_TEXTURES_DIR = BASE_DIR / 'cad' / 'textures'

@@ -1,4 +1,4 @@
-import { getApiBaseUrl } from '../utils/apiUrl';
+import { getApiBaseUrl, getLoginUrl } from '../utils/apiUrl';
 import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
 
@@ -119,8 +119,7 @@ export const AuthProvider = ({ children }) => {
     }
     clearTokens();
     if (typeof window !== 'undefined') {
-      const next = encodeURIComponent(window.location.pathname || '/gmail-app/');
-      window.location.href = `${window.location.origin}/login/?next=${next}`;
+      window.location.href = getLoginUrl(window.location.pathname || '/gmail-app/');
     }
   };
 
