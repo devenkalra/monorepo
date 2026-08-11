@@ -161,18 +161,121 @@ def _post_chat(
     return str(content).strip()
 
 
-def summarize_email_text(body_block: str) -> dict[str, Any]:
+def describe_image_bytes(
+    image_bytes: bytes,
+    *,
+    content_type: str = 'image/jpeg',
+    prompt: str = 'Describe this image briefly and concretely.',
+) -> str:
+    """Vision describe via LocalAI then OpenAI. Returns '' if unavailable."""
+    import base64
+
+    if not image_bytes:
+        return ''
+    b64 = base64.b64encode(image_bytes).decode('ascii')
+    ctype = (content_type or 'image/jpeg').split(';')[0].strip() or 'image/jpeg'
+    data_url = f'data:{ctype};base64,{b64}'
+    messages = [
+        {
+            'role': 'user',
+            'content': [
+                {'type': 'text', 'text': prompt},
+                {'type': 'image_url', 'image_url': {'url': data_url}},
+            ],
+        }
+    ]
+    errors: list[str] = []
+    local_url = _localai_url()
+    if local_url:
+        try:
+            return _post_vision(
+                url=f'{local_url}/v1/chat/completions',
+                api_key=_localai_key(),
+                model=_localai_model(),
+                messages=messages,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('LocalAI vision failed: %s', exc)
+            errors.append(str(exc))
+    openai_key = _openai_key()
+    if openai_key:
+        try:
+            return _post_vision(
+                url='https://api.openai.com/v1/chat/completions',
+                api_key=openai_key,
+                model=_openai_model(),
+                messages=messages,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('OpenAI vision failed: %s', exc)
+            errors.append(str(exc))
+    if errors:
+        logger.info('No vision description available: %s', '; '.join(errors)[:300])
+    return ''
+
+
+def _post_vision(
+    *,
+    url: str,
+    api_key: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    timeout: float = 120.0,
+) -> str:
+    headers = {'Content-Type': 'application/json'}
+    if api_key:
+        headers['Authorization'] = f'Bearer {api_key}'
+    payload = {
+        'model': model,
+        'messages': messages,
+        'temperature': 0.1,
+        'max_tokens': 400,
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+    if resp.status_code >= 400:
+        raise RuntimeError(f'vision failed ({resp.status_code}): {resp.text[:400]}')
+    data = resp.json()
+    content = data['choices'][0]['message'].get('content') or ''
+    return str(content).strip()
+
+
+def summarize_email_text(
+    body_block: str,
+    *,
+    with_linked_content: bool = False,
+) -> dict[str, Any]:
     cats = ', '.join(CATEGORIES)
-    system = (
-        'You classify and summarize emails. Reply with JSON only. '
-        'Do not invent facts not present in the email.'
-    )
-    prompt = (
-        'Summarize and classify this email. Return JSON with keys: '
-        'brief_summary (string), key_points (array of strings), details (string), '
-        f'category (one of: {cats}), category_confidence (0-1 number).\n\n'
-        f'{body_block}'
-    )
+    if with_linked_content:
+        system = (
+            'You classify and summarize emails together with fetched linked content '
+            '(web pages, YouTube/Instagram/TikTok transcripts via Apify, social posts '
+            'from Instagram/Facebook/LinkedIn/X/TikTok, image descriptions). '
+            'Reply with JSON only. Do not invent facts not present in the material. '
+            'Do not paste or rewrite full video transcripts in details — full transcripts '
+            'are appended to details automatically after your reply. '
+            'Focus details on analysis of the email and linked material.'
+        )
+        prompt = (
+            'Summarize and classify this email and its linked content. '
+            'Return JSON with keys: '
+            'brief_summary (string; mention if links/transcripts added important context), '
+            'key_points (array of strings; include points from links/transcripts when relevant), '
+            'details (string; analytical write-up of the email and linked content; '
+            'do NOT include the full transcript text; note failed links briefly), '
+            f'category (one of: {cats}), category_confidence (0-1 number).\n\n'
+            f'{body_block}'
+        )
+    else:
+        system = (
+            'You classify and summarize emails. Reply with JSON only. '
+            'Do not invent facts not present in the email.'
+        )
+        prompt = (
+            'Summarize and classify this email. Return JSON with keys: '
+            'brief_summary (string), key_points (array of strings), details (string), '
+            f'category (one of: {cats}), category_confidence (0-1 number).\n\n'
+            f'{body_block}'
+        )
     # Prefer recording whichever endpoint is configured first; chat_completion
     # logs the actual provider used (LocalAI vs OpenAI fallback).
     used_model = _localai_model() if _localai_url() else _openai_model()
@@ -237,14 +340,19 @@ def pack_batches(blocks: list[str], budget_tokens: int) -> list[list[str]]:
 def run_process_prompt(
     *,
     user_prompt: str,
-    messages: list[dict[str, Any]],
+    messages: list[dict[str, Any]] | None = None,
     context_size: int,
     on_progress=None,
+    blocks: list[str] | None = None,
 ) -> str:
     context_size = max(1024, min(64000, int(context_size or 8192)))
     prompt_tokens = estimate_tokens(user_prompt) + _OVERHEAD_TOKENS
     budget = max(512, context_size - _RESPONSE_RESERVE_TOKENS - prompt_tokens)
-    blocks = [format_email_block(m, i) for i, m in enumerate(messages, start=1)]
+    if blocks is None:
+        blocks = [
+            format_email_block(m, i)
+            for i, m in enumerate(messages or [], start=1)
+        ]
     system = (
         'You analyze one or more emails for the user. '
         'Follow their instructions carefully. '

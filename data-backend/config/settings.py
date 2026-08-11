@@ -116,6 +116,33 @@ LOCALAI_API_KEY = os.environ.get('LOCALAI_API_KEY', '')
 GMAIL_LOCALAI_MODEL = os.environ.get('GMAIL_LOCALAI_MODEL', 'qwen3-32b')
 GMAIL_OPENAI_MODEL = os.environ.get('GMAIL_OPENAI_MODEL', 'gpt-4o-mini')
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+# Apify (Gmail Assistant Enrich links → social sources)
+APIFY_TOKEN = os.environ.get('APIFY_TOKEN', '') or os.environ.get('APIFY_API_TOKEN', '')
+APIFY_INSTAGRAM_ACTOR = os.environ.get(
+    'APIFY_INSTAGRAM_ACTOR', 'apify/instagram-scraper'
+)
+APIFY_FACEBOOK_ACTOR = os.environ.get(
+    'APIFY_FACEBOOK_ACTOR', 'apify/facebook-posts-scraper'
+)
+APIFY_LINKEDIN_ACTOR = os.environ.get(
+    'APIFY_LINKEDIN_ACTOR', 'simpleapi/linkedin-post-scraper'
+)
+APIFY_TWITTER_ACTOR = os.environ.get('APIFY_TWITTER_ACTOR', 'apidojo/tweet-scraper')
+APIFY_TIKTOK_ACTOR = os.environ.get('APIFY_TIKTOK_ACTOR', 'clockworks/tiktok-scraper')
+# Dedicated transcript actors (Enrich links)
+APIFY_YOUTUBE_TRANSCRIPT_ACTOR = os.environ.get(
+    'APIFY_YOUTUBE_TRANSCRIPT_ACTOR', 'automation-lab/youtube-transcript'
+)
+APIFY_INSTAGRAM_TRANSCRIPT_ACTOR = os.environ.get(
+    'APIFY_INSTAGRAM_TRANSCRIPT_ACTOR',
+    'khadinakbar/instagram-transcript-scraper',
+)
+APIFY_TIKTOK_TRANSCRIPT_ACTOR = os.environ.get(
+    'APIFY_TIKTOK_TRANSCRIPT_ACTOR', 'clockworks/tiktok-transcript-extractor'
+)
+# LinkedIn session cookie (DevTools → Application → Cookies → li_at). Needed for
+# group/private posts that 404 when anonymous.
+LINKEDIN_LI_AT = os.environ.get('LINKEDIN_LI_AT', '')
 
 SITE_ID = 1
 

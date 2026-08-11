@@ -40,5 +40,6 @@ urlpatterns = [
     ),
     path('summarize/', views.summarize, name='gmail-summarize'),
     path('process/', views.process_prompt, name='gmail-process'),
+    path('enrich-links/', views.enrich_links, name='gmail-enrich-links'),
     path('tasks/<str:task_id>/progress/', views.task_progress, name='gmail-task-progress'),
 ]

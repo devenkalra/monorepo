@@ -101,5 +101,41 @@ User preference (default **off**). When on: no subject/from/snippet/summary text
 5. Save / load prompt (no auto-run)
 6. Summarize selected → progress poll → chip
 7. Process selected → result in detail pane
-8. Toggle ZK on → summarize again (no content fields persisted)
-9. Set context size 8192–64000 in Prefs
+8. Enrich links → fetches web pages / images / YouTube transcripts, then summarizes
+9. Toggle ZK on → summarize again (no content fields persisted)
+10. Set context size 8192–64000 in Prefs
+
+## Enrich links
+
+`POST /api/gmail/enrich-links/` with `{gmail_ids, account_id?}`.
+
+Pipeline (deterministic, not LLM-driven for discovery):
+
+1. Extract `http(s)` URLs from body text + HTML `href`/`src` (HTML entities unescaped)
+2. Classify:
+   - YouTube → transcript
+   - Instagram / Facebook / LinkedIn / X(Twitter) / TikTok → Apify scrape
+   - image URL → download + vision describe
+   - else → fetch page text
+3. LLM summarizes email + linked content (LocalAI then OpenAI)
+
+Requires worker deps: `beautifulsoup4`, `youtube-transcript-api`.  
+Social scrapes need `APIFY_TOKEN`. Defaults:
+
+| Source | Actor env | Default actor |
+|--------|-----------|---------------|
+| Instagram | `APIFY_INSTAGRAM_ACTOR` | `apify/instagram-scraper` |
+| Facebook | `APIFY_FACEBOOK_ACTOR` | `apify/facebook-posts-scraper` |
+| LinkedIn | `APIFY_LINKEDIN_ACTOR` | `simpleapi/linkedin-post-scraper` |
+| X/Twitter | `APIFY_TWITTER_ACTOR` | `apidojo/tweet-scraper` |
+| TikTok | `APIFY_TIKTOK_ACTOR` | `clockworks/tiktok-scraper` |
+
+**Transcripts** (appended into enrich content for summarization):
+
+| Source | Env | Default actor |
+|--------|-----|---------------|
+| YouTube | `APIFY_YOUTUBE_TRANSCRIPT_ACTOR` | `automation-lab/youtube-transcript` (fallback: `youtube-transcript-api`) |
+| Instagram reels/posts | `APIFY_INSTAGRAM_TRANSCRIPT_ACTOR` | `khadinakbar/instagram-transcript-scraper` |
+| TikTok | `APIFY_TIKTOK_TRANSCRIPT_ACTOR` | `clockworks/tiktok-transcript-extractor` |
+
+LinkedIn group/private posts that 404 anonymously also need `LINKEDIN_LI_AT` (browser `li_at` cookie while logged in).

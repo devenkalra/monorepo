@@ -1,4 +1,4 @@
-"""Celery tasks for summarize / process / scheduled summarize."""
+"""Celery tasks for summarize / process / enrich-links / scheduled summarize."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.utils import timezone
 
-from . import gmail_api, llm
+from . import gmail_api, link_enrichment, llm
 from .models import LlmJob, SummarizeSchedule
 from .nl_query import nl_to_gmail_query
 from .services import get_or_create_prefs, upsert_summary
@@ -204,6 +204,126 @@ def process_emails_task(self, job_id: str):
         len(ids),
         max(1, len(ids)),
         'Done',
+        status='completed',
+        extra=payload,
+    )
+    return payload
+
+
+@shared_task(bind=True)
+def enrich_links_task(self, job_id: str):
+    """Fetch linked content per email, then store structured summaries (like Summarize)."""
+    task_id = self.request.id
+    job = LlmJob.objects.select_related('account', 'user').get(id=job_id)
+    job.celery_task_id = task_id
+    job.status = LlmJob.STATUS_PROCESSING
+    job.save(update_fields=['celery_task_id', 'status', 'updated_at'])
+
+    prefs = get_or_create_prefs(job.user)
+    ids = list(job.gmail_ids or [])
+    total = max(1, len(ids))
+    update_task_progress(task_id, 0, total, 'Starting enrich links…')
+
+    done: list[str] = []
+    errors: list[str] = []
+    summaries_out: dict = {}
+    link_stats = {'urls': 0, 'ok': 0, 'failed': 0, 'by_kind': {}}
+
+    try:
+        service = gmail_api.build_gmail_service(job.account.refresh_token)
+    except Exception as exc:  # noqa: BLE001
+        job.status = LlmJob.STATUS_FAILED
+        job.errors = [str(exc)]
+        job.save(update_fields=['status', 'errors', 'updated_at'])
+        update_task_progress(task_id, 0, total, str(exc), status='failed')
+        return {'ok': False, 'error': str(exc)}
+
+    for i, gid in enumerate(ids, start=1):
+        update_task_progress(
+            task_id,
+            i - 1,
+            total,
+            f'Enriching {i}/{len(ids)}…',
+            extra={'gmail_id': gid},
+        )
+        try:
+            message = gmail_api.fetch_message(service, gid)
+
+            def on_enrich_progress(message_text: str, _i=i):
+                update_task_progress(
+                    task_id, _i - 1, total, f'Email {_i}/{len(ids)} · {message_text}'
+                )
+
+            enriched = link_enrichment.enrich_message(
+                message, on_progress=on_enrich_progress
+            )
+            for enr in enriched.get('enrichments') or []:
+                link_stats['urls'] += 1
+                kind = enr.get('kind') or 'web'
+                link_stats['by_kind'][kind] = link_stats['by_kind'].get(kind, 0) + 1
+                if enr.get('ok'):
+                    link_stats['ok'] += 1
+                else:
+                    link_stats['failed'] += 1
+
+            update_task_progress(
+                task_id, i - 1, total, f'Summarizing {i}/{len(ids)} with links…'
+            )
+            block = f'===== Email {i} =====\n{enriched["block"]}'
+            summary = llm.summarize_email_text(block, with_linked_content=True)
+            # Always attach verbatim transcripts so the UI summary has full text
+            # (the LLM is instructed not to paste them into details itself).
+            details = link_enrichment.append_full_transcripts_to_details(
+                summary.get('details') or '',
+                enriched.get('enrichments') or [],
+            )
+            summary['details'] = details
+            upsert_summary(
+                user=job.user,
+                account=job.account,
+                message=message,
+                summary=summary,
+                zero_knowledge=prefs.zero_knowledge,
+            )
+            summaries_out[gid] = {
+                'brief_summary': summary.get('brief_summary') or '',
+                'key_points': summary.get('key_points') or [],
+                'details': details,
+                'category': summary.get('category') or '',
+                'category_confidence': float(
+                    summary.get('category_confidence') or 0
+                ),
+                'has_summary': True,
+                'enriched_links': True,
+            }
+            done.append(gid)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception('enrich_links failed for %s', gid)
+            errors.append(f'{gid}: {exc}')
+
+    job.status = LlmJob.STATUS_COMPLETED if not errors else LlmJob.STATUS_FAILED
+    job.errors = errors
+    job.result = ''
+    job.progress = {
+        'done': done,
+        'link_stats': link_stats,
+        **({'summaries': summaries_out} if not prefs.zero_knowledge else {}),
+    }
+    job.save(update_fields=['status', 'errors', 'result', 'progress', 'updated_at'])
+    payload = {
+        'ok': True,
+        'done': done,
+        'errors': errors,
+        'zero_knowledge': prefs.zero_knowledge,
+        'email_count': len(done),
+        'link_stats': link_stats,
+        'summaries': summaries_out,
+    }
+    update_task_progress(
+        task_id,
+        total,
+        total,
+        f'Done · {len(done)} enriched, {link_stats["ok"]} links fetched',
         status='completed',
         extra=payload,
     )

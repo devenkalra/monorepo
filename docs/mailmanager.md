@@ -61,7 +61,7 @@ Browser  /gmail-app/  (Vite SPA, JWT in localStorage)
 ### Selection & bulk actions
 
 - Checkbox, select-all, **shift-click range**, row click focuses + selects
-- Archive, Delete (toolbar confirms; detail **Delete & next** does not), Assign label, Move to (label + archive), Summarize, Process
+- Archive, Delete (toolbar confirms; detail **Delete & next** does not), Assign label, Move to (label + archive), Summarize, Process, Enrich links
 
 ### Detail pane
 
@@ -82,6 +82,21 @@ Browser  /gmail-app/  (Vite SPA, JWT in localStorage)
 - Persist: brief summary, key points, details, category + confidence
 - Categories: Marketing, Newsletter, Offer, Receipt, Important, Personal, Work, Social, Spam, Other
 - Progress polled from Redis-backed task progress
+
+### Enrich links (Celery)
+
+Custom action (not an LLM tool call for URL discovery):
+
+1. Regex/HTML extract `http(s)` URLs from body text + `href`/`src`
+2. Classify each URL:
+   - **YouTube** → Apify transcript actor (fallback local transcript API)
+   - **Instagram / Facebook / LinkedIn / X / TikTok** → Apify metadata (`APIFY_TOKEN`; LinkedIn group/private posts need `LINKEDIN_LI_AT`)
+   - **Instagram reels/posts + TikTok** → additional Apify transcript scrape appended to linked content
+   - **image** → download + vision describe
+   - else → fetch page text (SSRF-filtered, size-capped)
+3. Per-email structured summarize (same `EmailSummary` / list chip / From→summary pane as Summarize), including linked content in `details`
+
+`POST /api/gmail/enrich-links/` · job kind `enrich_links` · returns `summaries` like Summarize
 
 ### Process (Celery)
 
@@ -109,7 +124,7 @@ Browser  /gmail-app/  (Vite SPA, JWT in localStorage)
 | `UserPreference` | ZK flag, LLM context size |
 | `SavedPrompt` | Named NL prompts |
 | `EmailSummary` | Per-message summary / category |
-| `LlmJob` | Summarize/process job + progress metadata |
+| `LlmJob` | Summarize/process/enrich-links job + progress metadata |
 | `SummarizeSchedule` | Repeatable filter + interval |
 
 ## LLM
@@ -155,6 +170,7 @@ If migrate reports table/index already exists from a partial apply, fake the con
 | POST | `/api/gmail/schedules/<id>/run/` | Run schedule now |
 | POST | `/api/gmail/summarize/` | Summarize selected |
 | POST | `/api/gmail/process/` | Process selected |
+| POST | `/api/gmail/enrich-links/` | Fetch links + summarize |
 | GET | `/api/gmail/tasks/<id>/progress/` | Poll Celery progress |
 
 ## Out of scope

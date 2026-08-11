@@ -613,6 +613,83 @@ export default function GmailApp() {
     }
   }
 
+  const runEnrichLinks = async () => {
+    const ids = selectedIds()
+    if (!ids.length) return
+    flash('Enriching links (web / social / images / YouTube)…')
+    setProgress({ status: 'processing', message: 'Starting…', percentage: 0 })
+    try {
+      const start = await api.json(`${API}/enrich-links/`, {
+        method: 'POST',
+        body: JSON.stringify({
+          gmail_ids: ids,
+          account_id: activeAccount?.id,
+        }),
+      })
+      const done = await pollTask(start.task_id)
+      if (done.status === 'failed') throw new Error(done.message || 'Enrich links failed')
+      const incoming = done.summaries || {}
+      const incomingIds = Object.keys(incoming)
+      if (incomingIds.length) {
+        const nextMap = { ...sessionSummariesRef.current, ...incoming }
+        sessionSummariesRef.current = nextMap
+        zkPersistEnabled.current = true
+        setSessionSummaries(nextMap)
+        incomingIds.forEach((id) => sessionSummarized.current.add(id))
+      }
+      setEmails((prev) =>
+        prev.map((e) => {
+          const s = incoming[e.gmail_id]
+          if (!s) return e
+          return mergeSessionSummary({ ...e, ...s, has_summary: true }, null, {
+            [e.gmail_id]: s,
+          })
+        }),
+      )
+      setDetail((d) => {
+        const mergeOne = (base, gid) => {
+          const s = incoming[gid]
+          if (!s) return null
+          return {
+            kind: 'email',
+            email: mergeSessionSummary({ ...base, gmail_id: gid, ...s, has_summary: true }, null, {
+              [gid]: s,
+            }),
+          }
+        }
+        if (d?.kind === 'email' && d.email?.gmail_id && incoming[d.email.gmail_id]) {
+          return mergeOne(d.email, d.email.gmail_id)
+        }
+        const firstId = incomingIds[0]
+        if (!firstId) return d
+        const row = emails.find((x) => x.gmail_id === firstId) || { gmail_id: firstId }
+        return mergeOne(row, firstId) || d
+      })
+      if (incomingIds.length) setDetailPane('summary')
+      const stats = done.link_stats || {}
+      const ok = stats.ok ?? 0
+      const failed = stats.failed ?? 0
+      const nDone = done.done?.length || incomingIds.length
+      if (zeroKnowledge && nDone > 0 && !incomingIds.length) {
+        flash(
+          `Job finished (${nDone}) but no summary text was returned. Check celery-worker, then Enrich links again.`,
+          'error',
+        )
+      } else {
+        flash(
+          `Enriched ${nDone} · ${ok} link(s) fetched` +
+            (failed ? `, ${failed} failed` : '') +
+            '.',
+          'ok',
+        )
+      }
+    } catch (e) {
+      flash(String(e.message || e), 'error')
+    } finally {
+      setProgress(null)
+    }
+  }
+
   const savePrompt = async () => {
     const label = saveLabel.trim()
     const text = prompt.trim()
@@ -1046,6 +1123,15 @@ export default function GmailApp() {
           Force
         </label>
         <button type="button" disabled={!nSel || !connected} className="rounded-lg bg-emerald-700 px-2 py-1 text-white disabled:opacity-40" onClick={() => { setProcessPrompt(''); setProcessOpen(true) }}>Process</button>
+        <button
+          type="button"
+          disabled={!nSel || !connected}
+          title="Fetch linked web pages; Instagram/Facebook/LinkedIn/X/TikTok via Apify; images; YouTube transcripts — then summarize"
+          className="rounded-lg bg-teal-700 px-2 py-1 text-white disabled:opacity-40"
+          onClick={runEnrichLinks}
+        >
+          Enrich links
+        </button>
       </section>
 
       {statusMsg && (
@@ -1170,14 +1256,21 @@ export default function GmailApp() {
             <p className="text-stone-500">
               Click <span className="font-medium text-stone-700">from</span> for summary,{' '}
               <span className="font-medium text-stone-700">subject</span> for full email — or
-              Summarize / Process selected.
+              Summarize / Process / Enrich links on selected emails.
             </p>
           )}
-          {detail?.kind === 'process' && (
+          {(detail?.kind === 'process' || detail?.kind === 'enrich') && (
             <div className="min-h-0 flex-1 space-y-2 overflow-auto">
-              <h2 className="text-lg font-semibold">Process result</h2>
+              <h2 className="text-lg font-semibold">
+                {detail.kind === 'enrich' ? 'Enrich links result' : 'Process result'}
+              </h2>
               <p className="text-stone-500">{detail.prompt}</p>
-              <p className="text-xs text-stone-400">{detail.email_count} emails</p>
+              <p className="text-xs text-stone-400">
+                {detail.email_count} emails
+                {detail.link_stats
+                  ? ` · ${detail.link_stats.ok || 0}/${detail.link_stats.urls || 0} links fetched`
+                  : ''}
+              </p>
               <div
                 className="whitespace-pre-wrap"
                 dangerouslySetInnerHTML={{ __html: linkifyHtml(detail.result) }}
@@ -1741,7 +1834,10 @@ function EmailDetail({
                 ))}
               </ul>
               <h3 className="font-semibold">Details</h3>
-              <p dangerouslySetInnerHTML={{ __html: linkifyHtml(e.details || '') }} />
+              <div
+                className="whitespace-pre-wrap break-words"
+                dangerouslySetInnerHTML={{ __html: linkifyHtml(e.details || '') }}
+              />
             </>
           ) : zk && (e.category || e.has_category || e.has_summary) ? (
             <p className="text-stone-500">

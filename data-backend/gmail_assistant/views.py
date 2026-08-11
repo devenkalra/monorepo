@@ -32,7 +32,12 @@ from .services import (
     scrub_zero_knowledge_data,
     set_active_account,
 )
-from .tasks import process_emails_task, run_summarize_schedule, summarize_emails_task
+from .tasks import (
+    enrich_links_task,
+    process_emails_task,
+    run_summarize_schedule,
+    summarize_emails_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -551,6 +556,30 @@ def process_prompt(request):
         prompt=prompt,
     )
     async_result = process_emails_task.delay(str(job.id))
+    job.celery_task_id = async_result.id
+    job.save(update_fields=['celery_task_id', 'updated_at'])
+    return Response({'ok': True, 'task_id': async_result.id, 'job_id': str(job.id)})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def enrich_links(request):
+    """Extract URLs → fetch web/image/YouTube → summarize with LLM."""
+    account = _account_from_request(request)
+    if not account:
+        return Response({'detail': 'Connect a Gmail account first.'}, status=400)
+    gmail_ids = [i for i in (request.data.get('gmail_ids') or []) if i]
+    if not gmail_ids:
+        return Response({'detail': 'gmail_ids required'}, status=400)
+    prompt = (request.data.get('prompt') or '').strip()
+    job = LlmJob.objects.create(
+        user=request.user,
+        account=account,
+        kind=LlmJob.KIND_ENRICH_LINKS,
+        gmail_ids=gmail_ids,
+        prompt=prompt,
+    )
+    async_result = enrich_links_task.delay(str(job.id))
     job.celery_task_id = async_result.id
     job.save(update_fields=['celery_task_id', 'updated_at'])
     return Response({'ok': True, 'task_id': async_result.id, 'job_id': str(job.id)})

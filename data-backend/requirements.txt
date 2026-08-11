@@ -52,7 +52,9 @@ pdf2image>=1.16.0
 # flask>=3.0.0
 requests>=2.31.0
 
-# Gmail Assistant (Gmail API)
+# Gmail Assistant (Gmail API + link enrichment)
 google-api-python-client>=2.100.0
 google-auth>=2.23.0
 google-auth-httplib2>=0.1.1
+beautifulsoup4>=4.12.0
+youtube-transcript-api>=1.0.0

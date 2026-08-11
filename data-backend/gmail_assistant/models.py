@@ -223,9 +223,11 @@ class SummarizeSchedule(models.Model):
 class LlmJob(models.Model):
     KIND_SUMMARIZE = 'summarize'
     KIND_PROCESS = 'process'
+    KIND_ENRICH_LINKS = 'enrich_links'
     KIND_CHOICES = (
         (KIND_SUMMARIZE, 'Summarize'),
         (KIND_PROCESS, 'Process'),
+        (KIND_ENRICH_LINKS, 'Enrich links'),
     )
 
     STATUS_PENDING = 'pending'
