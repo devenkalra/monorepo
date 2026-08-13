@@ -116,7 +116,8 @@ class NoteCaptureTests(APITestCase):
         text = _youtube_transcript('jNQXAC9IVRw', on_progress=steps.append)
         self.assertEqual(text, 'from apify')
         ytdlp.assert_called_once_with('jNQXAC9IVRw')
-        apify.assert_called_once_with('jNQXAC9IVRw')
+        apify.assert_called_once()
+        self.assertEqual(apify.call_args.args[0], 'jNQXAC9IVRw')
         self.assertTrue(any('apify' in s.lower() for s in steps))
 
     def test_extract_apify_transcript_text(self):

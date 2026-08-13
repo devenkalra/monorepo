@@ -55,11 +55,16 @@ YOUTUBE_WEBSHARE_USERNAME = os.environ.get('YOUTUBE_WEBSHARE_USERNAME', '')
 YOUTUBE_WEBSHARE_PASSWORD = os.environ.get('YOUTUBE_WEBSHARE_PASSWORD', '')
 YOUTUBE_HTTP_PROXY = os.environ.get('YOUTUBE_HTTP_PROXY', '')
 # Apify transcript actor fallback (same token as bldrdojo gmail assistant).
-APIFY_TOKEN = os.environ.get('APIFY_TOKEN', '') or os.environ.get('APIFY_API_TOKEN', '')
-APIFY_YOUTUBE_TRANSCRIPT_ACTOR = os.environ.get(
-    'APIFY_YOUTUBE_TRANSCRIPT_ACTOR',
-    'automation-lab/youtube-transcript',
-)
+APIFY_TOKEN = (
+    os.environ.get('APIFY_TOKEN', '') or os.environ.get('APIFY_API_TOKEN', '')
+).strip().strip("'").strip('"')
+APIFY_YOUTUBE_TRANSCRIPT_ACTOR = (
+    os.environ.get(
+        'APIFY_YOUTUBE_TRANSCRIPT_ACTOR',
+        'automation-lab/youtube-transcript',
+    )
+    or 'automation-lab/youtube-transcript'
+).strip().strip("'").strip('"')
 EMAIL_ALIAS_ROUTES = os.environ.get(
     'EMAIL_ALIAS_ROUTES',
     'writing_idea@kalra.com:writing_idea',

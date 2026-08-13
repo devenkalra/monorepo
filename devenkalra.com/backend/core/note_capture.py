@@ -8,8 +8,9 @@ import logging
 import re
 import socket
 from html.parser import HTMLParser
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 from django.conf import settings
 from django.utils.text import slugify
@@ -511,7 +512,15 @@ def _extract_apify_transcript_text(items) -> str:
             continue
         if item.get('success') is False:
             continue
-        for key in ('fullText', 'transcript', 'transcriptText', 'text', 'captions', 'subtitleText'):
+        for key in (
+            'fullText',
+            'transcript',
+            'transcriptText',
+            'text',
+            'captions',
+            'subtitleText',
+            'segments',
+        ):
             val = item.get(key)
             if isinstance(val, str) and val.strip():
                 parts.append(val.strip())
@@ -531,16 +540,19 @@ def _extract_apify_transcript_text(items) -> str:
     return '\n\n'.join(parts).strip()[:MAX_TRANSCRIPT_CHARS]
 
 
-def _youtube_transcript_via_apify(video_id: str) -> str:
-    token = getattr(settings, 'APIFY_TOKEN', '') or ''
+def _youtube_transcript_via_apify(video_id: str, on_progress=None) -> str:
+    token = (getattr(settings, 'APIFY_TOKEN', '') or '').strip()
     if not token:
         return ''
     actor = (
         getattr(settings, 'APIFY_YOUTUBE_TRANSCRIPT_ACTOR', '')
         or 'automation-lab/youtube-transcript'
-    )
+    ).strip()
     actor_id = actor.replace('/', '~')
-    endpoint = f'https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items'
+    endpoint = (
+        f'https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items'
+        f'?{urlencode({"token": token})}'
+    )
     payload = json.dumps(
         {
             'urls': [f'https://www.youtube.com/watch?v={video_id}'],
@@ -553,22 +565,42 @@ def _youtube_transcript_via_apify(video_id: str) -> str:
         data=payload,
         method='POST',
         headers={
-            'Authorization': f'Bearer {token}',
             'Content-Type': 'application/json',
             'User-Agent': USER_AGENT,
         },
     )
     try:
-        with urlopen(req, timeout=90) as resp:
+        with urlopen(req, timeout=150) as resp:
             raw = resp.read(2_000_000)
         items = json.loads(raw.decode('utf-8', errors='replace'))
+    except HTTPError as exc:
+        body = exc.read()[:400].decode('utf-8', errors='replace')
+        logger.warning(
+            'Apify YouTube transcript failed for %s: HTTP %s %s',
+            video_id,
+            exc.code,
+            body,
+        )
+        _emit(on_progress, f'Apify failed (HTTP {exc.code})')
+        return ''
     except Exception as exc:  # noqa: BLE001
-        logger.warning('Apify YouTube transcript failed for %s: %s', video_id, type(exc).__name__)
+        logger.warning(
+            'Apify YouTube transcript failed for %s: %s %s',
+            video_id,
+            type(exc).__name__,
+            exc,
+        )
+        _emit(on_progress, f'Apify failed ({type(exc).__name__})')
         return ''
     if not isinstance(items, list):
         logger.warning('Apify YouTube transcript returned unexpected shape for %s', video_id)
+        _emit(on_progress, 'Apify returned an unexpected response')
         return ''
-    return _extract_apify_transcript_text(items)
+    text = _extract_apify_transcript_text(items)
+    if not text:
+        logger.warning('Apify YouTube transcript had no text for %s: %s', video_id, items[:1])
+        _emit(on_progress, 'Apify returned no transcript text')
+    return text
 
 
 def _youtube_transcript(video_id: str, on_progress=None) -> str:
@@ -581,7 +613,11 @@ def _youtube_transcript(video_id: str, on_progress=None) -> str:
         return text
     if getattr(settings, 'APIFY_TOKEN', ''):
         _emit(on_progress, 'Trying Apify transcript scraper…')
-        return _youtube_transcript_via_apify(video_id)
+        return _youtube_transcript_via_apify(video_id, on_progress=on_progress)
+    logger.warning(
+        'YouTube captions failed and APIFY_TOKEN is not set in devenkalra.com/backend/.env'
+    )
+    _emit(on_progress, 'Apify is not configured on this app')
     return ''
 
 
