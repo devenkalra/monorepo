@@ -1,4 +1,4 @@
-from django.contrib.auth import authenticate, login, logout
+from django.http import Http404
 from django.contrib.auth.models import User
 from django.middleware.csrf import get_token
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -91,7 +91,14 @@ class PageViewSet(viewsets.ModelViewSet):
         return [permissions.IsAuthenticated()]
 
     def retrieve(self, request, *args, **kwargs):
-        page = self.get_object()
+        try:
+            page = self.get_object()
+        except Http404:
+            if kwargs.get('slug') == 'notes':
+                from .note_capture import ensure_notes_shell
+                page = ensure_notes_shell()
+            else:
+                raise
         denied = page_access_denied_response(request, page)
         if denied is not None:
             return denied
@@ -139,6 +146,9 @@ class NoteNodeViewSet(viewsets.ModelViewSet):
     @extend_schema(tags=['notes'], summary='Get nested Notes folder tree')
     @action(detail=False, methods=['get'], url_path='tree')
     def tree(self, request):
+        from .note_capture import ensure_notes_shell
+
+        ensure_notes_shell()
         roots = NoteNode.objects.filter(parent=None).select_related('page').order_by('order', 'title')
         return Response(NoteNodeTreeSerializer(roots, many=True).data)
 

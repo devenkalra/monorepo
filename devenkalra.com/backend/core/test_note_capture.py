@@ -7,7 +7,7 @@ from rest_framework.authtoken.models import Token
 from rest_framework.test import APITestCase
 
 from .models import NoteNode, Page
-from .note_capture import capture_dropped, ensure_temp_folder, youtube_video_id
+from .note_capture import capture_dropped, ensure_notes_shell, ensure_temp_folder, youtube_video_id
 
 
 class NoteCaptureTests(APITestCase):
@@ -20,6 +20,18 @@ class NoteCaptureTests(APITestCase):
         self.assertEqual(youtube_video_id('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ')
         self.assertEqual(youtube_video_id('https://youtu.be/dQw4w9WgXcQ'), 'dQw4w9WgXcQ')
         self.assertIsNone(youtube_video_id('https://example.com/watch?v=dQw4w9WgXcQ'))
+
+    def test_notes_page_is_created_on_retrieve_if_missing(self):
+        self.assertFalse(Page.objects.filter(slug='notes').exists())
+        response = self.client.get('/api/pages/notes/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.json()['slug'], 'notes')
+        self.assertTrue(Page.objects.filter(slug='notes').exists())
+        again = self.client.get('/api/pages/notes/')
+        self.assertEqual(again.status_code, status.HTTP_200_OK)
+        self.assertEqual(Page.objects.filter(slug='notes').count(), 1)
+        ensure_notes_shell()
+        self.assertEqual(Page.objects.filter(slug='notes').count(), 1)
 
     def test_capture_plain_text_creates_note_under_temp(self):
         result = capture_dropped(text='Shopping list\n- milk\n- eggs')

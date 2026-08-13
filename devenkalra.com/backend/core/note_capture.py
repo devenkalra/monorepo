@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.utils.text import slugify
 
-from .models import NoteNode, Page
+from .models import MenuItem, NoteNode, Page
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +88,42 @@ def ensure_temp_folder() -> NoteNode:
         page=None,
         order=0,
     )
+
+
+def ensure_notes_shell() -> Page:
+    """Create the Notes CMS page and Notebook → Notes menu if they are missing."""
+    page, _ = Page.objects.get_or_create(
+        slug='notes',
+        defaults={
+            'title': 'Notes',
+            'category': 'Notebook',
+            'content': (
+                '# Notes\n\n'
+                'Browse selected pages in a multi-level folder tree. '
+                'Use the left panel to navigate folders and pages; '
+                'the right panel shows a live preview.\n'
+            ),
+            'roles_with_access': '',
+        },
+    )
+    notebook, _ = MenuItem.objects.get_or_create(
+        title='Notebook',
+        parent=None,
+        defaults={'page': None, 'order': 5, 'show_in_menu': True},
+    )
+    notes_menu = MenuItem.objects.filter(title='Notes', parent=notebook).order_by('id').first()
+    if notes_menu is None:
+        MenuItem.objects.create(
+            title='Notes',
+            parent=notebook,
+            page=page,
+            order=1,
+            show_in_menu=True,
+        )
+    elif notes_menu.page_id != page.id:
+        notes_menu.page = page
+        notes_menu.save(update_fields=['page'])
+    return page
 
 
 def unique_slug(title: str) -> str:
