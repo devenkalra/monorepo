@@ -8,11 +8,11 @@ export default defineConfig({
     port: 311,
     proxy: {
       '/media': {
-        target: 'http://127.0.0.1:8001',
+        target: 'http://127.0.0.1:8090',
         changeOrigin: true,
       },
       '/api': {
-        target: 'http://127.0.0.1:8001',
+        target: 'http://127.0.0.1:8090',
         changeOrigin: true,
       }
     }

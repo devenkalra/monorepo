@@ -25,6 +25,36 @@ async function apiFetch(url, { token, json, method = 'GET', body } = {}) {
   return fetch(url, options);
 }
 
+async function readCaptureStream(res, onStatus) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let result = null;
+  let errorDetail = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop() || '';
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      let evt;
+      try {
+        evt = JSON.parse(trimmed);
+      } catch {
+        continue;
+      }
+      if (evt.type === 'status' && evt.message) onStatus?.(evt.message);
+      if (evt.type === 'error') errorDetail = evt.detail || 'Could not create note';
+      if (evt.type === 'done') result = evt.result || evt;
+    }
+  }
+  if (errorDetail) return { error: true, detail: errorDetail };
+  return result || {};
+}
+
 function compareNoteNodes(a, b) {
   if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1;
   return String(a.title || '').localeCompare(String(b.title || ''), undefined, {
@@ -62,26 +92,93 @@ function findNodePath(nodes, predicate, path = []) {
   return null;
 }
 
+function beginNoteDrag(e, nodeId, title) {
+  e.dataTransfer.setData('application/x-note-node-id', String(nodeId));
+  e.dataTransfer.setData('text/plain', title || '');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function extractDropPayload(dataTransfer) {
+  const noteId = dataTransfer.getData('application/x-note-node-id');
+  if (noteId) {
+    const id = Number(noteId);
+    if (id) return { kind: 'move', nodeId: id };
+  }
+
+  const uriList = dataTransfer.getData('text/uri-list');
+  const plain = dataTransfer.getData('text/plain');
+  const html = dataTransfer.getData('text/html');
+  const urlFromUri = (uriList || '')
+    .split('\n')
+    .map((s) => s.trim())
+    .find((s) => s && !s.startsWith('#') && /^https?:\/\//i.test(s));
+  if (urlFromUri) {
+    return { kind: 'capture', url: urlFromUri, text: (plain || urlFromUri).trim() };
+  }
+
+  const trimmed = (plain || '').trim();
+  if (/^https?:\/\/\S+$/i.test(trimmed)) {
+    return { kind: 'capture', url: trimmed, text: trimmed };
+  }
+
+  const href = html && html.match(/href=["'](https?:\/\/[^"']+)/i);
+  if (href?.[1]) {
+    return { kind: 'capture', url: href[1], text: trimmed || href[1] };
+  }
+
+  if (trimmed) {
+    return { kind: 'capture', text: trimmed };
+  }
+  return null;
+}
+
 function TreeNode({
   node,
   depth,
   expanded,
   selectedId,
+  dropTargetId,
   onToggle,
   onSelect,
   onDelete,
+  onMove,
+  onDragState,
   canEdit,
 }) {
   const isFolder = node.is_folder;
   const isOpen = expanded.has(node.id);
   const isSelected = selectedId === node.id;
+  const isDropTarget = isFolder && dropTargetId === node.id;
   const pad = 0.55 + depth * 0.85;
 
   return (
     <li className="notes-tree-item">
       <div
-        className={`notes-tree-row${isSelected ? ' is-selected' : ''}${isFolder ? ' is-folder' : ' is-page'}`}
+        className={`notes-tree-row${isSelected ? ' is-selected' : ''}${isFolder ? ' is-folder' : ' is-page'}${
+          isDropTarget ? ' is-drop-target' : ''
+        }${canEdit ? ' is-draggable' : ''}`}
         style={{ paddingLeft: `${pad}rem` }}
+        draggable={canEdit}
+        onDragStart={(e) => beginNoteDrag(e, node.id, node.title)}
+        onDragOver={(e) => {
+          if (!canEdit || !isFolder) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = 'move';
+          onDragState?.(node.id);
+        }}
+        onDragLeave={() => {
+          if (dropTargetId === node.id) onDragState?.(null);
+        }}
+        onDrop={(e) => {
+          if (!canEdit || !isFolder) return;
+          e.preventDefault();
+          e.stopPropagation();
+          onDragState?.(null);
+          const raw = e.dataTransfer.getData('application/x-note-node-id');
+          const id = Number(raw);
+          if (id && id !== node.id) onMove?.(id, node.id);
+        }}
       >
         {isFolder ? (
           <button
@@ -132,9 +229,12 @@ function TreeNode({
               depth={depth + 1}
               expanded={expanded}
               selectedId={selectedId}
+              dropTargetId={dropTargetId}
               onToggle={onToggle}
               onSelect={onSelect}
               onDelete={onDelete}
+              onMove={onMove}
+              onDragState={onDragState}
               canEdit={canEdit}
             />
           ))}
@@ -176,6 +276,11 @@ export function NotesApp() {
   const [targetParentId, setTargetParentId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState('');
+  const [dropActive, setDropActive] = useState(false);
+  const [dropTargetId, setDropTargetId] = useState(null);
+  const [capturing, setCapturing] = useState(false);
+  const [captureStatus, setCaptureStatus] = useState('');
+  const [captureLog, setCaptureLog] = useState([]);
 
   const writeNotesUrl = useCallback(
     ({
@@ -411,6 +516,109 @@ export function NotesApp() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const moveNode = async (nodeId, parentId) => {
+    if (!isAuthenticated || !token) {
+      setError('Sign in again to move notes.');
+      return;
+    }
+    if (!nodeId || nodeId === parentId) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await apiFetch(`/api/note-nodes/${nodeId}/`, {
+        method: 'PATCH',
+        token,
+        body: { parent: parentId },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(
+          body.parent?.[0] || body.detail || `Could not move note (${res.status})`
+        );
+      }
+      await loadTree();
+      if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
+    } catch (e) {
+      setError(e.message || 'Could not move note');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const captureDrop = async (payload) => {
+    if (!isAuthenticated || !token) {
+      setError('Sign in to drop URLs or text into Notes.');
+      return;
+    }
+    setCapturing(true);
+    setBusy(true);
+    setError('');
+    setCaptureStatus('Starting…');
+    setCaptureLog(['Starting…']);
+    try {
+      const res = await apiFetch('/api/note-nodes/capture/?stream=1', {
+        method: 'POST',
+        token,
+        body: {
+          text: payload.text || '',
+          url: payload.url || '',
+        },
+      });
+      const ctype = res.headers.get('content-type') || '';
+      let body = {};
+      if (ctype.includes('ndjson') && res.body) {
+        body = await readCaptureStream(res, (message) => {
+          setCaptureStatus(message);
+          setCaptureLog((prev) => (prev[prev.length - 1] === message ? prev : [...prev, message]));
+        });
+      } else {
+        body = await res.json().catch(() => ({}));
+      }
+      if (!res.ok || body.error) {
+        throw new Error(body.detail || body.error || `Could not create note (${res.status})`);
+      }
+      const created = body.node;
+      const page = body.page;
+      const folderId = body.temp_folder_id;
+      await loadTree();
+      if (folderId) setExpanded((prev) => new Set(prev).add(folderId));
+      const selectedNode = {
+        ...created,
+        is_folder: false,
+        page_slug: page?.slug || created.page_slug,
+        page_title: page?.title || created.page_title,
+      };
+      setSelected(selectedNode);
+      setPreview(page || null);
+      writeNotesUrl({ node: selectedNode, creating: false, editing: false, replace: true });
+    } catch (e) {
+      setError(e.message || 'Could not create note from drop');
+    } finally {
+      setCapturing(false);
+      setBusy(false);
+      setDropActive(false);
+      setCaptureStatus('');
+      setCaptureLog([]);
+    }
+  };
+
+  const onCaptureDragOver = (e) => {
+    if (!isAuthenticated) return;
+    const types = [...(e.dataTransfer?.types || [])];
+    if (types.includes('application/x-note-node-id')) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setDropActive(true);
+  };
+
+  const onCaptureDrop = (e) => {
+    e.preventDefault();
+    setDropActive(false);
+    const payload = extractDropPayload(e.dataTransfer);
+    if (!payload || payload.kind !== 'capture') return;
+    captureDrop(payload);
   };
 
   const createFolder = async (e) => {
@@ -815,7 +1023,29 @@ export function NotesApp() {
           </div>
         )}
 
-        <div className="notes-tree-scroll">
+        <div
+          className={`notes-tree-scroll${dropTargetId === 'root' ? ' is-drop-target' : ''}`}
+          onDragOver={(e) => {
+            if (!isAuthenticated) return;
+            const types = [...(e.dataTransfer?.types || [])];
+            if (!types.includes('application/x-note-node-id')) return;
+            if (e.target.closest?.('.notes-tree-row.is-folder')) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setDropTargetId('root');
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) setDropTargetId(null);
+          }}
+          onDrop={(e) => {
+            const payload = extractDropPayload(e.dataTransfer);
+            setDropTargetId(null);
+            if (payload?.kind === 'move') {
+              e.preventDefault();
+              moveNode(payload.nodeId, null);
+            }
+          }}
+        >
           {loading && <p className="notes-muted">Loading…</p>}
           {error && <p className="notes-error">{error}</p>}
           {!loading && !tree.length && (
@@ -835,9 +1065,12 @@ export function NotesApp() {
                   depth={0}
                   expanded={expanded}
                   selectedId={selected?.id}
+                  dropTargetId={dropTargetId}
                   onToggle={toggleExpand}
                   onSelect={onSelect}
                   onDelete={onDelete}
+                  onMove={moveNode}
+                  onDragState={setDropTargetId}
                   canEdit={isAuthenticated}
                 />
               ))}
@@ -877,14 +1110,66 @@ export function NotesApp() {
           />
         ) : (
           <>
+            {isAuthenticated && (
+              <div
+                className={`notes-dropzone${dropActive ? ' is-active' : ''}${capturing ? ' is-busy' : ''}`}
+                onDragOver={onCaptureDragOver}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget)) setDropActive(false);
+                }}
+                onDrop={onCaptureDrop}
+              >
+                {capturing ? (
+                  <div className="notes-dropzone-progress">
+                    <div className="notes-dropzone-current">{captureStatus || 'Creating note in _Temp…'}</div>
+                    {captureLog.length > 1 && (
+                      <ol className="notes-dropzone-log">
+                        {captureLog.map((step, i) => (
+                          <li key={`${i}-${step}`} className={i === captureLog.length - 1 ? 'is-current' : ''}>
+                            {step}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                  </div>
+                ) : (
+                  'Drop a YouTube link, web URL, or text here to create a note in _Temp'
+                )}
+              </div>
+            )}
             {!selected && (
               <div className="notes-preview-empty">
                 <h2>Select a page</h2>
                 <p>Choose a page from the left panel to preview its content here.</p>
+                {isAuthenticated && (
+                  <p>Or drop a URL or text block above — notes land in the _Temp folder.</p>
+                )}
               </div>
             )}
             {selected?.is_folder && selectedFolderListing && (
-              <div className="notes-folder-view">
+              <div
+                className={`notes-folder-view${dropTargetId === selected.id ? ' is-drop-target' : ''}`}
+                onDragOver={(e) => {
+                  if (!isAuthenticated) return;
+                  const types = [...(e.dataTransfer?.types || [])];
+                  if (!types.includes('application/x-note-node-id')) return;
+                  if (e.target.closest?.('.notes-folder-card.is-folder')) return;
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                  setDropTargetId(selected.id);
+                }}
+                onDragLeave={(e) => {
+                  if (!e.currentTarget.contains(e.relatedTarget)) setDropTargetId(null);
+                }}
+                onDrop={(e) => {
+                  const payload = extractDropPayload(e.dataTransfer);
+                  setDropTargetId(null);
+                  if (payload?.kind === 'move') {
+                    e.preventDefault();
+                    moveNode(payload.nodeId, selected.id);
+                  }
+                }}
+              >
                 <header className="notes-preview-header">
                   <div>
                     <h2>{selectedFolderListing.title}</h2>
@@ -915,8 +1200,27 @@ export function NotesApp() {
                             <li key={child.id}>
                               <button
                                 type="button"
-                                className="notes-folder-card is-folder"
+                                className={`notes-folder-card is-folder${
+                                  dropTargetId === child.id ? ' is-drop-target' : ''
+                                }`}
+                                draggable={isAuthenticated}
+                                onDragStart={(e) => beginNoteDrag(e, child.id, child.title)}
                                 onClick={() => onSelect(child)}
+                                onDragOver={(e) => {
+                                  if (!isAuthenticated) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  e.dataTransfer.dropEffect = 'move';
+                                  setDropTargetId(child.id);
+                                }}
+                                onDragLeave={() => setDropTargetId(null)}
+                                onDrop={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setDropTargetId(null);
+                                  const payload = extractDropPayload(e.dataTransfer);
+                                  if (payload?.kind === 'move') moveNode(payload.nodeId, child.id);
+                                }}
                               >
                                 <span className="notes-folder-card-icon" aria-hidden="true">
                                   📁
@@ -941,6 +1245,8 @@ export function NotesApp() {
                               <button
                                 type="button"
                                 className="notes-folder-card is-page"
+                                draggable={isAuthenticated}
+                                onDragStart={(e) => beginNoteDrag(e, child.id, child.title)}
                                 onClick={() => onSelect(child)}
                               >
                                 <span className="notes-folder-card-icon" aria-hidden="true">

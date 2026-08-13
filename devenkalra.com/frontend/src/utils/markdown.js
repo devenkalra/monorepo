@@ -18,6 +18,14 @@ export function expandHeadingAnchors(markdown) {
  * Shared ReactMarkdown `components.a` behavior for in-app navigation.
  * Hash links stay on-page; absolute http(s) open in a new tab; other paths use navigate().
  */
+/** YouTube (and other) iframes need a Referer or the player shows error 153. */
+export function MarkdownIframe(props) {
+  return createElement('iframe', {
+    ...props,
+    referrerPolicy: props.referrerPolicy || 'strict-origin-when-cross-origin',
+  });
+}
+
 export function createMarkdownLinkComponent(navigate) {
   return function MarkdownLink({ href, children, ...props }) {
     if (!href) {

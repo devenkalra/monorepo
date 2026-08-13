@@ -30,6 +30,35 @@ if ENV_FILE.exists():
 # ClickUp Integration
 CLICKUP_API_TOKEN = os.environ.get('CLICKUP_API_TOKEN', '')
 
+# Google OAuth (site login) — also used as fallback for Gmail mailbox OAuth
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
+GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+
+# Email processor (Gmail → classify → workflows)
+EMAIL_WORKER_ENABLED = os.environ.get('EMAIL_WORKER_ENABLED', '1').lower() in ('1', 'true', 'yes')
+EMAIL_GMAIL_CLIENT_ID = os.environ.get('EMAIL_GMAIL_CLIENT_ID', '')
+EMAIL_GMAIL_CLIENT_SECRET = os.environ.get('EMAIL_GMAIL_CLIENT_SECRET', '')
+EMAIL_OAUTH_REDIRECT_URI = os.environ.get('EMAIL_OAUTH_REDIRECT_URI', '')
+EMAIL_PUBSUB_TOPIC = os.environ.get('EMAIL_PUBSUB_TOPIC', '')
+EMAIL_PUBSUB_VERIFICATION_TOKEN = os.environ.get('EMAIL_PUBSUB_VERIFICATION_TOKEN', '')
+EMAIL_OPENAI_API_KEY = os.environ.get('EMAIL_OPENAI_API_KEY', '') or os.environ.get('OPENAI_API_KEY', '')
+EMAIL_OPENAI_MODEL = os.environ.get('EMAIL_OPENAI_MODEL', 'gpt-4.1-mini')
+LOCALAI_URL = os.environ.get('LOCALAI_URL', '').rstrip('/')
+LOCALAI_API_KEY = os.environ.get('LOCALAI_API_KEY', '')
+LOCALAI_MODEL = (
+    os.environ.get('LOCALAI_MODEL', '')
+    or os.environ.get('GMAIL_LOCALAI_MODEL', '')
+    or 'qwen3-32b'
+)
+EMAIL_ALIAS_ROUTES = os.environ.get(
+    'EMAIL_ALIAS_ROUTES',
+    'writing_idea@kalra.com:writing_idea',
+)
+EMAIL_CLICKUP_LIST_ID = os.environ.get('EMAIL_CLICKUP_LIST_ID', '')
+EMAIL_CLICKUP_SENDER_FIELD_ID = os.environ.get('EMAIL_CLICKUP_SENDER_FIELD_ID', '')
+EMAIL_CONFIDENCE_AUTO = float(os.environ.get('EMAIL_CONFIDENCE_AUTO', '0.85'))
+EMAIL_COMMAND_SESSION_TTL = int(os.environ.get('EMAIL_COMMAND_SESSION_TTL', '3600'))
+
 
 
 # Quick-start development settings - unsuitable for production
@@ -42,6 +71,10 @@ SECRET_KEY = 'django-insecure-mpre*6e9qj+^6c355^03xiej@7(n7xx&4m&p571mxh$y10!36p
 DEBUG = True
 
 ALLOWED_HOSTS = ['*']
+
+# YouTube embeds need a Referer. Django's default (same-origin) strips it and
+# the player shows "Error 153: Video player configuration error".
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 
 # Application definition

@@ -1,7 +1,7 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
-import { expandHeadingAnchors, createMarkdownLinkComponent } from '../utils/markdown';
+import { expandHeadingAnchors, createMarkdownLinkComponent, MarkdownIframe } from '../utils/markdown';
 
 /**
  * Shared markdown renderer: GFM (tables, strikethrough, task lists),
@@ -9,9 +9,10 @@ import { expandHeadingAnchors, createMarkdownLinkComponent } from '../utils/mark
  */
 export function MarkdownBody({ children, navigate }) {
   const content = expandHeadingAnchors(children || '');
-  const components = navigate
-    ? { a: createMarkdownLinkComponent(navigate) }
-    : undefined;
+  const components = {
+    iframe: MarkdownIframe,
+    ...(navigate ? { a: createMarkdownLinkComponent(navigate) } : {}),
+  };
 
   return (
     <ReactMarkdown

@@ -142,6 +142,76 @@ class NoteNodeViewSet(viewsets.ModelViewSet):
         roots = NoteNode.objects.filter(parent=None).select_related('page').order_by('order', 'title')
         return Response(NoteNodeTreeSerializer(roots, many=True).data)
 
+    @extend_schema(
+        tags=['notes'],
+        summary='Capture dropped text or URL as a note under _Temp',
+        request={
+            'application/json': {
+                'type': 'object',
+                'properties': {
+                    'text': {'type': 'string'},
+                    'url': {'type': 'string'},
+                },
+            }
+        },
+    )
+    @action(detail=False, methods=['post'], url_path='capture')
+    def capture(self, request):
+        import json
+        import queue
+        import threading
+        from django.db import close_old_connections
+        from django.http import StreamingHttpResponse
+        from .note_capture import capture_dropped
+
+        text = (request.data.get('text') or '').strip()
+        url = (request.data.get('url') or '').strip()
+        stream = str(request.query_params.get('stream') or '').lower() in ('1', 'true', 'yes')
+
+        if not stream:
+            try:
+                result = capture_dropped(text=text, url=url)
+            except ValueError as exc:
+                return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as exc:  # noqa: BLE001
+                return Response(
+                    {'detail': f'Could not create note: {exc}'},
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+            return Response(result, status=status.HTTP_201_CREATED)
+
+        events = queue.Queue()
+
+        def on_progress(message):
+            events.put({'type': 'status', 'message': message})
+
+        def worker():
+            close_old_connections()
+            try:
+                result = capture_dropped(text=text, url=url, on_progress=on_progress)
+                events.put({'type': 'done', 'result': result})
+            except ValueError as exc:
+                events.put({'type': 'error', 'detail': str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                events.put({'type': 'error', 'detail': f'Could not create note: {exc}'})
+            finally:
+                events.put(None)
+                close_old_connections()
+
+        threading.Thread(target=worker, daemon=True).start()
+
+        def generate():
+            while True:
+                item = events.get()
+                if item is None:
+                    break
+                yield json.dumps(item) + '\n'
+
+        response = StreamingHttpResponse(generate(), content_type='application/x-ndjson')
+        response['Cache-Control'] = 'no-cache'
+        response['X-Accel-Buffering'] = 'no'
+        return response
+
 
 @extend_schema(tags=['menu'], summary='Get nested navigation menu')
 class MenuView(APIView):
