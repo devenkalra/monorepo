@@ -345,6 +345,18 @@ deploy_one_app() {
     exit 1
   fi
 
+  if [[ "$app" == "devenkalra" ]]; then
+    local db_file="devenkalra.com/backend/db.sqlite3"
+    if [[ ! -f "$db_file" ]]; then
+      print_err "[$app] REFUSING TO DEPLOY: $db_file is missing or not a file."
+      print_info "Compose would create an empty database. Restore sqlite first."
+      exit 1
+    fi
+    local backup_file="${db_file}.bak-$(date +%Y%m%d%H%M%S)"
+    print_step "[$app] Backing up SQLite to $backup_file"
+    run_cmd cp -a "$db_file" "$backup_file"
+  fi
+
   print_step "[$app] Rebuilding and recreating services: $services"
   run_shell "docker compose -p \"$PROJECT\" -f \"$COMPOSE_FILE\" up -d --build --force-recreate --no-deps $services"
 

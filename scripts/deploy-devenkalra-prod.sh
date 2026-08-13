@@ -33,6 +33,21 @@ fi
 echo "[deploy] Pulling latest changes"
 git pull --ff-only
 
+DB_FILE="devenkalra.com/backend/db.sqlite3"
+if [[ ! -f "$DB_FILE" ]]; then
+  echo "[deploy] REFUSING TO DEPLOY: $DB_FILE is missing or not a file." >&2
+  echo "[deploy] Compose would create an empty database. Restore sqlite first." >&2
+  exit 1
+fi
+if [[ -d "$DB_FILE" ]]; then
+  echo "[deploy] REFUSING TO DEPLOY: $DB_FILE is a directory (broken bind mount)." >&2
+  exit 1
+fi
+STAMP=$(date +%Y%m%d%H%M%S)
+BACKUP_FILE="${DB_FILE}.bak-${STAMP}"
+echo "[deploy] Backing up SQLite ($(du -h "$DB_FILE" | cut -f1)) to $BACKUP_FILE"
+cp -a "$DB_FILE" "$BACKUP_FILE"
+
 echo "[deploy] Building and recreating devenkalra-app"
 docker compose -p data-backend -f "$PROD_COMPOSE_FILE" up -d --build --force-recreate --no-deps devenkalra-app
 

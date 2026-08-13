@@ -1,0 +1,12 @@
+# Keep secrets and live SQLite out of devenkalra image builds.
+# Build context is the monorepo root (see devenkalra.com/Dockerfile).
+**/*.sqlite3
+**/*.sqlite3-*
+**/*.sqlite-wal
+**/*.sqlite-shm
+devenkalra.com/backend/db.sqlite3
+devenkalra.com/backend/.env
+devenkalra.com/backend/media
+**/node_modules
+**/.venv
+**/venv
