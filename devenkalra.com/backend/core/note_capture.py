@@ -221,7 +221,7 @@ def _build_youtube_note(url: str, on_progress=None) -> tuple[str, str, str]:
     _emit(on_progress, 'Fetching YouTube title…')
     title = _youtube_title(watch_url) or f'YouTube {video_id}'
     _emit(on_progress, f'Downloading transcript for “{title}”…')
-    transcript = _youtube_transcript(video_id)
+    transcript = _youtube_transcript(video_id, on_progress=on_progress)
     if transcript:
         _emit(on_progress, 'Transcript downloaded; generating summary…')
     else:
@@ -301,19 +301,127 @@ def _youtube_title(watch_url: str) -> str:
         return ''
 
 
-def _youtube_transcript(video_id: str) -> str:
+def _is_youtube_ip_block(exc: BaseException) -> bool:
+    name = type(exc).__name__
+    if name in {'RequestBlocked', 'IpBlocked'}:
+        return True
+    text = str(exc).lower()
+    return (
+        'blocking requests from your ip' in text
+        or 'ip belonging to a cloud provider' in text
+    )
+
+
+def _youtube_proxy_config():
+    webshare_user = getattr(settings, 'YOUTUBE_WEBSHARE_USERNAME', '') or ''
+    webshare_pass = getattr(settings, 'YOUTUBE_WEBSHARE_PASSWORD', '') or ''
+    if webshare_user and webshare_pass:
+        from youtube_transcript_api.proxies import WebshareProxyConfig
+
+        return WebshareProxyConfig(
+            proxy_username=webshare_user,
+            proxy_password=webshare_pass,
+        )
+    proxy = getattr(settings, 'YOUTUBE_HTTP_PROXY', '') or ''
+    if proxy:
+        from youtube_transcript_api.proxies import GenericProxyConfig
+
+        return GenericProxyConfig(http_url=proxy, https_url=proxy)
+    return None
+
+
+def _snippets_to_text(fetched) -> str:
+    parts = [
+        getattr(s, 'text', None) or (s.get('text') if isinstance(s, dict) else '')
+        for s in fetched or []
+    ]
+    text = ' '.join(p.replace('\n', ' ') for p in parts if p).strip()
+    return text[:MAX_TRANSCRIPT_CHARS]
+
+
+_VTT_TS_RE = re.compile(r'^\d{2}:\d{2}(?::\d{2})?[.,]\d{3}\s+-->\s+')
+_VTT_TAG_RE = re.compile(r'<[^>]+>')
+
+
+def _vtt_to_text(vtt: str) -> str:
+    lines = []
+    for raw in (vtt or '').splitlines():
+        line = raw.strip()
+        if not line or line.startswith(('WEBVTT', 'NOTE', 'Kind:', 'Language:')):
+            continue
+        if _VTT_TS_RE.match(line) or line.isdigit():
+            continue
+        cleaned = _VTT_TAG_RE.sub('', line).strip()
+        if cleaned and (not lines or lines[-1] != cleaned):
+            lines.append(cleaned)
+    return ' '.join(lines).strip()[:MAX_TRANSCRIPT_CHARS]
+
+
+def _json3_to_text(raw: bytes) -> str:
+    data = json.loads(raw.decode('utf-8', errors='replace'))
+    parts = []
+    for event in data.get('events') or []:
+        for seg in event.get('segs') or []:
+            piece = (seg.get('utf8') or '').replace('\n', ' ').strip()
+            if piece:
+                parts.append(piece)
+    return ' '.join(parts).strip()[:MAX_TRANSCRIPT_CHARS]
+
+
+def _pick_caption_url(tracks: dict) -> tuple[str, str] | None:
+    preferred_langs = ('en', 'en-US', 'en-GB', 'en-IN', 'en-orig')
+    preferred_exts = ('json3', 'vtt', 'srv3')
+
+    def url_for(lang: str) -> tuple[str, str] | None:
+        by_ext = {
+            (entry.get('ext') or ''): entry.get('url')
+            for entry in (tracks.get(lang) or [])
+            if entry.get('url')
+        }
+        for ext in preferred_exts:
+            if by_ext.get(ext):
+                return by_ext[ext], ext
+        for ext, url in by_ext.items():
+            if url:
+                return url, ext
+        return None
+
+    for lang in preferred_langs:
+        picked = url_for(lang)
+        if picked:
+            return picked
+    for lang in tracks:
+        if str(lang).lower().startswith('en'):
+            picked = url_for(lang)
+            if picked:
+                return picked
+    for lang in tracks:
+        picked = url_for(lang)
+        if picked:
+            return picked
+    return None
+
+
+def _youtube_transcript_via_api(video_id: str) -> str:
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError:
         logger.warning('youtube-transcript-api is not installed')
         return ''
 
-    api = YouTubeTranscriptApi()
+    kwargs = {}
+    proxy_config = _youtube_proxy_config()
+    if proxy_config is not None:
+        kwargs['proxy_config'] = proxy_config
+    api = YouTubeTranscriptApi(**kwargs)
     fetched = None
     try:
         fetched = api.fetch(video_id, languages=['en', 'en-US', 'en-GB', 'en-IN'])
     except Exception as exc:  # noqa: BLE001
-        logger.info('YouTube transcript fetch() failed: %s', exc)
+        if _is_youtube_ip_block(exc):
+            logger.warning('YouTube blocked this IP for timedtext (%s)', type(exc).__name__)
+            return ''
+        logger.info('YouTube transcript fetch() failed: %s', type(exc).__name__)
 
     if fetched is None:
         try:
@@ -335,15 +443,146 @@ def _youtube_transcript(video_id: str) -> str:
                     logger.info('YouTube transcript translate failed: %s', exc)
             fetched = transcript.fetch()
         except Exception as exc:  # noqa: BLE001
-            logger.warning('YouTube transcript list/fetch failed for %s: %s', video_id, exc)
+            if _is_youtube_ip_block(exc):
+                logger.warning('YouTube blocked this IP for timedtext (%s)', type(exc).__name__)
+            else:
+                logger.warning(
+                    'YouTube transcript list/fetch failed for %s: %s',
+                    video_id,
+                    type(exc).__name__,
+                )
             return ''
 
-    parts = [
-        getattr(s, 'text', None) or (s.get('text') if isinstance(s, dict) else '')
-        for s in fetched
-    ]
-    text = ' '.join(p.replace('\n', ' ') for p in parts if p).strip()
-    return text[:MAX_TRANSCRIPT_CHARS]
+    return _snippets_to_text(fetched)
+
+
+def _youtube_transcript_via_ytdlp(video_id: str) -> str:
+    """Use yt-dlp player clients; often still works when timedtext is IP-blocked."""
+    try:
+        import yt_dlp
+    except ImportError:
+        logger.warning('yt-dlp is not installed')
+        return ''
+
+    opts = {
+        'skip_download': True,
+        'quiet': True,
+        'no_warnings': True,
+        'socket_timeout': 20,
+        'retries': 1,
+        'extractor_args': {'youtube': {'player_client': ['android', 'tv_embedded', 'web']}},
+    }
+    proxy = getattr(settings, 'YOUTUBE_HTTP_PROXY', '') or ''
+    if proxy:
+        opts['proxy'] = proxy
+    watch_url = f'https://www.youtube.com/watch?v={video_id}'
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(watch_url, download=False)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('yt-dlp caption extract failed for %s: %s', video_id, type(exc).__name__)
+        return ''
+
+    tracks = info.get('subtitles') or {}
+    auto = info.get('automatic_captions') or {}
+    picked = _pick_caption_url(tracks) or _pick_caption_url(auto)
+    if not picked:
+        logger.info('yt-dlp found no caption tracks for %s', video_id)
+        return ''
+    caption_url, ext = picked
+    try:
+        raw = _http_get(caption_url, timeout=20)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('yt-dlp caption download failed for %s: %s', video_id, type(exc).__name__)
+        return ''
+    if ext == 'json3':
+        try:
+            return _json3_to_text(raw)
+        except Exception as exc:  # noqa: BLE001
+            logger.info('yt-dlp json3 parse failed: %s', exc)
+            return ''
+    return _vtt_to_text(raw.decode('utf-8', errors='replace'))
+
+
+def _extract_apify_transcript_text(items) -> str:
+    parts = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        if item.get('success') is False:
+            continue
+        for key in ('fullText', 'transcript', 'transcriptText', 'text', 'captions', 'subtitleText'):
+            val = item.get(key)
+            if isinstance(val, str) and val.strip():
+                parts.append(val.strip())
+                break
+            if isinstance(val, list) and val:
+                segs = []
+                for seg in val:
+                    if isinstance(seg, dict):
+                        t = (seg.get('text') or seg.get('transcript') or '').strip()
+                        if t:
+                            segs.append(t)
+                    elif seg:
+                        segs.append(str(seg).strip())
+                if segs:
+                    parts.append(' '.join(segs))
+                    break
+    return '\n\n'.join(parts).strip()[:MAX_TRANSCRIPT_CHARS]
+
+
+def _youtube_transcript_via_apify(video_id: str) -> str:
+    token = getattr(settings, 'APIFY_TOKEN', '') or ''
+    if not token:
+        return ''
+    actor = (
+        getattr(settings, 'APIFY_YOUTUBE_TRANSCRIPT_ACTOR', '')
+        or 'automation-lab/youtube-transcript'
+    )
+    actor_id = actor.replace('/', '~')
+    endpoint = f'https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items'
+    payload = json.dumps(
+        {
+            'urls': [f'https://www.youtube.com/watch?v={video_id}'],
+            'language': 'en',
+            'mergeSegments': True,
+        }
+    ).encode('utf-8')
+    req = Request(
+        endpoint,
+        data=payload,
+        method='POST',
+        headers={
+            'Authorization': f'Bearer {token}',
+            'Content-Type': 'application/json',
+            'User-Agent': USER_AGENT,
+        },
+    )
+    try:
+        with urlopen(req, timeout=90) as resp:
+            raw = resp.read(2_000_000)
+        items = json.loads(raw.decode('utf-8', errors='replace'))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('Apify YouTube transcript failed for %s: %s', video_id, type(exc).__name__)
+        return ''
+    if not isinstance(items, list):
+        logger.warning('Apify YouTube transcript returned unexpected shape for %s', video_id)
+        return ''
+    return _extract_apify_transcript_text(items)
+
+
+def _youtube_transcript(video_id: str, on_progress=None) -> str:
+    text = _youtube_transcript_via_api(video_id)
+    if text:
+        return text
+    _emit(on_progress, 'Trying an alternate caption source…')
+    text = _youtube_transcript_via_ytdlp(video_id)
+    if text:
+        return text
+    if getattr(settings, 'APIFY_TOKEN', ''):
+        _emit(on_progress, 'Trying Apify transcript scraper…')
+        return _youtube_transcript_via_apify(video_id)
+    return ''
 
 
 def _fetch_web_page(url: str) -> tuple[str, str]:

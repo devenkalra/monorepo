@@ -91,6 +91,68 @@ class NoteCaptureTests(APITestCase):
         self.assertIn('raw captions um uh hello', page.content)
         self.assertNotIn('## Key points', page.content)
 
+    @patch('core.note_capture._youtube_transcript_via_apify', return_value='')
+    @patch('core.note_capture._youtube_transcript_via_ytdlp', return_value='from ytdlp')
+    @patch('core.note_capture._youtube_transcript_via_api', return_value='')
+    def test_transcript_falls_back_to_ytdlp(self, api, ytdlp, apify):
+        from .note_capture import _youtube_transcript
+
+        steps = []
+        text = _youtube_transcript('jNQXAC9IVRw', on_progress=steps.append)
+        self.assertEqual(text, 'from ytdlp')
+        api.assert_called_once_with('jNQXAC9IVRw')
+        ytdlp.assert_called_once_with('jNQXAC9IVRw')
+        apify.assert_not_called()
+        self.assertTrue(any('alternate caption' in s.lower() for s in steps))
+
+    @override_settings(APIFY_TOKEN='apify-test-token')
+    @patch('core.note_capture._youtube_transcript_via_apify', return_value='from apify')
+    @patch('core.note_capture._youtube_transcript_via_ytdlp', return_value='')
+    @patch('core.note_capture._youtube_transcript_via_api', return_value='')
+    def test_transcript_falls_back_to_apify(self, api, ytdlp, apify):
+        from .note_capture import _youtube_transcript
+
+        steps = []
+        text = _youtube_transcript('jNQXAC9IVRw', on_progress=steps.append)
+        self.assertEqual(text, 'from apify')
+        ytdlp.assert_called_once_with('jNQXAC9IVRw')
+        apify.assert_called_once_with('jNQXAC9IVRw')
+        self.assertTrue(any('apify' in s.lower() for s in steps))
+
+    def test_extract_apify_transcript_text(self):
+        from .note_capture import _extract_apify_transcript_text
+
+        text = _extract_apify_transcript_text(
+            [{'success': True, 'fullText': 'Hello from the zoo'}]
+        )
+        self.assertEqual(text, 'Hello from the zoo')
+
+    def test_vtt_and_json3_caption_parsers(self):
+        from .note_capture import _json3_to_text, _vtt_to_text
+
+        vtt = (
+            'WEBVTT\n\n'
+            '00:00:00.000 --> 00:00:01.000\n'
+            'Hello from <c>the</c> zoo\n\n'
+            '00:00:01.000 --> 00:00:02.000\n'
+            'Hello from the zoo\n'
+        )
+        self.assertEqual(_vtt_to_text(vtt), 'Hello from the zoo')
+        raw = b'{"events":[{"segs":[{"utf8":"Hello "}]},{"segs":[{"utf8":"zoo"}]}]}'
+        self.assertEqual(_json3_to_text(raw), 'Hello zoo')
+
+    def test_ip_block_detection(self):
+        from .note_capture import _is_youtube_ip_block
+
+        class RequestBlocked(Exception):
+            pass
+
+        self.assertTrue(_is_youtube_ip_block(RequestBlocked('blocked')))
+        self.assertTrue(
+            _is_youtube_ip_block(RuntimeError('YouTube is blocking requests from your IP'))
+        )
+        self.assertFalse(_is_youtube_ip_block(RuntimeError('Subtitles are disabled')))
+
     @patch(
         'core.note_capture._openai_chat',
         return_value='## Summary\n\nThe host explains X.\n\n## Key points\n\n- X matters\n\n## Transcript\n\nThe host explains X clearly.',
