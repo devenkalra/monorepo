@@ -121,12 +121,20 @@ class NoteCaptureTests(APITestCase):
         self.assertTrue(any('apify' in s.lower() for s in steps))
 
     def test_extract_apify_transcript_text(self):
-        from .note_capture import _extract_apify_transcript_text
+        from .note_capture import _coerce_apify_items, _extract_apify_transcript_text
 
         text = _extract_apify_transcript_text(
             [{'success': True, 'fullText': 'Hello from the zoo'}]
         )
         self.assertEqual(text, 'Hello from the zoo')
+        segs = _extract_apify_transcript_text(
+            [{'segments': [{'text': 'Hello'}, {'text': 'zoo'}]}]
+        )
+        self.assertEqual(segs, 'Hello zoo')
+        self.assertEqual(
+            _coerce_apify_items({'data': [{'fullText': 'wrapped'}]}),
+            [{'fullText': 'wrapped'}],
+        )
 
     def test_vtt_and_json3_caption_parsers(self):
         from .note_capture import _json3_to_text, _vtt_to_text
@@ -170,6 +178,14 @@ class NoteCaptureTests(APITestCase):
         self.assertIn('## Key points', markdown)
         self.assertIn('## Transcript', markdown)
         self.assertIn('The host explains X', markdown)
+
+    def test_unwrap_llm_markdown_strips_fences_and_indent(self):
+        from .note_capture import _unwrap_llm_markdown
+
+        fenced = '```markdown\n## Summary\n\nA recap.\n```'
+        self.assertEqual(_unwrap_llm_markdown(fenced), '## Summary\n\nA recap.')
+        indented = '    ## Summary\n\n    A recap.'
+        self.assertEqual(_unwrap_llm_markdown(indented), '## Summary\n\nA recap.')
 
     @patch('core.note_capture._summarize_page', return_value='A short summary of the article.')
     @patch('core.note_capture._fetch_web_page', return_value=('Example Domain', 'This domain is for use in examples.'))

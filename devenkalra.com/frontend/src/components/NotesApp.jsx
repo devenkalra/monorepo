@@ -574,8 +574,10 @@ export function NotesApp() {
       });
       const ctype = res.headers.get('content-type') || '';
       let body = {};
+      let lastStatus = 'Starting…';
       if (ctype.includes('ndjson') && res.body) {
         body = await readCaptureStream(res, (message) => {
+          lastStatus = message;
           setCaptureStatus(message);
           setCaptureLog((prev) => (prev[prev.length - 1] === message ? prev : [...prev, message]));
         });
@@ -599,6 +601,9 @@ export function NotesApp() {
       setSelected(selectedNode);
       setPreview(page || null);
       writeNotesUrl({ node: selectedNode, creating: false, editing: false, replace: true });
+      if ((page?.content || '').includes('Transcript was not available')) {
+        setError(lastStatus);
+      }
     } catch (e) {
       setError(e.message || 'Could not create note from drop');
     } finally {

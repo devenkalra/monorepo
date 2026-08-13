@@ -7,7 +7,8 @@ import json
 import logging
 import re
 import socket
-import threading
+import textwrap
+import time
 from html.parser import HTMLParser
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -223,11 +224,17 @@ def _build_youtube_note(url: str, on_progress=None) -> tuple[str, str, str]:
     _emit(on_progress, 'Fetching YouTube title…')
     title = _youtube_title(watch_url) or f'YouTube {video_id}'
     _emit(on_progress, f'Downloading transcript for “{title}”…')
-    transcript = _youtube_transcript(video_id, on_progress=on_progress)
+    last_status = {'msg': ''}
+
+    def track(message: str) -> None:
+        last_status['msg'] = message
+        _emit(on_progress, message)
+
+    transcript = _youtube_transcript(video_id, on_progress=track)
     if transcript:
         _emit(on_progress, 'Transcript downloaded; generating summary…')
     else:
-        _emit(on_progress, 'No transcript available for this video')
+        _emit(on_progress, last_status['msg'] or 'No transcript available for this video')
     embed = (
         f'<iframe width="560" height="315" '
         f'src="https://www.youtube.com/embed/{video_id}" '
@@ -241,9 +248,12 @@ def _build_youtube_note(url: str, on_progress=None) -> tuple[str, str, str]:
         if transcript
         else ''
     )
+    missing = '_Transcript was not available for this video._'
+    if not transcript and last_status['msg']:
+        missing += f'\n\nCapture status: {last_status["msg"]}'
     body = processed or (
         '## Transcript\n\n'
-        + (transcript or '_Transcript was not available for this video._')
+        + (transcript or missing)
     )
     parts = [
         f'# {title}',
@@ -506,12 +516,43 @@ def _youtube_transcript_via_ytdlp(video_id: str) -> str:
     return _vtt_to_text(raw.decode('utf-8', errors='replace'))
 
 
+def _apify_unwrap(payload):
+    if isinstance(payload, dict) and isinstance(payload.get('data'), dict):
+        return payload['data']
+    return payload
+
+
+def _coerce_apify_items(payload):
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return None
+    for key in ('items', 'data'):
+        val = payload.get(key)
+        if isinstance(val, list):
+            return val
+    if any(
+        key in payload
+        for key in ('fullText', 'segments', 'transcript', 'transcriptText', 'captions')
+    ):
+        return [payload]
+    return None
+
+
+def _apify_request(url: str, *, data: bytes | None = None, timeout: int = 30):
+    headers = {'User-Agent': USER_AGENT}
+    if data is not None:
+        headers['Content-Type'] = 'application/json'
+    req = Request(url, data=data, method='POST' if data is not None else 'GET', headers=headers)
+    with urlopen(req, timeout=timeout) as resp:
+        raw = resp.read(2_000_000)
+    return json.loads(raw.decode('utf-8', errors='replace'))
+
+
 def _extract_apify_transcript_text(items) -> str:
     parts = []
     for item in items or []:
         if not isinstance(item, dict):
-            continue
-        if item.get('success') is False:
             continue
         for key in (
             'fullText',
@@ -550,10 +591,7 @@ def _youtube_transcript_via_apify(video_id: str, on_progress=None) -> str:
         or 'automation-lab/youtube-transcript'
     ).strip()
     actor_id = actor.replace('/', '~')
-    endpoint = (
-        f'https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items'
-        f'?{urlencode({"token": token})}'
-    )
+    qs = urlencode({'token': token})
     payload = json.dumps(
         {
             'urls': [f'https://www.youtube.com/watch?v={video_id}'],
@@ -562,55 +600,77 @@ def _youtube_transcript_via_apify(video_id: str, on_progress=None) -> str:
             'mergeSegments': True,
         }
     ).encode('utf-8')
-    req = Request(
-        endpoint,
-        data=payload,
-        method='POST',
-        headers={
-            'Content-Type': 'application/json',
-            'User-Agent': USER_AGENT,
-        },
-    )
-    box = {'items': None, 'error': ''}
-    done = threading.Event()
-
-    def fetch():
-        try:
-            with urlopen(req, timeout=150) as resp:
-                raw = resp.read(2_000_000)
-            box['items'] = json.loads(raw.decode('utf-8', errors='replace'))
-        except HTTPError as exc:
-            body = exc.read()[:400].decode('utf-8', errors='replace')
-            logger.warning(
-                'Apify YouTube transcript failed for %s: HTTP %s %s',
-                video_id,
-                exc.code,
-                body,
-            )
-            box['error'] = f'Apify failed (HTTP {exc.code})'
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                'Apify YouTube transcript failed for %s: %s %s',
-                video_id,
-                type(exc).__name__,
-                exc,
-            )
-            box['error'] = f'Apify failed ({type(exc).__name__})'
-        finally:
-            done.set()
-
-    threading.Thread(target=fetch, daemon=True).start()
-    waited = 0
-    while not done.wait(8):
-        waited += 8
-        _emit(on_progress, f'Still waiting on Apify ({waited}s)…')
-
-    if box['error']:
-        _emit(on_progress, box['error'])
+    try:
+        started = _apify_request(
+            f'https://api.apify.com/v2/acts/{actor_id}/runs?{qs}',
+            data=payload,
+            timeout=30,
+        )
+    except HTTPError as exc:
+        body = exc.read()[:400].decode('utf-8', errors='replace')
+        logger.warning('Apify start failed for %s: HTTP %s %s', video_id, exc.code, body)
+        _emit(on_progress, f'Apify failed (HTTP {exc.code})')
         return ''
-    items = box['items']
-    if not isinstance(items, list):
-        logger.warning('Apify YouTube transcript returned unexpected shape for %s', video_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('Apify start failed for %s: %s', video_id, type(exc).__name__)
+        _emit(on_progress, f'Apify failed ({type(exc).__name__})')
+        return ''
+
+    run = _apify_unwrap(started)
+    if not isinstance(run, dict) or not run.get('id'):
+        _emit(on_progress, 'Apify did not start a run')
+        return ''
+    run_id = run['id']
+    dataset_id = run.get('defaultDatasetId') or ''
+    status = run.get('status') or 'RUNNING'
+    _emit(on_progress, f'Apify run {status.lower()}')
+
+    deadline = time.monotonic() + 150
+    while status in ('READY', 'RUNNING'):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _emit(on_progress, 'Apify run timed out')
+            return ''
+        time.sleep(min(8, remaining))
+        waited = int(150 - (deadline - time.monotonic()))
+        _emit(on_progress, f'Still waiting on Apify ({waited}s)…')
+        try:
+            polled = _apify_request(
+                f'https://api.apify.com/v2/actor-runs/{run_id}?{qs}',
+                timeout=20,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning('Apify poll failed for %s: %s', video_id, type(exc).__name__)
+            _emit(on_progress, f'Apify poll failed ({type(exc).__name__})')
+            return ''
+        run = _apify_unwrap(polled)
+        if not isinstance(run, dict):
+            _emit(on_progress, 'Apify poll returned an unexpected response')
+            return ''
+        status = run.get('status') or ''
+        dataset_id = run.get('defaultDatasetId') or dataset_id
+
+    if status != 'SUCCEEDED':
+        msg = (run.get('statusMessage') or status or 'failed').strip()
+        _emit(on_progress, f'Apify run {status}: {msg}'[:200])
+        return ''
+    if not dataset_id:
+        _emit(on_progress, 'Apify run had no dataset')
+        return ''
+
+    try:
+        items_payload = _apify_request(
+            f'https://api.apify.com/v2/datasets/{dataset_id}/items?{qs}',
+            timeout=30,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning('Apify dataset fetch failed for %s: %s', video_id, type(exc).__name__)
+        _emit(on_progress, f'Apify dataset failed ({type(exc).__name__})')
+        return ''
+
+    items = _coerce_apify_items(items_payload)
+    if items is None:
+        logger.warning('Apify dataset shape unexpected for %s: %s', video_id, type(items_payload).__name__)
         _emit(on_progress, 'Apify returned an unexpected response')
         return ''
     text = _extract_apify_transcript_text(items)
@@ -622,7 +682,7 @@ def _youtube_transcript_via_apify(video_id: str, on_progress=None) -> str:
                 if actor_err:
                     break
         logger.warning('Apify YouTube transcript had no text for %s: %s', video_id, items[:1])
-        _emit(on_progress, actor_err or 'Apify returned no transcript text')
+        _emit(on_progress, actor_err or f'Apify returned no transcript text ({len(items)} items)')
     return text
 
 
@@ -701,9 +761,7 @@ def _process_youtube_transcript(title: str, url: str, transcript: str, on_progre
     if not markdown:
         return ''
     markdown = markdown.strip()
-    if markdown.startswith('```'):
-        markdown = re.sub(r'^```(?:markdown|md)?\s*', '', markdown)
-        markdown = re.sub(r'\s*```$', '', markdown).strip()
+    markdown = _unwrap_llm_markdown(markdown)
     if '## Summary' not in markdown and '## Transcript' not in markdown:
         return (
             '## Summary\n\n'
@@ -719,7 +777,8 @@ def _summarize_page(title: str, url: str, page_text: str, on_progress=None) -> s
         system=(
             'Summarize the web page for a personal notebook. '
             'Write 2–5 short paragraphs in markdown. Include key facts. '
-            'Do not invent details that are not in the source.'
+            'Do not invent details that are not in the source. '
+            'Do not wrap the answer in a markdown code fence.'
         ),
         user=f'Title: {title}\nURL: {url}\n\n{page_text[:8000]}',
         temperature=0.2,
@@ -794,6 +853,28 @@ def _strip_think(text: str) -> str:
     return cleaned.strip()
 
 
+def _unwrap_llm_markdown(text: str) -> str:
+    """LocalAI often wraps notebook markdown in a ``` fence or 4-space indent."""
+    raw = (text or '').replace('\r\n', '\n')
+    cleaned = raw.strip()
+    if cleaned.lstrip().startswith('```'):
+        cleaned = cleaned.lstrip()
+        cleaned = re.sub(
+            r'^```(?:markdown|md|gfm|text)?[ \t]*\n?',
+            '',
+            cleaned,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+        cleaned = re.sub(r'\n```[ \t]*$', '', cleaned)
+        return cleaned.strip()
+    lines = raw.strip('\n').splitlines()
+    nonempty = [ln for ln in lines if ln.strip()]
+    if nonempty and all(ln.startswith('    ') or ln.startswith('\t') for ln in nonempty):
+        return textwrap.dedent(raw).strip()
+    return cleaned
+
+
 def _chat_once(*, api_key: str, base_url: str | None, model: str, messages: list, temperature: float, timeout: int) -> str:
     from openai import OpenAI
 
@@ -806,7 +887,7 @@ def _chat_once(*, api_key: str, base_url: str | None, model: str, messages: list
         temperature=temperature,
         messages=messages,
     )
-    return _strip_think((resp.choices[0].message.content or '').strip())
+    return _unwrap_llm_markdown(_strip_think((resp.choices[0].message.content or '').strip()))
 
 
 def _assert_public_url(url: str) -> None:
