@@ -52,7 +52,13 @@ async function readCaptureStream(res, onStatus) {
     }
   }
   if (errorDetail) return { error: true, detail: errorDetail };
-  return result || {};
+  if (!result) {
+    return {
+      error: true,
+      detail: 'Capture stream ended before the note was saved (proxy timeout while waiting on Apify).',
+    };
+  }
+  return result;
 }
 
 function compareNoteNodes(a, b) {
@@ -600,7 +606,6 @@ export function NotesApp() {
       setBusy(false);
       setDropActive(false);
       setCaptureStatus('');
-      setCaptureLog([]);
     }
   };
 
