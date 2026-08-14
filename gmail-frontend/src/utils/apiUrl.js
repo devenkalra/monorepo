@@ -10,7 +10,7 @@ export const getApiBaseUrl = () => {
  * Login URL for this app.
  * On Vite :5177, /login is proxied to Django so localStorage stays on :5177.
  */
-export const getLoginUrl = (nextPath = '/gmail-app/') => {
+export const getLoginUrl = (nextPath = '/app/gmail/') => {
   const next = encodeURIComponent(
     nextPath.startsWith('/') ? nextPath : `/${nextPath}`
   );

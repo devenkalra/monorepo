@@ -8,7 +8,7 @@ export default function FoodUserMenu() {
   const navigate = useNavigate();
 
   if (!user) {
-    const next = typeof window !== 'undefined' ? window.location.pathname || '/food-app/' : '/food-app/';
+    const next = typeof window !== 'undefined' ? window.location.pathname || '/app/food/' : '/app/food/';
     return (
       <a
         href={`/login/?next=${encodeURIComponent(next)}`}

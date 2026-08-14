@@ -37,8 +37,8 @@ def gmail_app_dev_redirect(request, rest=''):
     if host not in ('localhost', '127.0.0.1'):
         return HttpResponseRedirect('/login/')
     full = request.get_full_path()
-    prefix = '/gmail-app'
+    prefix = '/app/gmail'
     suffix = full[len(prefix) :] if full.startswith(prefix) else '/'
     if not suffix.startswith('/'):
         suffix = '/' + suffix
-    return HttpResponseRedirect(f'http://{host}:5177/gmail-app{suffix}')
+    return HttpResponseRedirect(f'http://{host}:5177/app/gmail{suffix}')

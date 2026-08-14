@@ -189,7 +189,7 @@ export default function GmailApp() {
 
   useEffect(() => {
     if (loading || isAuthenticated) return
-    window.location.replace(getLoginUrl('/gmail-app/'))
+    window.location.replace(getLoginUrl('/app/gmail/'))
   }, [loading, isAuthenticated])
 
   useEffect(() => {

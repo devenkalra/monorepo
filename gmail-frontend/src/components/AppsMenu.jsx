@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 
 const APPS = [
-  { id: 'people', label: 'People', href: '/people-app/' },
-  { id: 'cad', label: 'CAD', href: '/cad-app/' },
-  { id: 'food', label: 'Food', href: '/food-app/' },
-  { id: 'email', label: 'Email', href: '/email-app/' },
-  { id: 'gmail', label: 'Gmail', href: '/gmail-app/' },
+  { id: 'people', label: 'People', href: '/app/people/' },
+  { id: 'cad', label: 'CAD', href: '/app/cad/' },
+  { id: 'food', label: 'Food', href: '/app/food/' },
+  { id: 'email', label: 'Email', href: '/app/email/' },
+  { id: 'gmail', label: 'Gmail', href: '/app/gmail/' },
+  { id: 'gallery', label: 'Gallery', href: '/app/gallery/' },
 ];
 
 export default function AppsMenu({ current }) {

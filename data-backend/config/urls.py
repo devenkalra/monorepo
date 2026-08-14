@@ -39,11 +39,11 @@ urlpatterns = [
     path('', login_page, name='login'),
     path('login/', login_page, name='login_page'),
     path('api-tester/', api_tester_page, name='api_tester'),
-    # Local: Vite serves the SPA on :5177 (Django alone would 404)
-    path('gmail-app/', gmail_app_dev_redirect),
-    path('gmail-app/<path:rest>', gmail_app_dev_redirect),
+    # Local: Vite serves SPAs (Django alone would 404)
+    path('app/gmail/', gmail_app_dev_redirect),
+    path('app/gmail/<path:rest>', gmail_app_dev_redirect),
     
-    # CSRF cookie for SPAs (cad-app, people-app)
+    # CSRF cookie for SPAs
     path('api/auth/csrf/', csrf_cookie, name='csrf_cookie'),
     # Authentication endpoints
     path('api/auth/', include('dj_rest_auth.urls')),  # login, logout, user, password reset
@@ -62,6 +62,7 @@ urlpatterns = [
     path('api/', include('people.urls')),
     path('api/cad/', include('cad.urls')),
     path('api/food/', include('food.urls')),
+    path('api/gallery/', include('gallery.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 if getattr(settings, 'ENABLE_MAIL_ARCHIVE', False):

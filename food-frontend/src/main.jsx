@@ -11,7 +11,7 @@ initIframeAuth()
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
-      <BrowserRouter basename="/food-app">
+      <BrowserRouter basename="/app/food">
         <FoodApp />
       </BrowserRouter>
     </AuthProvider>

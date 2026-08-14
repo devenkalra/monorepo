@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/cad-app/',
+  base: '/app/cad/',
   server: {
     port: 5174,
     proxy: {

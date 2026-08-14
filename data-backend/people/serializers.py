@@ -9,26 +9,45 @@ from .models import get_user_display_name
 class UserSerializer(serializers.ModelSerializer):
     """Serializer for User model. displayname is from UserProfile (any characters)."""
     displayname = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    public_username = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'displayname']
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'displayname', 'public_username']
         read_only_fields = ['id', 'username']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['displayname'] = get_user_display_name(instance)
+        try:
+            data['public_username'] = instance.userprofile.public_username or ''
+        except UserProfile.DoesNotExist:
+            data['public_username'] = ''
         return data
 
     def update(self, instance, validated_data):
         displayname = validated_data.pop('displayname', None)
+        public_username = validated_data.pop('public_username', None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
         profile, _ = UserProfile.objects.get_or_create(user=instance, defaults={'displayname': displayname or ''})
         if displayname is not None:
             profile.displayname = (displayname or '').strip() or None
-            profile.save()
+        if public_username is not None:
+            from gallery.utils import validate_public_username
+            cleaned = (public_username or '').strip()
+            if cleaned:
+                try:
+                    cleaned = validate_public_username(cleaned)
+                except ValueError as exc:
+                    raise serializers.ValidationError({'public_username': str(exc)}) from exc
+                if UserProfile.objects.filter(public_username=cleaned).exclude(pk=profile.pk).exists():
+                    raise serializers.ValidationError({'public_username': 'That username is taken.'})
+                profile.public_username = cleaned
+            else:
+                profile.public_username = None
+        profile.save()
         return instance
 
 

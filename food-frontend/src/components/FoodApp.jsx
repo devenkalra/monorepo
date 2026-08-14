@@ -104,7 +104,7 @@ export default function FoodApp() {
               <button
                 onClick={() => {
                   setShowSessionExpiredModal(false);
-                  window.location.href = window.location.origin + '/login/?next=' + encodeURIComponent('/food-app/');
+                  window.location.href = window.location.origin + '/login/?next=' + encodeURIComponent('/app/food/');
                 }}
                 className="px-4 py-2 rounded bg-amber-600 hover:bg-amber-700 text-white"
               >
@@ -120,7 +120,7 @@ export default function FoodApp() {
           <Routes>
             <Route path="/profile" element={user ? <ProfileEdit /> : <Navigate to="/" replace />} />
             <Route path="/" element={<FoodSpotsList apiBase={API_BASE} user={user} />} />
-            <Route path="/spot/create" element={user ? <FoodSpotEdit apiBase={API_BASE} /> : <Navigate to={`/login/?next=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '/food-app/spot/create')}`} replace />} />
+            <Route path="/spot/create" element={user ? <FoodSpotEdit apiBase={API_BASE} /> : <Navigate to={`/login/?next=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '/app/food/spot/create')}`} replace />} />
             <Route path="/spot/:id" element={<FoodSpotDetail apiBase={API_BASE} user={user} />} />
             <Route path="/spot/:id/edit" element={user ? <FoodSpotEdit apiBase={API_BASE} /> : <Navigate to="/" replace />} />
             <Route path="/spot-lists" element={user ? <SpotListsList apiBase={API_BASE} /> : <Navigate to="/" replace />} />
@@ -128,7 +128,7 @@ export default function FoodApp() {
             <Route path="/spot-lists/:id" element={user ? <SpotListDetail apiBase={API_BASE} /> : <Navigate to="/" replace />} />
             <Route path="/spot-lists/:id/edit" element={user ? <SpotListEdit apiBase={API_BASE} /> : <Navigate to="/" replace />} />
             <Route path="/foods" element={<FoodsList apiBase={API_BASE} user={user} />} />
-            <Route path="/food/create" element={user ? <FoodEdit apiBase={API_BASE} /> : <Navigate to={`/login/?next=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '/food-app/food/create')}`} replace />} />
+            <Route path="/food/create" element={user ? <FoodEdit apiBase={API_BASE} /> : <Navigate to={`/login/?next=${encodeURIComponent(typeof window !== 'undefined' ? window.location.pathname : '/app/food/food/create')}`} replace />} />
             <Route path="/food/:id" element={<FoodDetail apiBase={API_BASE} user={user} />} />
             <Route path="/food/:id/edit" element={user ? <FoodEdit apiBase={API_BASE} /> : <Navigate to="/foods" replace />} />
             <Route path="/food-lists" element={user ? <FoodListsList apiBase={API_BASE} /> : <Navigate to="/" replace />} />

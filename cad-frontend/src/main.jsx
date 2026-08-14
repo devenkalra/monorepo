@@ -9,7 +9,7 @@ import ProfileEdit from './components/ProfileEdit'
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
-      <BrowserRouter basename="/cad-app">
+      <BrowserRouter basename="/app/cad">
         <Routes>
           <Route path="/profile" element={<ProfileEdit />} />
           <Route path="/*" element={<CadApp />} />

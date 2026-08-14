@@ -51,7 +51,7 @@ function EmailApp() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter basename="/email-app">
+      <BrowserRouter basename="/app/email">
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/email-app/',
+  base: '/app/email/',
   server: {
     host: '0.0.0.0',
     port: 5176,

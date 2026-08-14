@@ -1020,27 +1020,29 @@
         // Also allow local Vite gmail-frontend (port 5177).
         if (
             next &&
-            (next.startsWith('/people-app') ||
-                next.startsWith('/cad-app') ||
-                next.startsWith('/food-app') ||
-                next.startsWith('/email-app') ||
-                next.startsWith('/gmail-app') ||
-                /^https?:\/\/(localhost|127\.0\.0\.1):5177\/gmail-app(\/|$|\?)/i.test(next))
+            (next.startsWith('/app/') ||
+                /^\/[^/]+\/gallery(\/|$)/i.test(next) ||
+                /^https?:\/\/(localhost|127\.0\.0\.1):5177\/app\/gmail(\/|$|\?)/i.test(next) ||
+                /^https?:\/\/(localhost|127\.0\.0\.1):5178\/app\/gallery(\/|$|\?)/i.test(next))
         ) {
             if (/^https?:\/\//i.test(next)) return next;
             next = next.startsWith('/') ? next : '/' + next;
-            // Django on :8000 does not serve the Vite SPA — send gmail-app to :5177.
+            // Django on :8000 does not serve Vite SPAs — send to local Vite ports.
             if (
-                next.startsWith('/gmail-app') &&
                 /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) &&
                 (window.location.port === '8000' || window.location.port === '')
             ) {
                 const host = window.location.hostname;
-                return `http://${host}:5177${next}`;
+                if (next.startsWith('/app/gmail')) {
+                    return `http://${host}:5177${next}`;
+                }
+                if (next.startsWith('/app/gallery') || /^\/[^/]+\/gallery(\/|$)/i.test(next)) {
+                    return `http://${host}:5178${next}`;
+                }
             }
             return next;
         }
-        return '/people-app/';
+        return '/app/people/';
     }
 
     window.addEventListener('DOMContentLoaded', () => {
@@ -1220,7 +1222,7 @@
         'second-brain': {
             title: '🧠 The Second Brain',
             blurb: 'Capture, connect, and catalyze your thoughts. A personal knowledge graph that grows as you do—organize people, places, notes, and ideas into a living web of connections. Import conversations, tag entities, and build your own second brain.',
-            url: '/people-app/'
+            url: '/app/people/'
         },
         'cad': {
             title: '📐 3D Design (Woodworking CAD)',

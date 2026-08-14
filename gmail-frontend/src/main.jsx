@@ -8,7 +8,7 @@ import './index.css'
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
-      <BrowserRouter basename="/gmail-app">
+      <BrowserRouter basename="/app/gmail">
         <GmailApp />
       </BrowserRouter>
     </AuthProvider>

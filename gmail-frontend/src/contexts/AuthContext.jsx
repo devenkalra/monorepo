@@ -119,7 +119,7 @@ export const AuthProvider = ({ children }) => {
     }
     clearTokens();
     if (typeof window !== 'undefined') {
-      window.location.href = getLoginUrl(window.location.pathname || '/gmail-app/');
+      window.location.href = getLoginUrl(window.location.pathname || '/app/gmail/');
     }
   };
 

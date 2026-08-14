@@ -9,6 +9,8 @@ class UserProfile(models.Model):
     """Extended user profile with displayname (any characters, for display only)."""
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='userprofile')
     displayname = models.CharField(max_length=255, blank=True, null=True)
+    # URL-safe handle for public paths like /{public_username}/gallery/{slug}
+    public_username = models.SlugField(max_length=80, blank=True, null=True, unique=True)
 
     def __str__(self):
         return f"{self.user.username} profile"

@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 
 const APPS = [
-  { id: 'people', label: 'People', href: '/people-app/' },
-  { id: 'cad', label: 'CAD', href: '/cad-app/' },
-  { id: 'food', label: 'Food', href: '/food-app/' },
-  { id: 'email', label: 'Email', href: '/email-app/' },
-  { id: 'gmail', label: 'Gmail', href: '/gmail-app/' },
+  { id: 'people', label: 'People', href: '/app/people/' },
+  { id: 'cad', label: 'CAD', href: '/app/cad/' },
+  { id: 'food', label: 'Food', href: '/app/food/' },
+  { id: 'email', label: 'Email', href: '/app/email/' },
+  { id: 'gmail', label: 'Gmail', href: '/app/gmail/' },
+  { id: 'gallery', label: 'Gallery', href: '/app/gallery/' },
 ];
 
 export default function AppsMenu({ current }) {
@@ -16,7 +17,7 @@ export default function AppsMenu({ current }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+        className="inline-flex items-center gap-1 text-sm font-medium text-stone-600 hover:text-stone-900"
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -30,7 +31,7 @@ export default function AppsMenu({ current }) {
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div
             role="menu"
-            className="absolute left-0 z-20 mt-1 min-w-[11rem] rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-800"
+            className="absolute left-0 z-20 mt-1 min-w-[11rem] rounded-lg border border-stone-200 bg-white py-1 shadow-lg"
           >
             {APPS.map((app) => {
               const active = app.id === current;
@@ -43,8 +44,8 @@ export default function AppsMenu({ current }) {
                   onClick={() => setOpen(false)}
                   className={`block px-3 py-2 text-sm ${
                     active
-                      ? 'bg-gray-100 font-medium text-blue-600 dark:bg-gray-700 dark:text-blue-400'
-                      : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700'
+                      ? 'bg-emerald-50 font-medium text-emerald-800'
+                      : 'text-stone-700 hover:bg-stone-50'
                   }`}
                 >
                   {app.label}

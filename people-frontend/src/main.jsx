@@ -10,7 +10,7 @@ createRoot(document.getElementById('root')).render(
   <StrictMode>
     <AuthProvider>
       <EncryptionProvider>
-        <BrowserRouter basename="/people-app">
+        <BrowserRouter basename="/app/people">
           <App />
         </BrowserRouter>
       </EncryptionProvider>

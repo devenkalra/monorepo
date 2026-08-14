@@ -52,8 +52,12 @@ else:
         'http://localhost',
         'http://127.0.0.1',
         'http://localhost:5174',
+        'http://localhost:5177',
+        'http://localhost:5178',
         'http://localhost:3000',
         'http://127.0.0.1:5174',
+        'http://127.0.0.1:5177',
+        'http://127.0.0.1:5178',
     ]
 
 
@@ -88,6 +92,7 @@ INSTALLED_APPS = [
     'people.apps.PeopleConfig',
     'cad.apps.CadConfig',
     'food.apps.FoodConfig',
+    'gallery.apps.GalleryConfig',
 ]
 
 ENABLE_MAIL_ARCHIVE = os.environ.get('ENABLE_MAIL_ARCHIVE', 'False') == 'True'
@@ -109,7 +114,7 @@ GMAIL_OAUTH_REDIRECT_URI = os.environ.get(
     'GMAIL_OAUTH_REDIRECT_URI',
     'http://localhost:8000/api/gmail/oauth/callback/',
 )
-# Where OAuth callback should send the browser (Vite :5177 in local; empty = same-origin /gmail-app/)
+# Where OAuth callback should send the browser (Vite :5177 in local; empty = same-origin /app/gmail/)
 GMAIL_UI_ORIGIN = os.environ.get('GMAIL_UI_ORIGIN', '').rstrip('/')
 LOCALAI_URL = os.environ.get('LOCALAI_URL', '')
 LOCALAI_API_KEY = os.environ.get('LOCALAI_API_KEY', '')
@@ -360,7 +365,7 @@ AUTHENTICATION_BACKENDS = [
 ]
 
 # New django-allauth configuration (v0.57+)
-LOGIN_REDIRECT_URL = '/people-app/'  # Avoid 404 on /accounts/profile/ (allauth default)
+LOGIN_REDIRECT_URL = '/app/people/'  # Avoid 404 on /accounts/profile/ (allauth default)
 ACCOUNT_LOGIN_METHODS = {'email'}  # Only allow email login
 ACCOUNT_SIGNUP_FIELDS = ['email', 'password1', 'password2']  # Don't require username in signup form
 ACCOUNT_EMAIL_VERIFICATION = 'none'  # Disable email verification for local testing

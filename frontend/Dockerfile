@@ -1,4 +1,4 @@
-# Multi-stage: build people and cad frontends, serve with nginx
+# Multi-stage: build SPAs, serve with nginx under /app/{name}/
 # Auth handled by Django (login at / and /login/)
 # Build context must be monorepo root (parent of frontend/)
 FROM node:20-alpine AS builder
@@ -29,21 +29,29 @@ RUN cd gmail-frontend && npm ci
 COPY gmail-frontend/ ./gmail-frontend/
 RUN cd gmail-frontend && npm run build
 
-# Combine outputs: people/cad/food/gmail apps
-# Root / and /login/ are proxied to Django for auth
-RUN mkdir -p /out/people-app /out/cad-app /out/food-app /out/gmail-app && \
-    cp people-frontend/dist/index.html /out/people-app/ && \
-    cp -r people-frontend/dist/assets /out/people-app/ 2>/dev/null || true && \
-    cp people-frontend/dist/favicon.svg /out/people-app/ 2>/dev/null || true && \
-    cp cad-frontend/dist/index.html /out/cad-app/ && \
-    cp -r cad-frontend/dist/assets /out/cad-app/ 2>/dev/null || true && \
-    cp cad-frontend/dist/favicon.svg /out/cad-app/ 2>/dev/null || true && \
-    cp food-frontend/dist/index.html /out/food-app/ && \
-    cp -r food-frontend/dist/assets /out/food-app/ 2>/dev/null || true && \
-    cp food-frontend/dist/favicon.svg /out/food-app/ 2>/dev/null || true && \
-    cp gmail-frontend/dist/index.html /out/gmail-app/ && \
-    cp -r gmail-frontend/dist/assets /out/gmail-app/ 2>/dev/null || true && \
-    cp gmail-frontend/dist/favicon.svg /out/gmail-app/ 2>/dev/null || true
+# Build gallery-frontend
+COPY gallery-frontend/package*.json ./gallery-frontend/
+RUN cd gallery-frontend && npm ci
+COPY gallery-frontend/ ./gallery-frontend/
+RUN cd gallery-frontend && npm run build
+
+# Combine outputs under /app/{name}/
+RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/gallery && \
+    cp people-frontend/dist/index.html /out/app/people/ && \
+    cp -r people-frontend/dist/assets /out/app/people/ 2>/dev/null || true && \
+    cp people-frontend/dist/favicon.svg /out/app/people/ 2>/dev/null || true && \
+    cp cad-frontend/dist/index.html /out/app/cad/ && \
+    cp -r cad-frontend/dist/assets /out/app/cad/ 2>/dev/null || true && \
+    cp cad-frontend/dist/favicon.svg /out/app/cad/ 2>/dev/null || true && \
+    cp food-frontend/dist/index.html /out/app/food/ && \
+    cp -r food-frontend/dist/assets /out/app/food/ 2>/dev/null || true && \
+    cp food-frontend/dist/favicon.svg /out/app/food/ 2>/dev/null || true && \
+    cp gmail-frontend/dist/index.html /out/app/gmail/ && \
+    cp -r gmail-frontend/dist/assets /out/app/gmail/ 2>/dev/null || true && \
+    cp gmail-frontend/dist/favicon.svg /out/app/gmail/ 2>/dev/null || true && \
+    cp gallery-frontend/dist/index.html /out/app/gallery/ && \
+    cp -r gallery-frontend/dist/assets /out/app/gallery/ 2>/dev/null || true && \
+    cp gallery-frontend/dist/favicon.svg /out/app/gallery/ 2>/dev/null || true
 
 # Final nginx image
 FROM nginx:alpine

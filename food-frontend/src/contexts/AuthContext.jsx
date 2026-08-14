@@ -82,7 +82,7 @@ export const AuthProvider = ({ children }) => {
     setAccessToken(null);
     setUser(null);
     if (typeof window !== 'undefined') {
-      const next = encodeURIComponent(window.location.pathname || '/food-app/');
+      const next = encodeURIComponent(window.location.pathname || '/app/food/');
       window.location.href = window.location.origin + '/login/?next=' + next;
     }
   };
