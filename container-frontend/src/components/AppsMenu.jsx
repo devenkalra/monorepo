@@ -7,6 +7,7 @@ const APPS = [
   { id: 'food', label: 'Food', to: '/food-app' },
   { id: 'email', label: 'Email', href: '/email-app/' },
   { id: 'gmail', label: 'Gmail', href: '/gmail-app/' },
+  { id: 'gallery', label: 'Gallery', href: '/app/gallery/' },
 ];
 
 export default function AppsMenu({ current }) {
