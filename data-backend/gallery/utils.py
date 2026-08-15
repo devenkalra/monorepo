@@ -148,6 +148,19 @@ def validate_public_username(value: str) -> str:
     return value
 
 
+def unique_show_slug(gallery, base: str) -> str:
+    slug = slugify(base or '')[:80] or 'show'
+    taken = set(
+        gallery.shows.exclude(slug='').values_list('slug', flat=True)
+    )
+    if slug not in taken:
+        return slug
+    n = 2
+    while f'{slug}-{n}' in taken:
+        n += 1
+    return f'{slug}-{n}'[:80]
+
+
 def role_at_least(role: str, needed: str) -> bool:
     order = {'view': 1, 'add_photos': 2, 'edit': 3}
     return order.get(role, 0) >= order.get(needed, 99)

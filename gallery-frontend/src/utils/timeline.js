@@ -182,6 +182,7 @@ export const EFFECT_TYPES = [
   { type: 'fade-in', label: 'Fade in' },
   { type: 'fade-out', label: 'Fade out' },
   { type: 'blend', label: 'Blend' },
+  { type: 'blend-reverse', label: 'Blend rev' },
 ];
 
 export const DEFAULT_EFFECT_DURATION = 1;
@@ -237,6 +238,7 @@ export function applyTimelineOpacity(slide, time, baseOpacity, effects) {
     if (fx.type === 'fade-in') opacity *= u;
     else if (fx.type === 'fade-out') opacity *= 1 - u;
     else if (fx.type === 'blend') opacity *= ch === 0 ? 1 - u : u;
+    else if (fx.type === 'blend-reverse') opacity *= ch === 0 ? u : 1 - u;
   }
   return Math.min(1, Math.max(0, opacity));
 }

@@ -4,7 +4,7 @@ from rest_framework import serializers
 from people.models import UserProfile
 
 from .constants import ROLE_CHOICES
-from .models import Gallery, GalleryItem, GalleryShare, GalleryShow
+from .models import Gallery, GalleryItem, GalleryShare, GalleryShow, ShowBuildJob
 from .utils import ensure_public_username, guess_media_type
 
 
@@ -90,6 +90,31 @@ class GalleryShowSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class ShowBuildJobSerializer(serializers.ModelSerializer):
+    show = GalleryShowSerializer(read_only=True)
+
+    class Meta:
+        model = ShowBuildJob
+        fields = [
+            'id',
+            'gallery',
+            'status',
+            'prompt',
+            'style',
+            'target_seconds',
+            'item_ids',
+            'title',
+            'plan',
+            'log',
+            'warnings',
+            'error',
+            'show',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
 
 
 class GalleryListSerializer(serializers.ModelSerializer):

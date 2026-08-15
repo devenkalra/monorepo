@@ -34,6 +34,7 @@ const FX_COLORS = {
   'fade-in': 'bg-sky-500/80 border-sky-700',
   'fade-out': 'bg-amber-500/80 border-amber-700',
   blend: 'bg-violet-500/80 border-violet-700',
+  'blend-reverse': 'bg-fuchsia-500/80 border-fuchsia-700',
 };
 
 function ticks(total, pxPerSec) {

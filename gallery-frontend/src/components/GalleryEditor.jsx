@@ -5,14 +5,17 @@ import Carousel, { thumbSrc } from './Carousel';
 import MediaPicker from './MediaPicker';
 import SlideshowEditor from './SlideshowEditor';
 import SlideshowPlayer from './SlideshowPlayer';
+import GenerateShowModal from './GenerateShowModal';
 
 export default function GalleryEditor() {
   const { id } = useParams();
   const [gallery, setGallery] = useState(null);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [picker, setPicker] = useState(false);
   const [carouselIdx, setCarouselIdx] = useState(null);
   const [showEditor, setShowEditor] = useState(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [playingShow, setPlayingShow] = useState(null);
   const [entityId, setEntityId] = useState('');
   const [shareForm, setShareForm] = useState({ email: '', password: '', role: 'view' });
@@ -106,6 +109,11 @@ export default function GalleryEditor() {
           ← All galleries
         </Link>
       </div>
+      {notice ? (
+        <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          {notice}
+        </div>
+      ) : null}
 
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
@@ -307,9 +315,14 @@ export default function GalleryEditor() {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-medium uppercase tracking-wide text-stone-500">Shows</h2>
           {canEdit ? (
-            <button type="button" className="text-sm text-emerald-700" onClick={() => setShowEditor({})}>
-              New show
-            </button>
+            <div className="flex gap-3">
+              <button type="button" className="text-sm text-emerald-700" onClick={() => setGenerateOpen(true)}>
+                Generate show
+              </button>
+              <button type="button" className="text-sm text-emerald-700" onClick={() => setShowEditor({})}>
+                New show
+              </button>
+            </div>
           ) : null}
         </div>
         <ul className="space-y-2">
@@ -325,6 +338,20 @@ export default function GalleryEditor() {
                 {canEdit ? (
                   <button type="button" className="text-stone-600" onClick={() => setShowEditor(s)}>
                     Edit
+                  </button>
+                ) : null}
+                {canEdit ? (
+                  <button
+                    type="button"
+                    className="text-red-600"
+                    onClick={async () => {
+                      await api.json(`/api/gallery/shows/${s.id}/`, { method: 'DELETE' });
+                      if (showEditor?.id === s.id) setShowEditor(null);
+                      if (playingShow?.id === s.id) setPlayingShow(null);
+                      await load();
+                    }}
+                  >
+                    Delete
                   </button>
                 ) : null}
               </div>
@@ -400,6 +427,19 @@ export default function GalleryEditor() {
           onClose={() => {
             setPicker(false);
             load();
+          }}
+        />
+      ) : null}
+      {generateOpen ? (
+        <GenerateShowModal
+          gallery={gallery}
+          onClose={() => setGenerateOpen(false)}
+          onGenerated={async (show) => {
+            setGenerateOpen(false);
+            const notes = show.warnings || [];
+            setNotice(notes.length ? notes.join(' ') : '');
+            await load();
+            setShowEditor(show);
           }}
         />
       ) : null}

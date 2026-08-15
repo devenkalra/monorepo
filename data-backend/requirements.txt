@@ -47,6 +47,7 @@ jsonschema>=4.18.0
 # Image processing and thumbnails
 Pillow>=10.0.0
 pdf2image>=1.16.0
+opencv-python-headless>=4.8.0,<5
 
 # Vector service - DISABLED (flask not needed in backend)
 # flask>=3.0.0

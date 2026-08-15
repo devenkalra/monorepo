@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from pathlib import Path
 
 from django.db.models import Count, Q
@@ -13,8 +14,11 @@ from people.models import Entity, FileReference, UserProfile
 from people.utils import save_file_deduplicated
 
 from .access import mark_share_unlocked, require_gallery_perm, resolve_access
-from .constants import ACCESS_PUBLIC, MEDIA_VIDEO, ROLE_ADD, ROLE_EDIT
-from .models import Gallery, GalleryItem, GalleryShare, GalleryShow, UserMedia
+from .analyze import ensure_item_analysis
+from .constants import ACCESS_PUBLIC, MEDIA_IMAGE, MEDIA_VIDEO, ROLE_ADD, ROLE_EDIT
+from .generate import start_generate_job
+from .models import Gallery, GalleryItem, GalleryShare, GalleryShow, ShowBuildJob, UserMedia
+from .presets import DEFAULT_STYLE, PRESETS
 from .serializers import (
     GalleryDetailSerializer,
     GalleryItemSerializer,
@@ -24,6 +28,7 @@ from .serializers import (
     GalleryWriteSerializer,
     PublicGalleryUnlockSerializer,
     ReorderSerializer,
+    ShowBuildJobSerializer,
     SortSerializer,
 )
 from .tasks import generate_item_thumbnail
@@ -233,6 +238,8 @@ class GalleryItemViewSet(viewsets.ModelViewSet):
             item.thumbnail_status = 'pending'
             item.save(update_fields=['thumbnail_status'])
             generate_item_thumbnail.delay(str(item.id))
+        elif item.media_type == MEDIA_IMAGE:
+            ensure_item_analysis(item)
         return Response(self.get_serializer(item).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
@@ -324,6 +331,87 @@ class GalleryShowViewSet(viewsets.ModelViewSet):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied()
         return show
+
+
+class GenerateShowView(APIView):
+    """Queue a show build and return a job id for status + log polling."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        gallery = get_object_or_404(Gallery, id=request.data.get('gallery'))
+        access = require_gallery_perm(request, gallery, ROLE_EDIT)
+        if not access['can_edit']:
+            return _deny(access, 'Edit permission required.')
+
+        raw_ids = request.data.get('item_ids')
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return Response(
+                {'detail': 'Select at least one image, in the order they should play.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        items_by_id = {str(it.id): it for it in gallery.items.all()}
+        ordered = []
+        accepted = set()
+        for raw in raw_ids:
+            key = str(raw)
+            item = items_by_id.get(key)
+            if not item or (item.media_type and item.media_type != MEDIA_IMAGE):
+                continue
+            ordered.append(key)
+            accepted.add(key)
+
+        if not ordered:
+            return Response(
+                {'detail': 'None of the selected items are images in this gallery.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        style = (request.data.get('style') or DEFAULT_STYLE).lower()
+        if style not in PRESETS:
+            style = DEFAULT_STYLE
+        title = (request.data.get('title') or 'Show').strip() or 'Show'
+        target = request.data.get('target_seconds')
+        try:
+            target = float(target) if target is not None and target != '' else None
+        except (TypeError, ValueError):
+            target = None
+        prompt = request.data.get('prompt') or ''
+        if not isinstance(prompt, str):
+            prompt = ''
+        prompt = prompt.strip()[:2000]
+
+        job = ShowBuildJob.objects.create(
+            gallery=gallery,
+            owner=request.user,
+            status=ShowBuildJob.STATUS_QUEUED,
+            prompt=prompt,
+            style=style,
+            target_seconds=target,
+            item_ids=ordered,
+            title=title,
+            log=[{
+                't': datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                'step': 'queued',
+                'level': 'info',
+                'message': f'Queued {len(ordered)} image(s). Waiting to start…',
+            }],
+        )
+        start_generate_job(job.id)
+        return Response(ShowBuildJobSerializer(job).data, status=status.HTTP_202_ACCEPTED)
+
+
+class ShowBuildJobView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, job_id):
+        job = get_object_or_404(ShowBuildJob.objects.select_related('show', 'gallery'), id=job_id)
+        if job.owner_id != request.user.id:
+            access = require_gallery_perm(request, job.gallery, ROLE_EDIT)
+            if not access['can_edit']:
+                return _deny(access, 'Edit permission required.')
+        return Response(ShowBuildJobSerializer(job).data)
 
 
 class PublicGalleryView(APIView):
@@ -592,6 +680,8 @@ class GalleryUploadView(APIView):
             )
             if item.thumbnail_status == 'pending':
                 generate_item_thumbnail.delay(str(item.id))
+            elif media_type == MEDIA_IMAGE:
+                ensure_item_analysis(item)
             item_data = GalleryItemSerializer(item).data
 
         return Response(

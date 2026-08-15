@@ -4,6 +4,7 @@ import { thumbSrc } from './Carousel';
 import { sampleView, viewZoomX, viewZoomY } from '../utils/kenBurns';
 import ShowTimeline, { EffectPalette } from './ShowTimeline';
 import TimelineStage from './TimelineStage';
+import JsonDebugPanel from './JsonDebugPanel';
 import {
   clipAt,
   effectDuration,
@@ -156,6 +157,7 @@ export default function SlideshowEditor({ gallery, show, onSaved, onClose }) {
   const [transformOpen, setTransformOpen] = useState(true);
   const [cropOpen, setCropOpen] = useState(false);
   const [zoomSync, setZoomSync] = useState(true);
+  const [jsonOpen, setJsonOpen] = useState(false);
 
   const itemsById = useMemo(
     () => Object.fromEntries((gallery.items || []).map((i) => [i.id, i])),
@@ -420,6 +422,7 @@ export default function SlideshowEditor({ gallery, show, onSaved, onClose }) {
         }
       } else if (e.key === 'Escape') {
         if (playing) setPlaying(null);
+        else if (jsonOpen) setJsonOpen(false);
         else onClose?.();
       }
     };
@@ -505,6 +508,13 @@ export default function SlideshowEditor({ gallery, show, onSaved, onClose }) {
               Stop
             </button>
           ) : null}
+          <button
+            type="button"
+            className="rounded border px-3 py-1.5 text-sm"
+            onClick={() => setJsonOpen((o) => !o)}
+          >
+            {jsonOpen ? 'Hide JSON' : 'Show JSON'}
+          </button>
           <button
             type="button"
             className="rounded bg-emerald-700 px-3 py-1.5 text-sm text-white disabled:opacity-50"
@@ -849,6 +859,9 @@ export default function SlideshowEditor({ gallery, show, onSaved, onClose }) {
           </div>
         </div>
       </div>
+      {jsonOpen ? (
+        <JsonDebugPanel title="Show JSON" data={config} onClose={() => setJsonOpen(false)} />
+      ) : null}
     </div>
   );
 }

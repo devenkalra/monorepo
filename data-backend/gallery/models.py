@@ -67,6 +67,7 @@ class GalleryItem(models.Model):
         default='ready',
         help_text='ready|pending|failed|n/a',
     )
+    analysis = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -131,6 +132,49 @@ class GalleryShow(models.Model):
 
     def __str__(self):
         return self.title or self.slug
+
+
+class ShowBuildJob(models.Model):
+    STATUS_QUEUED = 'queued'
+    STATUS_ANALYZING = 'analyzing'
+    STATUS_PLANNING = 'planning'
+    STATUS_COMPILING = 'compiling'
+    STATUS_READY = 'ready'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = (
+        (STATUS_QUEUED, 'Queued'),
+        (STATUS_ANALYZING, 'Analyzing'),
+        (STATUS_PLANNING, 'Planning'),
+        (STATUS_COMPILING, 'Compiling'),
+        (STATUS_READY, 'Ready'),
+        (STATUS_FAILED, 'Failed'),
+    )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    gallery = models.ForeignKey(Gallery, on_delete=models.CASCADE, related_name='show_jobs')
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name='gallery_show_jobs')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_QUEUED)
+    prompt = models.TextField(blank=True, default='')
+    style = models.CharField(max_length=32, blank=True, default='')
+    target_seconds = models.FloatField(null=True, blank=True)
+    item_ids = models.JSONField(default=list, blank=True)
+    title = models.CharField(max_length=255, blank=True, default='')
+    plan = models.JSONField(default=dict, blank=True)
+    log = models.JSONField(default=list, blank=True)
+    warnings = models.JSONField(default=list, blank=True)
+    error = models.TextField(blank=True, default='')
+    show = models.ForeignKey(
+        GalleryShow, null=True, blank=True, on_delete=models.SET_NULL, related_name='build_jobs'
+    )
+    celery_task_id = models.CharField(max_length=64, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.status}:{self.id}'
 
 
 class UserMedia(models.Model):

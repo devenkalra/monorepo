@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     freecad \
     poppler-utils \
     ffmpeg \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies

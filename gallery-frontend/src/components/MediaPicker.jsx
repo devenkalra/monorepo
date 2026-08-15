@@ -8,6 +8,22 @@ const TABS = [
   { id: 'url', label: 'Web URL' },
 ];
 
+const STORAGE_KEY = 'gallery.mediaPicker';
+
+function readStored() {
+  try {
+    const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    const tab = TABS.some((t) => t.id === data.tab) ? data.tab : 'upload';
+    return {
+      tab,
+      q: typeof data.q === 'string' ? data.q : '',
+      external: typeof data.external === 'string' ? data.external : '',
+    };
+  } catch {
+    return { tab: 'upload', q: '', external: '' };
+  }
+}
+
 function toPickPayload(r) {
   return {
     url: r.url?.startsWith('http') ? '' : r.url,
@@ -22,10 +38,10 @@ function toPickPayload(r) {
 }
 
 export default function MediaPicker({ galleryId, onPick, onUploaded, onClose }) {
-  const [tab, setTab] = useState('upload');
-  const [q, setQ] = useState('');
+  const [tab, setTab] = useState(() => readStored().tab);
+  const [q, setQ] = useState(() => readStored().q);
   const [results, setResults] = useState([]);
-  const [external, setExternal] = useState('');
+  const [external, setExternal] = useState(() => readStored().external);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -49,6 +65,14 @@ export default function MediaPicker({ galleryId, onPick, onUploaded, onClose }) 
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ tab, q, external }));
+    } catch {
+      /* private mode / quota */
+    }
+  }, [tab, q, external]);
 
   useEffect(() => {
     // My files = everything keyed to the user (uploads, gallery items, entity photos)
