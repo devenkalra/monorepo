@@ -6,6 +6,46 @@ import { createElement } from 'react';
  *
  * CommonMark leaves `[#slug]` as literal text; this is an explicit id/link convention.
  */
+const SOURCE_LINE_TAGS = new Set([
+  'p',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'ul',
+  'ol',
+  'li',
+  'pre',
+  'blockquote',
+  'table',
+  'hr',
+  'div',
+  'img',
+  'figure',
+  'iframe',
+  'section',
+  'article',
+]);
+
+/** Stamp markdown block positions onto the preview DOM for scroll sync. */
+export function rehypeSourceLines() {
+  return (tree) => {
+    const walk = (node) => {
+      const line = node.position?.start?.line;
+      if (node.type === 'element' && SOURCE_LINE_TAGS.has(node.tagName) && line) {
+        node.properties = node.properties || {};
+        if (node.properties['data-source-line'] == null) {
+          node.properties['data-source-line'] = line;
+        }
+      }
+      (node.children || []).forEach(walk);
+    };
+    walk(tree);
+  };
+}
+
 export function expandHeadingAnchors(markdown) {
   if (!markdown) return markdown;
   return markdown.replace(

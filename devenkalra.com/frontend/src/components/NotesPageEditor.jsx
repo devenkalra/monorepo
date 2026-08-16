@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { MarkdownBody } from './MarkdownBody';
+import { scrollPreviewToSourceLine, stampHtmlSourceLines, textareaTopSourceLine } from '../utils/notesScrollSync';
 import './NotesApp.css';
 
 const AUTOSAVE_DEBOUNCE_MS = 10_000;
@@ -95,6 +96,11 @@ export function NotesPageEditor({
   );
   const [autoSaving, setAutoSaving] = useState(false);
   const [saveHint, setSaveHint] = useState('');
+  const [showInput, setShowInput] = useState(true);
+  const [showPreview, setShowPreview] = useState(true);
+  const [syncScroll, setSyncScroll] = useState(true);
+  const inputRef = useRef(null);
+  const previewRef = useRef(null);
 
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
@@ -128,6 +134,58 @@ export function NotesPageEditor({
     () => normalizeEscapedNewlines(form.content),
     [form.content]
   );
+
+  const syncPreviewToInput = () => {
+    if (!syncScroll || !showInput || !showPreview) return;
+    const src = inputRef.current;
+    const dst = previewRef.current;
+    if (!src || !dst) return;
+    if (form.render_as_html) {
+      stampHtmlSourceLines(dst, previewContent);
+    }
+    const line = textareaTopSourceLine(src);
+    if (scrollPreviewToSourceLine(dst, line)) return;
+    const srcMax = src.scrollHeight - src.clientHeight;
+    const dstMax = dst.scrollHeight - dst.clientHeight;
+    if (srcMax <= 0 || dstMax <= 0) {
+      dst.scrollTop = 0;
+      return;
+    }
+    dst.scrollTop = (src.scrollTop / srcMax) * dstMax;
+  };
+
+  useEffect(() => {
+    if (!syncScroll) return undefined;
+    const frame = requestAnimationFrame(syncPreviewToInput);
+    return () => cancelAnimationFrame(frame);
+  }, [syncScroll, showInput, showPreview, previewContent, form.render_as_html]);
+
+  useEffect(() => {
+    const dst = previewRef.current;
+    if (!dst || !syncScroll) return undefined;
+    const onMedia = () => syncPreviewToInput();
+    dst.querySelectorAll('img, iframe').forEach((el) => {
+      el.addEventListener('load', onMedia);
+    });
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(onMedia);
+    ro?.observe(dst);
+    return () => {
+      dst.querySelectorAll('img, iframe').forEach((el) => {
+        el.removeEventListener('load', onMedia);
+      });
+      ro?.disconnect();
+    };
+  }, [syncScroll, previewContent, form.render_as_html]);
+
+  const toggleInput = (checked) => {
+    if (!checked && !showPreview) return;
+    setShowInput(checked);
+  };
+
+  const togglePreview = (checked) => {
+    if (!checked && !showInput) return;
+    setShowPreview(checked);
+  };
 
   const draftPayload = useMemo(() => payloadFromForm(form), [form]);
   const draftKey = useMemo(() => serializePayload(draftPayload), [draftPayload]);
@@ -242,8 +300,8 @@ export function NotesPageEditor({
         <p className="notes-error notes-error--toolbar">{error || localError}</p>
       )}
 
-      <div className="notes-page-editor-split">
-        <form id="notes-page-editor-form" className="notes-page-editor-form" onSubmit={handleSubmit}>
+      <form id="notes-page-editor-form" className="notes-page-editor-form" onSubmit={handleSubmit}>
+        <div className="notes-page-editor-meta">
           <div className="notes-field-grid">
             <label className="notes-field">
               <span>Title</span>
@@ -304,13 +362,54 @@ export function NotesPageEditor({
               <span>Render as HTML</span>
             </label>
           </div>
+        </div>
 
+        <div className="notes-page-editor-toolbar">
+          <label className="notes-field notes-field--check">
+            <input
+              type="checkbox"
+              checked={showInput}
+              onChange={(e) => toggleInput(e.target.checked)}
+            />
+            <span>Editor</span>
+          </label>
+          <label className="notes-field notes-field--check">
+            <input
+              type="checkbox"
+              checked={showPreview}
+              onChange={(e) => togglePreview(e.target.checked)}
+            />
+            <span>Preview</span>
+          </label>
+          <label
+            className="notes-field notes-field--check"
+            title="Keep the preview scrolled to about the same place as the editor"
+          >
+            <input
+              type="checkbox"
+              checked={syncScroll}
+              disabled={!showInput || !showPreview}
+              onChange={(e) => setSyncScroll(e.target.checked)}
+            />
+            <span>Sync scroll</span>
+          </label>
+        </div>
+
+        <div
+          className={`notes-page-editor-split${showInput ? '' : ' hide-input'}${
+            showPreview ? '' : ' hide-preview'
+          }`}
+        >
           <label className="notes-field notes-field--content">
-            <span>Content {form.render_as_html ? '(HTML)' : '(Markdown)'}</span>
+            <span className="notes-page-editor-pane-head">
+              Content {form.render_as_html ? '(HTML)' : '(Markdown)'}
+            </span>
             <textarea
+              ref={inputRef}
               value={form.content}
               onChange={(e) => setField('content', e.target.value)}
-              rows={18}
+              onScroll={syncPreviewToInput}
+              wrap="off"
               spellCheck
               placeholder={
                 form.render_as_html
@@ -319,33 +418,35 @@ export function NotesPageEditor({
               }
             />
           </label>
-        </form>
 
-        <aside className="notes-page-editor-preview" aria-label="Live preview">
-          <div className="notes-page-editor-preview-head">
-            <strong>Live Preview</strong>
-            <span className={`notes-preview-mode-badge ${form.render_as_html ? 'html' : 'markdown'}`}>
-              {form.render_as_html ? 'HTML' : 'Markdown'}
-            </span>
-          </div>
-          <div className="notes-page-editor-preview-body markdown-body">
-            {form.title && <h1>{form.title}</h1>}
-            {form.render_as_html ? (
-              <div
-                dangerouslySetInnerHTML={{
-                  __html: previewContent || '<p class="notes-muted">Nothing to preview yet.</p>',
-                }}
-              />
-            ) : previewContent.trim() ? (
-              <MarkdownBody navigate={navigate}>{previewContent}</MarkdownBody>
-            ) : (
-              <p className="notes-muted" style={{ padding: 0 }}>
-                Nothing to preview yet.
-              </p>
-            )}
-          </div>
-        </aside>
-      </div>
+          <aside className="notes-page-editor-preview" aria-label="Live preview">
+            <div className="notes-page-editor-preview-head notes-page-editor-pane-head">
+              <strong>Live Preview</strong>
+              <span className={`notes-preview-mode-badge ${form.render_as_html ? 'html' : 'markdown'}`}>
+                {form.render_as_html ? 'HTML' : 'Markdown'}
+              </span>
+            </div>
+            <div ref={previewRef} className="notes-page-editor-preview-body markdown-body">
+              {form.title && <h1>{form.title}</h1>}
+              {form.render_as_html ? (
+                <div
+                  dangerouslySetInnerHTML={{
+                    __html: previewContent || '<p class="notes-muted">Nothing to preview yet.</p>',
+                  }}
+                />
+              ) : previewContent.trim() ? (
+                <MarkdownBody navigate={navigate} sourceLines>
+                  {previewContent}
+                </MarkdownBody>
+              ) : (
+                <p className="notes-muted" style={{ padding: 0 }}>
+                  Nothing to preview yet.
+                </p>
+              )}
+            </div>
+          </aside>
+        </div>
+      </form>
     </div>
   );
 }
