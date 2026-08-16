@@ -5,12 +5,48 @@ export function parseLineHeight(style) {
   return (Number.isFinite(font) ? font : 14) * 1.5;
 }
 
-/** 1-based source line at the top of a non-wrapping textarea. */
+export function sourceLineFromOffset(text, offset) {
+  return (String(text).slice(0, Math.max(0, offset)).match(/\n/g) || []).length + 1;
+}
+
+let wrapMirror;
+
+function wrappedLineMirror(textarea, style, width) {
+  if (!wrapMirror) {
+    wrapMirror = document.createElement('div');
+    wrapMirror.setAttribute('aria-hidden', 'true');
+    wrapMirror.style.cssText =
+      'position:absolute;left:-9999px;top:0;visibility:hidden;pointer-events:none;white-space:pre-wrap;overflow-wrap:anywhere;word-wrap:break-word;';
+    document.body.appendChild(wrapMirror);
+  }
+  wrapMirror.style.width = `${width}px`;
+  wrapMirror.style.font = style.font;
+  wrapMirror.style.fontSize = style.fontSize;
+  wrapMirror.style.fontFamily = style.fontFamily;
+  wrapMirror.style.lineHeight = style.lineHeight;
+  wrapMirror.style.letterSpacing = style.letterSpacing;
+  wrapMirror.style.tabSize = style.tabSize;
+  return wrapMirror;
+}
+
+/** 1-based source line at the top of a wrapping textarea. */
 export function textareaTopSourceLine(textarea) {
   if (!textarea) return 1;
   const style = window.getComputedStyle(textarea);
   const lineHeight = parseLineHeight(style);
-  return Math.max(1, Math.floor(textarea.scrollTop / lineHeight) + 1);
+  const padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+  const width = Math.max(1, textarea.clientWidth - padX);
+  const target = textarea.scrollTop;
+  const lines = textarea.value.split('\n');
+  const mirror = wrappedLineMirror(textarea, style, width);
+  let y = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    mirror.textContent = lines[i] || ' ';
+    const h = Math.max(lineHeight, mirror.offsetHeight);
+    if (y + h > target + 0.5) return i + 1;
+    y += h;
+  }
+  return Math.max(1, lines.length);
 }
 
 export function collectSourceLineMarks(preview) {

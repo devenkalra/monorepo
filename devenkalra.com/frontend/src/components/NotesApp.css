@@ -767,7 +767,6 @@
   border-radius: 0;
   padding: 0.9rem 1rem 1.5rem;
   overflow: auto;
-  white-space: pre;
 }
 
 .notes-page-editor-preview {

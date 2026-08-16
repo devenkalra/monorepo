@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sourceLineProgress } from './notesScrollSync.js';
+import { sourceLineFromOffset, sourceLineProgress } from './notesScrollSync.js';
+
+test('sourceLineFromOffset counts newlines before the caret', () => {
+  assert.equal(sourceLineFromOffset('a\nb\nc', 0), 1);
+  assert.equal(sourceLineFromOffset('a\nb\nc', 2), 2);
+  assert.equal(sourceLineFromOffset('a\nb\nc', 4), 3);
+});
 
 test('sourceLineProgress stays on an image line until the next block', () => {
   const marks = [{ line: 2 }, { line: 3 }, { line: 20 }];

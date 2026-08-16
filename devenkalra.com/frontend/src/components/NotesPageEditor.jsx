@@ -409,7 +409,6 @@ export function NotesPageEditor({
               value={form.content}
               onChange={(e) => setField('content', e.target.value)}
               onScroll={syncPreviewToInput}
-              wrap="off"
               spellCheck
               placeholder={
                 form.render_as_html
