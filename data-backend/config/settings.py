@@ -54,10 +54,12 @@ else:
         'http://localhost:5174',
         'http://localhost:5177',
         'http://localhost:5178',
+        'http://localhost:5179',
         'http://localhost:3000',
         'http://127.0.0.1:5174',
         'http://127.0.0.1:5177',
         'http://127.0.0.1:5178',
+        'http://127.0.0.1:5179',
     ]
 
 
@@ -93,6 +95,7 @@ INSTALLED_APPS = [
     'cad.apps.CadConfig',
     'food.apps.FoodConfig',
     'gallery.apps.GalleryConfig',
+    'vacation_list.apps.VacationListConfig',
 ]
 
 ENABLE_MAIL_ARCHIVE = os.environ.get('ENABLE_MAIL_ARCHIVE', 'False') == 'True'
@@ -289,6 +292,8 @@ else:
         "http://localhost:5175",
         "http://localhost:5176",
         "http://localhost:5177",
+        "http://localhost:5178",
+        "http://localhost:5179",
         "http://127.0.0.1",
         "http://127.0.0.1:80",
         "http://127.0.0.1:3000",
@@ -297,6 +302,8 @@ else:
         "http://127.0.0.1:5175",
         "http://127.0.0.1:5176",
         "http://127.0.0.1:5177",
+        "http://127.0.0.1:5178",
+        "http://127.0.0.1:5179",
     ]
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [

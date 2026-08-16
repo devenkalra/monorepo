@@ -1,0 +1,617 @@
+.form-input {
+
+  width: 100%;
+  padding: 0.72rem 0.8rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius-sm);
+  background-color: var(--surface-color);
+  color: var(--text-color);
+  outline: none;
+  transition: border-color var(--transition-smooth),
+    box-shadow var(--transition-smooth);
+}
+
+.form-input:focus {
+
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Social OAuth buttons on login / modal */
+
+.editorial-button {
+
+  width: 100%;
+  padding: 0.75rem 1.1rem;
+  background-color: var(--accent-color);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color var(--transition-smooth),
+    transform var(--transition-smooth);
+  margin-top: 0.75rem;
+}
+
+.editorial-button:hover {
+
+  background-color: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.error-message {
+  color: #dc2626;
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  text-align: left;
+}
+
+.vac-layout {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  gap: 1.5rem;
+}
+
+.vac-layout.sidebar-collapsed {
+  grid-template-columns: 1fr;
+}
+
+.vac-layout.sidebar-collapsed .vac-sidebar {
+  display: none;
+}
+
+/* Stack through phone landscape (~844–932px) so rotate doesn't flip layout modes */
+@media (max-width: 1024px) {
+  .vac-layout {
+    grid-template-columns: 1fr;
+  }
+
+  /* Single-pane: lists OR detail, toggled via .sidebar-collapsed */
+  .vac-layout:not(.sidebar-collapsed) .vac-main {
+    display: none;
+  }
+}
+
+.vac-select-list-cta {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  color: var(--text-strong);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.vac-select-list-cta:hover {
+  color: var(--accent-color, var(--text-strong));
+}
+
+.vac-sidebar-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.vac-sidebar h3 {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.vac-new-list-btn {
+  width: 100% !important;
+  margin-bottom: 0.85rem !important;
+}
+
+.vac-list-header-titles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.vac-create-form {
+  padding: 0 1.1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.vac-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.vac-populate-options {
+  border: 1px solid var(--border-color);
+  padding: 0.75rem 0.85rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.vac-populate-options legend {
+  padding: 0 0.35rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.vac-radio {
+  display: flex;
+  gap: 0.55rem;
+  align-items: flex-start;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.vac-radio input {
+  margin-top: 0.2rem;
+}
+
+.vac-radio span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.vac-radio em {
+  font-style: normal;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.vac-modal--narrow {
+  width: min(28rem, 100%);
+  max-height: none;
+}
+
+.vac-list-nav {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.vac-list-nav button {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: none;
+  background: transparent;
+  padding: 0.45rem 0.25rem;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--text-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.vac-list-nav button.active {
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.vac-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.vac-tabs button {
+  border: none;
+  background: transparent;
+  padding: 0.55rem 0.9rem;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.vac-tabs button.active {
+  color: var(--text-strong);
+  border-bottom-color: var(--text-strong);
+  font-weight: 600;
+}
+
+.vac-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.vac-toolbar .form-input {
+  flex: 1 1 10rem;
+  min-width: 8rem;
+}
+
+.vac-btn {
+  width: auto !important;
+  margin-top: 0 !important;
+  padding: 0.55rem 1rem !important;
+  font-size: 0.8rem !important;
+}
+
+.vac-btn-muted,
+.vac-btn-danger,
+.vac-icon-btn {
+  appearance: none;
+  border: 1px solid var(--border-color);
+  background: transparent;
+  color: var(--text-color);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+}
+
+.vac-btn-muted.active {
+  border-color: var(--text-strong);
+  background: var(--surface-muted);
+}
+
+.vac-btn-danger {
+  border-color: #b33;
+  color: #b33;
+}
+
+.vac-btn-muted:disabled,
+.vac-btn-danger:disabled,
+.editorial-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.vac-icon-btn {
+  border: none;
+  font-size: 1.1rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--text-muted);
+}
+
+.vac-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.vac-list-header h2 {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 1.4rem;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vac-list-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.vac-archived-badge {
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  padding: 0.15rem 0.4rem;
+}
+
+.vac-archived-toggle {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.vac-list-nav--archived button span {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.vac-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.vac-row-actions .vac-btn-muted,
+.vac-row-actions .vac-btn-danger {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.vac-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.vac-filters button {
+  border: 1px solid var(--border-color);
+  background: transparent;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  text-transform: capitalize;
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+
+.vac-filters button.active {
+  border-color: var(--text-strong);
+  background: var(--text-strong);
+  color: var(--surface-color);
+}
+
+.vac-edit-actions,
+.vac-assign-bar {
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.vac-muted,
+.vac-status {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.vac-status {
+  margin-bottom: 0.75rem;
+}
+
+.vac-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.vac-table th,
+.vac-table td {
+  text-align: left;
+  padding: 0.55rem 0.4rem;
+  border-bottom: 1px solid var(--border-color);
+  vertical-align: middle;
+}
+
+.vac-table th {
+  font-family: var(--font-sans);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.vac-table tr.done .vac-name-cell {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.vac-sort-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.vac-sort-btn.active {
+  color: var(--text-strong);
+}
+
+.vac-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 1rem;
+}
+
+.vac-modal {
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  width: min(42rem, 100%);
+  max-height: min(85vh, 40rem);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 16px 40px var(--shadow-color);
+}
+
+.vac-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.1rem 0.5rem;
+}
+
+.vac-modal-header h3 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+
+.vac-modal .vac-toolbar {
+  padding: 0 1.1rem;
+}
+
+.vac-modal-body {
+  overflow: auto;
+  padding: 0 1.1rem 0.5rem;
+  flex: 1;
+}
+
+.vac-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.85rem 1.1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.vac-modal-footer .vac-muted {
+  margin-right: auto;
+}
+
+.vac-tag-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: 14rem;
+}
+
+.vac-tag-chip {
+  display: inline-block;
+  padding: 0.1rem 0.4rem;
+  border: 1px solid var(--border-color);
+  background: color-mix(in srgb, var(--surface-color) 88%, var(--text-muted));
+  font-size: 0.75rem;
+  line-height: 1.3;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.vac-tag-picker {
+  border: 1px solid var(--border-color);
+  padding: 0.65rem 0.75rem 0.75rem;
+  margin: 0;
+}
+
+.vac-tag-picker legend {
+  padding: 0 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.vac-tag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  margin-bottom: 0.65rem;
+  max-height: 8rem;
+  overflow: auto;
+}
+
+.vac-tag-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.vac-tag-option input {
+  margin: 0;
+}
+
+.vac-msel {
+  position: relative;
+  flex: 1 1 9rem;
+  min-width: 8rem;
+  max-width: 14rem;
+}
+
+.vac-msel-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vac-msel-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vac-msel-caret {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.vac-msel-menu {
+  position: absolute;
+  top: calc(100% + 0.2rem);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: 14rem;
+  overflow: auto;
+  background: var(--surface-color);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 8px 24px var(--shadow-color);
+  padding: 0.35rem 0;
+}
+
+.vac-msel-option {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.vac-msel-option:hover {
+  background: color-mix(in srgb, var(--surface-color) 88%, var(--text-muted));
+}
+
+.vac-msel-option input {
+  margin: 0;
+}
+
+.vac-msel-empty,
+.vac-msel-clear {
+  display: block;
+  width: calc(100% - 0.8rem);
+  margin: 0.25rem 0.4rem;
+}
+
+.vac-msel-clear {
+  text-align: center;
+}

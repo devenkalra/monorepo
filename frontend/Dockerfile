@@ -35,8 +35,14 @@ RUN cd gallery-frontend && npm ci
 COPY gallery-frontend/ ./gallery-frontend/
 RUN cd gallery-frontend && npm run build
 
+# Build vacation-frontend
+COPY vacation-frontend/package*.json ./vacation-frontend/
+RUN cd vacation-frontend && npm ci
+COPY vacation-frontend/ ./vacation-frontend/
+RUN cd vacation-frontend && npm run build
+
 # Combine outputs under /app/{name}/
-RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/gallery && \
+RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/gallery /out/app/vacation && \
     cp people-frontend/dist/index.html /out/app/people/ && \
     cp -r people-frontend/dist/assets /out/app/people/ 2>/dev/null || true && \
     cp people-frontend/dist/favicon.svg /out/app/people/ 2>/dev/null || true && \
@@ -51,7 +57,10 @@ RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/
     cp gmail-frontend/dist/favicon.svg /out/app/gmail/ 2>/dev/null || true && \
     cp gallery-frontend/dist/index.html /out/app/gallery/ && \
     cp -r gallery-frontend/dist/assets /out/app/gallery/ 2>/dev/null || true && \
-    cp gallery-frontend/dist/favicon.svg /out/app/gallery/ 2>/dev/null || true
+    cp gallery-frontend/dist/favicon.svg /out/app/gallery/ 2>/dev/null || true && \
+    cp vacation-frontend/dist/index.html /out/app/vacation/ && \
+    cp -r vacation-frontend/dist/assets /out/app/vacation/ 2>/dev/null || true && \
+    cp vacation-frontend/dist/favicon.svg /out/app/vacation/ 2>/dev/null || true
 
 # Final nginx image
 FROM nginx:alpine

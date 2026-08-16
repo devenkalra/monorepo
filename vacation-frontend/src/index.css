@@ -1,0 +1,45 @@
+@import "tailwindcss";
+@import "./vac.css";
+
+:root {
+  --bg-color: #f7f6f2;
+  --surface-color: #ffffff;
+  --surface-muted: #f0efe9;
+  --text-color: #202426;
+  --text-strong: #111416;
+  --text-muted: #667075;
+  --border-color: #dfe1dd;
+  --border-dark: #aeb4b1;
+  --accent-color: #315f73;
+  --accent-hover: #234858;
+  --accent-light: #e8f0f2;
+  --focus-ring: rgba(49, 95, 115, 0.22);
+  --shadow-color: rgba(24, 31, 34, 0.08);
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-sans: "Figtree", system-ui, -apple-system, sans-serif;
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --transition-smooth: 180ms ease;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-color);
+  color: var(--text-color);
+}
+
+.vac-app {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.vac-btn,
+.vac-new-list-btn {
+  width: auto;
+  margin-top: 0;
+}

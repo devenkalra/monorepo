@@ -7,11 +7,13 @@
     "dev:food": "cd food-frontend && npm run dev",
     "dev:gmail": "cd gmail-frontend && npm run dev",
     "dev:gallery": "cd gallery-frontend && npm run dev",
+    "dev:vacation": "cd vacation-frontend && npm run dev",
     "build:people": "cd people-frontend && npm run build",
     "build:cad": "cd cad-frontend && npm run build",
     "build:food": "cd food-frontend && npm run build",
     "build:gmail": "cd gmail-frontend && npm run build",
     "build:gallery": "cd gallery-frontend && npm run build",
-    "build:all": "npm run build:people && npm run build:cad && npm run build:food && npm run build:gmail && npm run build:gallery"
+    "build:vacation": "cd vacation-frontend && npm run build",
+    "build:all": "npm run build:people && npm run build:cad && npm run build:food && npm run build:gmail && npm run build:gallery && npm run build:vacation"
   }
 }
