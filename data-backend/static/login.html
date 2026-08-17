@@ -1024,7 +1024,8 @@
                 /^\/[^/]+\/gallery(\/|$)/i.test(next) ||
                 /^https?:\/\/(localhost|127\.0\.0\.1):5177\/app\/gmail(\/|$|\?)/i.test(next) ||
                 /^https?:\/\/(localhost|127\.0\.0\.1):5178\/app\/gallery(\/|$|\?)/i.test(next) ||
-                /^https?:\/\/(localhost|127\.0\.0\.1):5179\/app\/vacation(\/|$|\?)/i.test(next))
+                /^https?:\/\/(localhost|127\.0\.0\.1):5179\/app\/vacation(\/|$|\?)/i.test(next) ||
+                /^https?:\/\/(localhost|127\.0\.0\.1):5180\/app\/trips(\/|$|\?)/i.test(next))
         ) {
             if (/^https?:\/\//i.test(next)) return next;
             next = next.startsWith('/') ? next : '/' + next;
@@ -1042,6 +1043,9 @@
                 }
                 if (next.startsWith('/app/vacation')) {
                     return `http://${host}:5179${next}`;
+                }
+                if (next.startsWith('/app/trips')) {
+                    return `http://${host}:5180${next}`;
                 }
             }
             return next;

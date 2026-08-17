@@ -41,8 +41,15 @@ RUN cd vacation-frontend && npm ci
 COPY vacation-frontend/ ./vacation-frontend/
 RUN cd vacation-frontend && npm run build
 
+# Build trip-frontend (uses shared markdown editor)
+COPY shared-frontend/ ./shared-frontend/
+COPY trip-frontend/package*.json ./trip-frontend/
+RUN cd trip-frontend && npm ci
+COPY trip-frontend/ ./trip-frontend/
+RUN cd trip-frontend && npm run build
+
 # Combine outputs under /app/{name}/
-RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/gallery /out/app/vacation && \
+RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/gallery /out/app/vacation /out/app/trips && \
     cp people-frontend/dist/index.html /out/app/people/ && \
     cp -r people-frontend/dist/assets /out/app/people/ 2>/dev/null || true && \
     cp people-frontend/dist/favicon.svg /out/app/people/ 2>/dev/null || true && \
@@ -60,7 +67,10 @@ RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/
     cp gallery-frontend/dist/favicon.svg /out/app/gallery/ 2>/dev/null || true && \
     cp vacation-frontend/dist/index.html /out/app/vacation/ && \
     cp -r vacation-frontend/dist/assets /out/app/vacation/ 2>/dev/null || true && \
-    cp vacation-frontend/dist/favicon.svg /out/app/vacation/ 2>/dev/null || true
+    cp vacation-frontend/dist/favicon.svg /out/app/vacation/ 2>/dev/null || true && \
+    cp trip-frontend/dist/index.html /out/app/trips/ && \
+    cp -r trip-frontend/dist/assets /out/app/trips/ 2>/dev/null || true && \
+    cp trip-frontend/dist/favicon.svg /out/app/trips/ 2>/dev/null || true
 
 # Final nginx image
 FROM nginx:alpine

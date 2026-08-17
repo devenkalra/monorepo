@@ -13,7 +13,6 @@ const APPS = [
 
 export default function AppsMenu({ current }) {
   const [open, setOpen] = useState(false);
-
   return (
     <div className="relative">
       <button
