@@ -237,6 +237,7 @@ def create_death_valley_trip(user):
                 user=user,
                 day=day,
                 text=stop['text'],
+                description=stop.get('description') or '',
                 loc=stop.get('loc') or '',
                 cat=stop.get('cat') or '',
                 status=stop.get('status') or TripStop.STATUS_CONFIRMED,

@@ -26,6 +26,14 @@ class TripStopAttachmentSerializer(serializers.ModelSerializer):
     stop_id = serializers.PrimaryKeyRelatedField(
         queryset=TripStop.objects.none(),
         source='stop',
+        allow_null=True,
+        required=False,
+    )
+    lodging_id = serializers.PrimaryKeyRelatedField(
+        queryset=TripLodging.objects.none(),
+        source='lodging',
+        allow_null=True,
+        required=False,
     )
     asset_id = serializers.PrimaryKeyRelatedField(
         queryset=UserMedia.objects.none(),
@@ -39,21 +47,23 @@ class TripStopAttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = TripStopAttachment
         fields = [
-            'id', 'user', 'stop', 'stop_id', 'kind', 'title',
+            'id', 'user', 'stop', 'stop_id', 'lodging', 'lodging_id', 'kind', 'title',
             'url', 'osm_url', 'address', 'lat', 'lng',
             'asset', 'asset_id', 'file_url', 'thumbnail_url',
             'sort_order', 'created_at', 'modified_on',
         ]
-        read_only_fields = ['stop', 'asset']
+        read_only_fields = ['stop', 'lodging', 'asset']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         user = _request_user(self)
         if user:
             _set_pk_queryset(self.fields['stop_id'], TripStop.objects.filter(user=user))
+            _set_pk_queryset(self.fields['lodging_id'], TripLodging.objects.filter(user=user))
             _set_pk_queryset(self.fields['asset_id'], UserMedia.objects.filter(owner=user))
         else:
             _set_pk_queryset(self.fields['stop_id'], TripStop.objects.none())
+            _set_pk_queryset(self.fields['lodging_id'], TripLodging.objects.none())
             _set_pk_queryset(self.fields['asset_id'], UserMedia.objects.none())
 
     def get_file_url(self, obj):
@@ -81,6 +91,10 @@ class TripStopAttachmentSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError('Upload a file or provide a URL.')
         elif kind == TripStopAttachment.KIND_URL and not url:
             raise serializers.ValidationError('URL is required.')
+        stop = attrs.get('stop', getattr(self.instance, 'stop', None))
+        lodging = attrs.get('lodging', getattr(self.instance, 'lodging', None))
+        if bool(stop) == bool(lodging):
+            raise serializers.ValidationError('Attach to a stop or a lodging, not both.')
         return attrs
 
     def create(self, validated_data):
@@ -109,7 +123,7 @@ class TripStopSerializer(serializers.ModelSerializer):
     class Meta:
         model = TripStop
         fields = [
-            'id', 'user', 'day', 'day_id', 'text', 'loc', 'cat',
+            'id', 'user', 'day', 'day_id', 'text', 'description', 'loc', 'cat',
             'status', 'done', 'start_time', 'duration_minutes',
             'extra', 'sort_order', 'attachments',
             'created_at', 'modified_on',
@@ -195,13 +209,14 @@ class TripLodgingSerializer(serializers.ModelSerializer):
     )
     maps_url = serializers.CharField(read_only=True)
     day_count = serializers.IntegerField(source='days.count', read_only=True)
+    attachments = TripStopAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = TripLodging
         fields = [
             'id', 'user', 'trip', 'trip_id', 'name', 'address', 'phone', 'url',
             'confirmation', 'notes', 'check_in_time', 'check_out_time',
-            'day_ids', 'assigned_day_ids', 'maps_url', 'day_count',
+            'day_ids', 'assigned_day_ids', 'maps_url', 'day_count', 'attachments',
             'created_at', 'modified_on',
         ]
         read_only_fields = ['trip']
@@ -237,12 +252,13 @@ class TripLodgingSerializer(serializers.ModelSerializer):
 
 class TripLodgingSummarySerializer(serializers.ModelSerializer):
     maps_url = serializers.CharField(read_only=True)
+    attachments = TripStopAttachmentSerializer(many=True, read_only=True)
 
     class Meta:
         model = TripLodging
         fields = [
             'id', 'name', 'address', 'phone', 'url', 'confirmation',
-            'notes', 'check_in_time', 'check_out_time', 'maps_url',
+            'notes', 'check_in_time', 'check_out_time', 'maps_url', 'attachments',
         ]
 
 

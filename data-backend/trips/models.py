@@ -141,6 +141,7 @@ class TripStop(models.Model):
     )
     day = models.ForeignKey(TripDay, on_delete=models.CASCADE, related_name='stops')
     text = models.TextField()
+    description = models.TextField(blank=True, default='')
     loc = models.CharField(max_length=255, blank=True, default='')
     cat = models.CharField(max_length=64, blank=True, default='')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_CONFIRMED)
@@ -210,7 +211,20 @@ class TripStopAttachment(models.Model):
         on_delete=models.CASCADE,
         related_name='trip_attachments',
     )
-    stop = models.ForeignKey(TripStop, on_delete=models.CASCADE, related_name='attachments')
+    stop = models.ForeignKey(
+        TripStop,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+    )
+    lodging = models.ForeignKey(
+        'TripLodging',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='attachments',
+    )
     kind = models.CharField(max_length=20, choices=KIND_CHOICES)
     title = models.CharField(max_length=255, blank=True, default='')
     url = models.CharField(max_length=2000, blank=True, default='')
@@ -229,7 +243,19 @@ class TripStopAttachment(models.Model):
 
     class Meta:
         ordering = ['sort_order', 'id']
-        indexes = [models.Index(fields=['user', 'stop'], name='tripattach_user_stop_idx')]
+        indexes = [
+            models.Index(fields=['user', 'stop'], name='tripattach_user_stop_idx'),
+            models.Index(fields=['user', 'lodging'], name='tripattach_user_lodge_idx'),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(stop__isnull=False, lodging__isnull=True)
+                    | models.Q(stop__isnull=True, lodging__isnull=False)
+                ),
+                name='tripattach_stop_or_lodging',
+            ),
+        ]
 
     def __str__(self):
         return self.title or self.kind

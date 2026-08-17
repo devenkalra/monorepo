@@ -1,8 +1,12 @@
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from rest_framework.test import APITestCase
 
 from gallery.models import Gallery
-from trips.models import Trip, TripDay, TripStop
+from trips.models import Trip, TripDay, TripLodging, TripStop, TripStopAttachment
 from vacation_list.models import VacList
 
 
@@ -107,6 +111,7 @@ class TripApiTests(APITestCase):
             {
                 'day_id': day.id,
                 'text': 'Custom stop',
+                'description': 'Table on the patio',
                 'loc': 'Panamint Springs',
                 'cat': 'Food',
                 'status': 'tobook',
@@ -117,6 +122,7 @@ class TripApiTests(APITestCase):
         self.assertEqual(res.status_code, 201)
         stop = TripStop.objects.get(pk=res.data['id'])
         self.assertEqual(stop.user, self.user)
+        self.assertEqual(stop.description, 'Table on the patio')
         self.assertEqual(stop.loc, 'Panamint Springs')
         self.assertEqual(stop.extra['reservation'], 'table for 2')
 
@@ -189,6 +195,50 @@ class TripApiTests(APITestCase):
         attachments = detail.data['days'][0]['stops'][0]['attachments']
         self.assertEqual(attachments[0]['kind'], 'location')
 
+    def test_lodging_can_have_attachments(self):
+        trip = Trip.objects.create(title='Stay', user=self.user)
+        lodging = TripLodging.objects.create(user=self.user, trip=trip, name='The Inn')
+        res = self.client.post(
+            '/api/trips/attachments/',
+            {
+                'lodging_id': lodging.id,
+                'kind': 'url',
+                'title': 'Reservation',
+                'url': 'https://example.com/booking',
+            },
+            format='json',
+        )
+        self.assertEqual(res.status_code, 201)
+        picture = self.client.post(
+            '/api/trips/attachments/',
+            {
+                'lodging_id': lodging.id,
+                'kind': 'picture',
+                'title': 'Room',
+                'url': 'https://example.com/room.jpg',
+            },
+            format='json',
+        )
+        self.assertEqual(picture.status_code, 201)
+        detail = self.client.get(f'/api/trips/trips/{trip.id}/')
+        kinds = [a['kind'] for a in detail.data['lodgings'][0]['attachments']]
+        self.assertEqual(kinds, ['url', 'picture'])
+        both = self.client.post(
+            '/api/trips/attachments/',
+            {
+                'stop_id': TripStop.objects.create(
+                    user=self.user,
+                    day=TripDay.objects.create(user=self.user, trip=trip, date='2026-09-10'),
+                    text='Hike',
+                ).id,
+                'lodging_id': lodging.id,
+                'kind': 'url',
+                'url': 'https://example.com/both',
+            },
+            format='json',
+        )
+        self.assertEqual(both.status_code, 400)
+
     def test_lodging_shared_across_days(self):
         trip = Trip.objects.create(title='Stay', user=self.user)
         d1 = TripDay.objects.create(user=self.user, trip=trip, date='2026-09-10', title='One')
@@ -238,3 +288,26 @@ class TripApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(res.status_code, 400)
+
+    def test_dump_import_fixture_remaps_owner(self):
+        VacList.objects.create(name='Death Valley', user=self.user)
+        VacList.objects.create(name='Death Valley', user=self.other)
+        trip = Trip.objects.create(title='Sierra', user=self.user, start_date='2026-09-08')
+        lodging = TripLodging.objects.create(user=self.user, trip=trip, name='The Inn')
+        day = TripDay.objects.create(user=self.user, trip=trip, date='2026-09-10', lodging=lodging)
+        stop = TripStop.objects.create(user=self.user, day=day, text='Check in', loc='Furnace Creek')
+        TripStopAttachment.objects.create(
+            user=self.user, stop=stop, kind='url', title='Booking', url='https://example.com/conf'
+        )
+        TripStopAttachment.objects.create(
+            user=self.user, lodging=lodging, kind='picture', title='Room', url='https://example.com/room.jpg'
+        )
+        with TemporaryDirectory() as tmp:
+            src = Path(tmp) / 'trips.json'
+            call_command('dump_trip_fixture', email=self.user.email, output=str(src))
+            call_command('import_trip_fixture', str(src), email=self.other.email, replace=True)
+        copy = Trip.objects.get(user=self.other, title='Sierra')
+        self.assertEqual(copy.days.get().lodging.name, 'The Inn')
+        self.assertEqual(copy.days.get().stops.get().attachments.get().url, 'https://example.com/conf')
+        self.assertEqual(copy.lodgings.get().attachments.get().kind, 'picture')
+        self.assertEqual(Trip.objects.filter(user=self.user, title='Sierra').count(), 1)

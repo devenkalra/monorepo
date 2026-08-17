@@ -14,6 +14,18 @@ class TripDayInline(admin.TabularInline):
     fields = ('date', 'title', 'lodging', 'sort_order')
 
 
+class TripStopAttachmentInline(admin.TabularInline):
+    model = TripStopAttachment
+    extra = 0
+    fk_name = 'stop'
+
+
+class TripLodgingAttachmentInline(admin.TabularInline):
+    model = TripStopAttachment
+    extra = 0
+    fk_name = 'lodging'
+
+
 @admin.register(Trip)
 class TripAdmin(admin.ModelAdmin):
     list_display = ('title', 'user', 'start_date', 'end_date', 'modified_on')
@@ -27,6 +39,7 @@ class TripLodgingAdmin(admin.ModelAdmin):
     list_display = ('name', 'trip', 'confirmation', 'user')
     list_filter = ('user',)
     search_fields = ('name', 'address', 'confirmation')
+    inlines = [TripLodgingAttachmentInline]
 
 
 @admin.register(TripDay)
@@ -37,22 +50,17 @@ class TripDayAdmin(admin.ModelAdmin):
     inlines = [TripStopInline]
 
 
-class TripStopAttachmentInline(admin.TabularInline):
-    model = TripStopAttachment
-    extra = 0
-
-
 @admin.register(TripStop)
 class TripStopAdmin(admin.ModelAdmin):
     list_display = ('text', 'day', 'start_time', 'duration_minutes', 'loc', 'cat', 'status', 'done', 'user')
     list_filter = ('user', 'status', 'done', 'cat')
-    search_fields = ('text', 'loc')
+    search_fields = ('text', 'description', 'loc')
     inlines = [TripStopAttachmentInline]
 
 
 @admin.register(TripStopAttachment)
 class TripStopAttachmentAdmin(admin.ModelAdmin):
-    list_display = ('kind', 'title', 'stop', 'user')
+    list_display = ('kind', 'title', 'stop', 'lodging', 'user')
     list_filter = ('user', 'kind')
 
 

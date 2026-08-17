@@ -129,6 +129,11 @@ body {
 .trip-day li:last-child { border-bottom: 0; }
 .trip-day li.is-done p { text-decoration: line-through; color: var(--text-muted); }
 .trip-day li p { margin: 0 0 0.3rem; }
+.trip-stop-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
 .trip-tags { display: flex; flex-wrap: wrap; gap: 0.35rem; }
 .tag {
   font-size: 0.7rem;
@@ -250,6 +255,7 @@ body {
   padding: 0.15rem 0.35rem;
   border-radius: 0.25rem;
 }
+.trip-lodging-line .trip-attach-icons { margin-top: 0; }
 .trip-lodging-empty { font-style: italic; }
 .trip-day-picks {
   border: 1px solid var(--border-color);

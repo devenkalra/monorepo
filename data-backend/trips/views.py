@@ -50,9 +50,22 @@ class TripViewSet(UserScopedMixin, viewsets.ModelViewSet):
             return qs.prefetch_related(
                 Prefetch(
                     'days',
-                    queryset=TripDay.objects.select_related('lodging').order_by('date', 'sort_order', 'id'),
+                    queryset=TripDay.objects.select_related('lodging').prefetch_related(
+                        Prefetch(
+                            'lodging__attachments',
+                            queryset=TripStopAttachment.objects.select_related('asset'),
+                        )
+                    ).order_by('date', 'sort_order', 'id'),
                 ),
-                'lodgings',
+                Prefetch(
+                    'lodgings',
+                    queryset=TripLodging.objects.prefetch_related(
+                        Prefetch(
+                            'attachments',
+                            queryset=TripStopAttachment.objects.select_related('asset'),
+                        )
+                    ),
+                ),
                 Prefetch(
                     'days__stops',
                     queryset=TripStop.objects.order_by('sort_order', 'id').prefetch_related(
@@ -76,7 +89,7 @@ class TripViewSet(UserScopedMixin, viewsets.ModelViewSet):
 
 
 class TripLodgingViewSet(UserScopedMixin, viewsets.ModelViewSet):
-    queryset = TripLodging.objects.select_related('trip').prefetch_related('days')
+    queryset = TripLodging.objects.select_related('trip').prefetch_related('days', 'attachments__asset')
     serializer_class = TripLodgingSerializer
     pagination_class = None
 
@@ -89,7 +102,11 @@ class TripLodgingViewSet(UserScopedMixin, viewsets.ModelViewSet):
 
 
 class TripDayViewSet(UserScopedMixin, viewsets.ModelViewSet):
-    queryset = TripDay.objects.select_related('trip', 'lodging').prefetch_related('stops', 'media__asset')
+    queryset = TripDay.objects.select_related('trip', 'lodging').prefetch_related(
+        'stops',
+        'media__asset',
+        'lodging__attachments__asset',
+    )
     serializer_class = TripDaySerializer
     pagination_class = None
 
@@ -175,13 +192,16 @@ class TripMediaViewSet(UserScopedMixin, viewsets.ModelViewSet):
 
 
 class TripStopAttachmentViewSet(UserScopedMixin, viewsets.ModelViewSet):
-    queryset = TripStopAttachment.objects.select_related('stop', 'asset')
+    queryset = TripStopAttachment.objects.select_related('stop', 'lodging', 'asset')
     serializer_class = TripStopAttachmentSerializer
     pagination_class = None
 
     def get_queryset(self):
         qs = super().get_queryset()
         stop_id = self.request.query_params.get('stop')
+        lodging_id = self.request.query_params.get('lodging')
         if stop_id:
             qs = qs.filter(stop_id=stop_id)
+        if lodging_id:
+            qs = qs.filter(lodging_id=lodging_id)
         return qs

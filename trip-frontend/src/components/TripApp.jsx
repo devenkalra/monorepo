@@ -156,23 +156,28 @@ function AttachmentIcons({ attachments, onAdd, onRemove, canEdit }) {
   );
 }
 
-function AttachmentForm({ stop, onClose, onSaved }) {
-  const [kind, setKind] = useState('document');
+function AttachmentForm({ stop, lodging, onClose, onSaved }) {
+  const [kind, setKind] = useState(lodging ? 'picture' : 'document');
   const [title, setTitle] = useState('');
   const [url, setUrl] = useState('');
-  const [address, setAddress] = useState(stop.loc || '');
+  const [address, setAddress] = useState(lodging?.address || stop?.loc || '');
   const [lat, setLat] = useState('');
   const [lng, setLng] = useState('');
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const label = lodging ? lodging.name : stop?.text;
 
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
-      const payload = { stop_id: stop.id, kind, title: title.trim() };
+      const payload = {
+        kind,
+        title: title.trim(),
+        ...(lodging ? { lodging_id: lodging.id } : { stop_id: stop.id }),
+      };
       if (kind === 'url') {
         payload.url = url.trim();
       } else if (kind === 'location') {
@@ -202,8 +207,8 @@ function AttachmentForm({ stop, onClose, onSaved }) {
   return (
     <div className="trip-modal-backdrop" onClick={onClose} role="presentation">
       <form className="trip-modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h3>Add to stop</h3>
-        <p className="trip-hint">{stop.text}</p>
+        <h3>{lodging ? 'Add to lodging' : 'Add to stop'}</h3>
+        <p className="trip-hint">{label}</p>
         <div className="trip-kind-tabs">
           {ATTACH_KINDS.map((k) => (
             <button
@@ -291,7 +296,7 @@ function lodgingLabel(lodging) {
   return [lodging.name, lodging.confirmation && `conf ${lodging.confirmation}`].filter(Boolean).join(' · ');
 }
 
-function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved }) {
+function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved, onAddAttachment, onRemoveAttachment }) {
   const [name, setName] = useState(initial?.name || '');
   const [address, setAddress] = useState(initial?.address || '');
   const [phone, setPhone] = useState(initial?.phone || '');
@@ -396,6 +401,17 @@ function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved }) {
           Notes
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Room type, parking, late arrival…" />
         </label>
+        {initial?.id && (
+          <div>
+            <p className="trip-hint">Photos, documents, links, and map pins</p>
+            <AttachmentIcons
+              attachments={initial.attachments}
+              canEdit
+              onAdd={() => onAddAttachment?.(initial)}
+              onRemove={onRemoveAttachment}
+            />
+          </div>
+        )}
         <fieldset className="trip-day-picks">
           <legend>Nights at this lodging</legend>
           {days.map((d) => (
@@ -473,6 +489,7 @@ function DayForm({ initial, onClose, onSave }) {
 function StopForm({ days, initial, defaultDayId, onClose, onSave }) {
   const [dayId, setDayId] = useState(initial?.day || initial?.day_id || defaultDayId || days[0]?.id || '');
   const [text, setText] = useState(initial?.text || '');
+  const [description, setDescription] = useState(initial?.description || '');
   const [loc, setLoc] = useState(initial?.loc || '');
   const [cat, setCat] = useState(initial?.cat || 'Sight');
   const [status, setStatus] = useState(initial?.status || 'confirmed');
@@ -494,6 +511,7 @@ function StopForm({ days, initial, defaultDayId, onClose, onSave }) {
       await onSave({
         day_id: Number(dayId),
         text: text.trim(),
+        description: description.trim(),
         loc: loc.trim(),
         cat: cat.trim(),
         status,
@@ -524,6 +542,15 @@ function StopForm({ days, initial, defaultDayId, onClose, onSave }) {
         <label>
           Activity
           <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} />
+        </label>
+        <label>
+          Description
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={3}
+            placeholder="Notes, booking details, what to bring…"
+          />
         </label>
         <div className="trip-form-row">
           <label>
@@ -623,7 +650,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload }) {
         if (status !== 'all' && status !== 'hide-done' && item.status !== status) return false;
         if (loc !== 'all' && item.loc !== loc) return false;
         if (cat !== 'all' && item.cat !== cat) return false;
-        if (query && !`${item.text} ${item.loc}`.toLowerCase().includes(query.toLowerCase())) return false;
+        if (query && !`${item.text} ${item.description || ''} ${item.loc}`.toLowerCase().includes(query.toLowerCase())) return false;
         return true;
       }),
     })).filter((d) => mode === 'travelog' || d.stops.length > 0 || !query);
@@ -848,6 +875,15 @@ function TripDetail({ trip, lists, galleries, onBack, onReload }) {
                     {day.lodging.url && (
                       <a href={day.lodging.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>Site</a>
                     )}
+                    <AttachmentIcons
+                      attachments={
+                        (trip.lodgings || []).find((l) => l.id === day.lodging.id)?.attachments
+                        || day.lodging.attachments
+                      }
+                      canEdit={mode === 'plan'}
+                      onAdd={() => setAttaching({ lodging: (trip.lodgings || []).find((l) => l.id === day.lodging.id) || day.lodging })}
+                      onRemove={removeAttachment}
+                    />
                     {mode === 'plan' && (
                       <button
                         type="button"
@@ -951,6 +987,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload }) {
                       )}
                       {stop.text}
                     </p>
+                    {stop.description && <p className="trip-stop-desc">{stop.description}</p>}
                     <div className="trip-tags">
                       <span className={`tag ${stop.status}`}>{STATUS_LABEL[stop.status] || stop.status}</span>
                       {stop.loc && <span className="tag">{stop.loc}</span>}
@@ -959,7 +996,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload }) {
                     <AttachmentIcons
                       attachments={stop.attachments}
                       canEdit={mode === 'plan'}
-                      onAdd={() => setAttaching(stop)}
+                      onAdd={() => setAttaching({ stop })}
                       onRemove={removeAttachment}
                     />
                   </div>
@@ -1010,25 +1047,32 @@ function TripDetail({ trip, lists, galleries, onBack, onReload }) {
           onSave={saveStop}
         />
       )}
-      {attaching && (
-        <AttachmentForm
-          stop={attaching}
-          onClose={() => setAttaching(null)}
-          onSaved={async () => {
-            setAttaching(null);
-            await onReload();
-          }}
-        />
-      )}
       {lodgingForm && (
         <LodgingForm
           trip={trip}
           days={days}
-          initial={lodgingForm.lodging}
+          initial={
+            lodgingForm.lodging?.id
+              ? (trip.lodgings || []).find((l) => l.id === lodgingForm.lodging.id) || lodgingForm.lodging
+              : lodgingForm.lodging
+          }
           defaultDayIds={lodgingForm.dayIds}
           onClose={() => setLodgingForm(null)}
+          onAddAttachment={(lodging) => setAttaching({ lodging })}
+          onRemoveAttachment={removeAttachment}
           onSaved={async () => {
             setLodgingForm(null);
+            await onReload();
+          }}
+        />
+      )}
+      {attaching && (
+        <AttachmentForm
+          stop={attaching.stop}
+          lodging={attaching.lodging}
+          onClose={() => setAttaching(null)}
+          onSaved={async () => {
+            setAttaching(null);
             await onReload();
           }}
         />
