@@ -224,4 +224,11 @@ class AudioReindexView(APIView):
     permission_classes = [IsSuperuserRole]
 
     def post(self, request):
-        return Response(index_roots())
+        def value(key):
+            if hasattr(request, 'data') and request.data.get(key) not in (None, ''):
+                return request.data.get(key)
+            return request.query_params.get(key)
+
+        missing_only = str(value('missing') or '').lower() in ('1', 'true', 'yes', 'on')
+        folder = (value('folder') or '').strip()
+        return Response(index_roots(missing_only=missing_only, folder=folder or None))

@@ -185,16 +185,24 @@ export function MusicLibraryApp() {
     if (idx > 0) playAt(idx - 1);
   };
 
-  const reindex = async () => {
+  const reindex = async ({ missing = false, folder = '' } = {}) => {
     setIndexMsg('');
+    setError('');
+    setBusy(true);
     try {
-      const counts = await api('reindex/', { token, method: 'POST' });
+      const params = new URLSearchParams();
+      if (missing) params.set('missing', '1');
+      if (folder) params.set('folder', folder);
+      const counts = await api(`reindex/?${params.toString()}`, { token, method: 'POST' });
+      const scope = folder ? ` in ${folder}` : '';
       setIndexMsg(
-        `Indexed ${counts.scanned} files (${counts.upserted} updated, ${counts.covers || 0} covers, ${counts.removed} removed).`,
+        `Indexed ${counts.scanned} files${scope} (${counts.upserted} updated, ${counts.skipped || 0} skipped, ${counts.covers || 0} covers, ${counts.removed || 0} removed).`,
       );
       await load();
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -281,9 +289,20 @@ export function MusicLibraryApp() {
           </select>
         </label>
         {user?.role === 'superuser' && (
-          <button type="button" className="editorial-button" onClick={reindex} disabled={busy}>
-            Refresh index
-          </button>
+          <>
+            <button type="button" className="editorial-button" onClick={() => reindex({ missing: true })} disabled={busy}>
+              Add missing tracks
+            </button>
+            <button
+              type="button"
+              className="editorial-button"
+              onClick={() => reindex({ folder: parent })}
+              disabled={busy || !parent}
+              title={parent ? `Refresh tags and covers in ${parent}` : 'Select a folder first'}
+            >
+              {parent ? `Reindex ${parent}` : 'Reindex folder'}
+            </button>
+          </>
         )}
       </div>
       {indexMsg && <p className="music-lib-hint">{indexMsg}</p>}

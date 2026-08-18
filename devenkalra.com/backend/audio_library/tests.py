@@ -137,6 +137,35 @@ class AudioLibraryApiTests(APITestCase):
         parents = {row['parent'] for row in res.data['results']}
         self.assertEqual(parents, {'', 'set1'})
 
+    def test_missing_only_indexes_new_files(self):
+        self._index()
+        _write_mp3(self.nested / 'three.mp3')
+        with override_settings(
+            AUDIO_LIBRARY_ROOTS=self.roots,
+            AUDIO_LIBRARY_EXTENSIONS='.mp3',
+            MEDIA_ROOT=str(self.media),
+        ):
+            counts = index_roots(self.roots, missing_only=True)
+        self.assertEqual(counts['upserted'], 1)
+        self.assertEqual(counts['skipped'], 2)
+        self.assertEqual(counts['removed'], 0)
+        self.assertTrue(AudioTrack.objects.filter(filename='three.mp3').exists())
+        self.assertEqual(AudioTrack.objects.count(), 3)
+
+    def test_folder_reindex_updates_existing_only_in_that_folder(self):
+        self._index()
+        AudioTrack.objects.filter(filename='one.mp3').update(title='stale-one')
+        AudioTrack.objects.filter(filename='two.mp3').update(title='stale-two')
+        with override_settings(
+            AUDIO_LIBRARY_ROOTS=self.roots,
+            AUDIO_LIBRARY_EXTENSIONS='.mp3',
+            MEDIA_ROOT=str(self.media),
+        ):
+            counts = index_roots(self.roots, folder='set1')
+        self.assertEqual(counts['upserted'], 1)
+        self.assertEqual(AudioTrack.objects.get(filename='one.mp3').title, 'one')
+        self.assertEqual(AudioTrack.objects.get(filename='two.mp3').title, 'stale-two')
+
     @skipUnless(HAS_MUTAGEN, 'mutagen is not installed')
     def test_index_stores_id3_tags(self):
         _write_tagged_mp3(

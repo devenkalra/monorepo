@@ -3,6 +3,8 @@ from io import BytesIO
 from pathlib import Path
 import re
 
+from django.db.models import Q
+
 from .models import AudioTrack
 from .roots import allowed_extensions, configured_roots, cover_file, resolve_under_root
 
@@ -230,20 +232,39 @@ def iter_audio_files(root_path):
         yield resolved
 
 
-def index_roots(roots=None):
+def index_roots(roots=None, missing_only=False, folder=None):
     roots = list(roots if roots is not None else configured_roots())
-    counts = {'scanned': 0, 'upserted': 0, 'removed': 0, 'covers': 0, 'missing_roots': 0}
+    folder = (folder or '').strip().strip('/')
+    counts = {
+        'scanned': 0, 'upserted': 0, 'skipped': 0, 'removed': 0,
+        'covers': 0, 'missing_roots': 0,
+    }
     _folder_cover_cache.clear()
+    scoped = bool(folder)
     for row in roots:
         root_path = Path(row['path'])
         if not root_path.is_dir():
             counts['missing_roots'] += 1
             continue
+        scan_root = root_path
+        if folder:
+            scan_root = resolve_under_root(root_path, folder)
+            if scan_root is None or not scan_root.is_dir():
+                continue
+        existing = set()
+        if missing_only:
+            existing_qs = AudioTrack.objects.filter(folder_slug=row['slug'])
+            if folder:
+                existing_qs = existing_qs.filter(Q(parent=folder) | Q(parent__startswith=f'{folder}/'))
+            existing = set(existing_qs.values_list('relpath', flat=True))
         seen = set()
-        for path in iter_audio_files(root_path):
+        for path in iter_audio_files(scan_root):
             counts['scanned'] += 1
             relpath = path.relative_to(root_path.resolve()).as_posix()
             seen.add(relpath)
+            if missing_only and relpath in existing:
+                counts['skipped'] += 1
+                continue
             parent = '/'.join(relpath.split('/')[:-1])
             stat = path.stat()
             mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
@@ -271,13 +292,19 @@ def index_roots(roots=None):
             if save_cover(track, cover_bytes):
                 counts['covers'] += 1
             counts['upserted'] += 1
+        if missing_only:
+            continue
         stale = AudioTrack.objects.filter(folder_slug=row['slug']).exclude(relpath__in=seen)
+        if folder:
+            stale = stale.filter(Q(parent=folder) | Q(parent__startswith=f'{folder}/'))
         for track_id in stale.values_list('id', flat=True):
             dest = cover_file(track_id)
             if dest.exists():
                 dest.unlink()
         deleted, _ = stale.delete()
         counts['removed'] += deleted
+    if missing_only or scoped:
+        return counts
     configured_slugs = {row['slug'] for row in roots}
     extra = AudioTrack.objects.exclude(folder_slug__in=configured_slugs)
     for track_id in extra.values_list('id', flat=True):
