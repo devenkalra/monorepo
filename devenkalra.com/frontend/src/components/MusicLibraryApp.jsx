@@ -95,7 +95,7 @@ function SortHeader({ column, sort, onSort }) {
 }
 
 export function MusicLibraryApp() {
-  const { token, isAuthenticated, user, openSocialLoginModal } = useAuth();
+  const { token, user } = useAuth();
   const [tracks, setTracks] = useState([]);
   const [meta, setMeta] = useState({
     folders: [], artists: [], composers: [], genres: [], albums: [], years: [], parents: [], track_count: 0,
@@ -116,7 +116,6 @@ export function MusicLibraryApp() {
   const audioRef = useRef(null);
 
   const load = useCallback(async () => {
-    if (!token) return;
     setBusy(true);
     setError('');
     try {
@@ -205,17 +204,6 @@ export function MusicLibraryApp() {
       setBusy(false);
     }
   };
-
-  if (!isAuthenticated) {
-    return (
-      <div className="music-lib">
-        <p className="music-lib-hint">Sign in to browse and play the library.</p>
-        <button type="button" className="editorial-button" onClick={() => openSocialLoginModal()}>
-          Sign in
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="music-lib">

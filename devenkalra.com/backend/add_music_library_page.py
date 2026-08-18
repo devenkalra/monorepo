@@ -1,5 +1,5 @@
 """
-Create CMS page + menu entry for Music Library (authenticated users).
+Create CMS page + menu entry for Music Library (public).
 
 Usage:
   python add_music_library_page.py

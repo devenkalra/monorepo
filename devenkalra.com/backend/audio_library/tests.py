@@ -245,9 +245,14 @@ class AudioLibraryApiTests(APITestCase):
         names = {row['filename'] for row in listed.data['results']}
         self.assertEqual(names, {'one.mp3', 'three.mp3'})
 
-    def test_unauthenticated_list_rejected(self):
-        res = self.client.get('/api/audio/tracks/')
-        self.assertIn(res.status_code, (401, 403))
+    def test_unauthenticated_list_allowed(self):
+        self._index()
+        with override_settings(AUDIO_LIBRARY_ROOTS=self.roots):
+            res = self.client.get('/api/audio/tracks/')
+            meta = self.client.get('/api/audio/meta/')
+        self.assertEqual(res.status_code, 200)
+        self.assertGreaterEqual(len(res.data['results']), 2)
+        self.assertEqual(meta.status_code, 200)
 
     def test_stream_requires_signature(self):
         self._index()

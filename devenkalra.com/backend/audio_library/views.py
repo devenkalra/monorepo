@@ -22,13 +22,6 @@ class AudioPagination(PageNumberPagination):
     max_page_size = 1000
 
 
-class IsAuthenticatedOrSignedStream(permissions.BasePermission):
-    def has_permission(self, request, view):
-        if getattr(view, 'action', None) in ('stream', 'cover'):
-            return True
-        return bool(request.user and request.user.is_authenticated)
-
-
 class _LimitedReader:
     def __init__(self, handle, length, chunk_size=8192):
         self.handle = handle
@@ -90,7 +83,7 @@ def ranged_file_response(request, path: Path, content_type: str):
 
 class AudioTrackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet):
     authentication_classes = [TokenAuthentication, SessionAuthentication]
-    permission_classes = [IsAuthenticatedOrSignedStream]
+    permission_classes = [permissions.AllowAny]
     serializer_class = AudioTrackSerializer
     pagination_class = AudioPagination
     queryset = AudioTrack.objects.all()
@@ -165,7 +158,7 @@ class AudioTrackViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin, viewse
 
 class AudioMetaView(APIView):
     authentication_classes = [TokenAuthentication, SessionAuthentication]
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get(self, request):
         qs = AudioTrack.objects.all()
