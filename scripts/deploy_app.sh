@@ -154,6 +154,7 @@ EOF
     devenkalra)
       cat <<'EOF'
 docker-compose.production.yml
+docker-compose.audio.yml
 devenkalra.com
 scripts/deploy-devenkalra-prod.sh
 scripts/nginx/multi-domain-edge-example.conf
@@ -365,7 +366,12 @@ deploy_one_app() {
   fi
 
   print_step "[$app] Rebuilding and recreating services: $services"
-  run_shell "docker compose -p \"$PROJECT\" -f \"$COMPOSE_FILE\" up -d --build --force-recreate --no-deps $services"
+  local compose_files="-f \"$COMPOSE_FILE\""
+  if [[ "$app" == "devenkalra" && -f docker-compose.audio.yml ]]; then
+    compose_files="$compose_files -f docker-compose.audio.yml"
+    print_info "[$app] Including docker-compose.audio.yml for the NAS audio mount"
+  fi
+  run_shell "docker compose -p \"$PROJECT\" $compose_files up -d --build --force-recreate --no-deps $services"
 
   if [[ "$app" == "bldrdojo" ]]; then
     print_step "[$app] Running migrations"
@@ -378,9 +384,15 @@ deploy_one_app() {
     run_shell "docker compose -p \"$PROJECT\" -f \"$COMPOSE_FILE\" exec -T backend python manage.py setup_google_oauth --domain=\"bldrdojo.com\" || true"
   fi
 
-  if [[ "$app" == "devenkalra" && "$WITH_EDGE" == true ]]; then
-    print_step "[$app] Recreating edge-nginx"
-    run_shell "EDGE_NGINX_CONF=\"$EDGE_CONF\" docker compose -p edge -f \"$EDGE_COMPOSE\" up -d --force-recreate --no-deps edge-nginx"
+  if [[ "$app" == "devenkalra" ]]; then
+    print_step "[$app] Seeding Music Library page"
+    run_shell "docker compose -p \"$PROJECT\" $compose_files exec -T devenkalra-app python manage.py ensure_music_library_page"
+    print_step "[$app] Indexing audio library (NAS mount; can take several minutes)"
+    run_shell "docker compose -p \"$PROJECT\" $compose_files exec -T devenkalra-app python manage.py index_audio_library"
+    if [[ "$WITH_EDGE" == true ]]; then
+      print_step "[$app] Recreating edge-nginx"
+      run_shell "EDGE_NGINX_CONF=\"$EDGE_CONF\" docker compose -p edge -f \"$EDGE_COMPOSE\" up -d --force-recreate --no-deps edge-nginx"
+    fi
   fi
 
   print_ok "[$app] Deploy complete"

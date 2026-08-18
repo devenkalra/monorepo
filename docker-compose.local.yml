@@ -229,8 +229,12 @@ services:
       - ./devenkalra.com/backend/media:/app/media
       # Live-edit Python + templates without rebuilding the image
       - ./devenkalra.com/backend/core:/app/core
+      - ./devenkalra.com/backend/audio_library:/app/audio_library
       - ./devenkalra.com/backend/backend/settings.py:/app/backend/settings.py:ro
+      - ./devenkalra.com/backend/backend/urls.py:/app/backend/urls.py:ro
       - ./devenkalra.com/backend/.env:/app/.env:ro
+      # Dedicated NAS user share (read-only). Default is an empty placeholder.
+      - ${AUDIO_LIBRARY_HOST_MOUNT:-./devenkalra.com/backend/audio_library/empty}:/mnt/audio:ro
       # Local SPA: npm run build in devenkalra.com/frontend, then refresh :8090
       - ./devenkalra.com/frontend/dist:/app/frontend_dist:ro
     networks:

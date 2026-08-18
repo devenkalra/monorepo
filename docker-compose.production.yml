@@ -71,6 +71,9 @@ services:
       - ./devenkalra.com/backend/db.sqlite3:/app/db.sqlite3
       - ./devenkalra.com/backend/media:/app/media
       - ./devenkalra.com/backend/.env:/app/.env:ro
+      # Dedicated NAS user share. Create /mnt/audio on the host, then set
+      # AUDIO_LIBRARY_HOST_MOUNT=/mnt/audio in the compose env.
+      - ${AUDIO_LIBRARY_HOST_MOUNT:-./devenkalra.com/backend/audio_library/empty}:/mnt/audio:ro
     ports:
       - "8090:8000"
     restart: unless-stopped

@@ -1,0 +1,24 @@
+# Overlay: mount the NAS audio share into devenkalra-app via CIFS.
+# Windows mapped drives (W:) cannot be bind-mounted into Docker Desktop.
+#
+# Compose reads NAS_SMB_* from the monorepo-root .env (not devenkalra.com/backend/.env).
+# NAS_SMB_SHARE must be the SMB share name only (e.g. audio), not a subfolder.
+# Restrict the catalog with AUDIO_LIBRARY_ROOTS in devenkalra.com/backend/.env.
+#
+# From the monorepo root:
+#   docker compose -f docker-compose.local.yml -f docker-compose.audio.yml up -d --no-deps devenkalra-app
+# Production:
+#   docker compose -p data-backend -f docker-compose.production.yml -f docker-compose.audio.yml up -d --no-deps devenkalra-app
+
+services:
+  devenkalra-app:
+    volumes:
+      - nas-audio-cifs:/mnt/audio:ro
+
+volumes:
+  nas-audio-cifs:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: username=${NAS_SMB_USER},password=${NAS_SMB_PASSWORD},domain=WORKGROUP,addr=${NAS_SMB_HOST:-192.168.4.100},vers=3.0,sec=ntlmssp,nounix,noserverino,ro,noperm,file_mode=0444,dir_mode=0555
+      device: //${NAS_SMB_HOST:-192.168.4.100}/${NAS_SMB_SHARE:-audio}

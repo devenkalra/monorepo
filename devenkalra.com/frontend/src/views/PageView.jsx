@@ -8,6 +8,7 @@ import { NotesApp } from '../components/NotesApp';
 import { NotesPageEditor } from '../components/NotesPageEditor';
 import { VacationListApp } from '../components/VacationListApp';
 import { AssetManagerApp } from '../components/AssetManagerApp';
+import { MusicLibraryApp } from '../components/MusicLibraryApp';
 import { MarkdownBody } from '../components/MarkdownBody';
 
 export const PageView = ({ menuItems }) => {
@@ -658,6 +659,10 @@ export const PageView = ({ menuItems }) => {
 
       {activeSlug === 'asset-manager' && (
         <AssetManagerApp />
+      )}
+
+      {activeSlug === 'music-library' && (
+        <MusicLibraryApp />
       )}
 
       {activeSlug === 'creative-projects' && (

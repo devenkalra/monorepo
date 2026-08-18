@@ -48,11 +48,23 @@ BACKUP_FILE="${DB_FILE}.bak-${STAMP}"
 echo "[deploy] Backing up SQLite ($(du -h "$DB_FILE" | cut -f1)) to $BACKUP_FILE"
 cp -a "$DB_FILE" "$BACKUP_FILE"
 
+COMPOSE_FILES=(-f "$PROD_COMPOSE_FILE")
+if [[ -f docker-compose.audio.yml ]]; then
+  COMPOSE_FILES+=(-f docker-compose.audio.yml)
+  echo "[deploy] Including docker-compose.audio.yml for the NAS audio mount"
+fi
+
 echo "[deploy] Building and recreating devenkalra-app"
-docker compose -p data-backend -f "$PROD_COMPOSE_FILE" up -d --build --force-recreate --no-deps devenkalra-app
+docker compose -p data-backend "${COMPOSE_FILES[@]}" up -d --build --force-recreate --no-deps devenkalra-app
 
 echo "[deploy] Current devenkalra-app status"
-docker compose -p data-backend -f "$PROD_COMPOSE_FILE" ps devenkalra-app
+docker compose -p data-backend "${COMPOSE_FILES[@]}" ps devenkalra-app
+
+echo "[deploy] Seeding Music Library page"
+docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py ensure_music_library_page
+
+echo "[deploy] Indexing audio library"
+docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py index_audio_library
 
 if [[ "$WITH_EDGE" -eq 1 ]]; then
   if [[ ! -f "$EDGE_COMPOSE_FILE" ]]; then

@@ -98,6 +98,7 @@ INSTALLED_APPS = [
     'core',  # Placed first to allow overriding admin templates
     'vacation_list',
     'asset_manager',
+    'audio_library.apps.AudioLibraryConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -217,6 +218,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'clickup', 'description': 'ClickUp integrations'},
         {'name': 'vacation-list', 'description': 'Packing lists (Vac* models)'},
         {'name': 'asset-manager', 'description': 'Physical asset inventory'},
+        {'name': 'audio-library', 'description': 'NAS audio catalog and signed streams'},
     ],
 }
 
@@ -259,3 +261,11 @@ FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:311')
 # Increase max upload sizes to 50MB (default is 2.5MB) to prevent 413 Client Error
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
 FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800
+
+# Audio library: dedicated NAS user mount, one or more allowed folders.
+# Format: slug=/abs/path,slug=/abs/path|Label   or a JSON list of {slug,path,label}
+# Example: concerts=/mnt/audio/concerts,talks=/mnt/audio/talks|Talks
+from audio_library.roots import parse_audio_library_roots
+AUDIO_LIBRARY_ROOTS = parse_audio_library_roots(os.environ.get('AUDIO_LIBRARY_ROOTS', ''))
+AUDIO_LIBRARY_EXTENSIONS = os.environ.get('AUDIO_LIBRARY_EXTENSIONS', '.mp3')
+AUDIO_LIBRARY_SIGN_TTL = int(os.environ.get('AUDIO_LIBRARY_SIGN_TTL', '21600') or 21600)

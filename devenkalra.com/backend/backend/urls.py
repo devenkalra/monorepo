@@ -96,6 +96,7 @@ urlpatterns = [
     path('api/', include('core.urls')),
     path('api/vacation/', include('vacation_list.urls')),
     path('api/assets/', include('asset_manager.urls')),
+    path('api/audio/', include('audio_library.urls')),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     re_path(r'^(?P<path>.*)$', serve_spa_or_asset),
 ]

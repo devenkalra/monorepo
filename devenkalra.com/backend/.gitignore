@@ -5,3 +5,4 @@ db.sqlite3
 .env
 media/
 _import/
+audio_library/empty/sample/

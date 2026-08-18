@@ -9,6 +9,7 @@ google-auth>=2.35.0
 google-auth-httplib2>=0.2.0
 openai>=1.50.0
 Pillow==11.3.0
+mutagen==1.47.0
 youtube-transcript-api>=1.0.0
 yt-dlp>=2025.1.0
 soupsieve==2.8.4
