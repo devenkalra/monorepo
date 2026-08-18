@@ -367,9 +367,11 @@ deploy_one_app() {
 
   print_step "[$app] Rebuilding and recreating services: $services"
   local compose_files="-f \"$COMPOSE_FILE\""
-  if [[ "$app" == "devenkalra" && -f docker-compose.audio.yml ]]; then
+  if [[ "$app" == "devenkalra" && -f docker-compose.audio.yml ]] && grep -q '^NAS_SMB_USER=.\+' .env 2>/dev/null && grep -q '^NAS_SMB_PASSWORD=.\+' .env 2>/dev/null; then
     compose_files="$compose_files -f docker-compose.audio.yml"
     print_info "[$app] Including docker-compose.audio.yml for the NAS audio mount"
+  elif [[ "$app" == "devenkalra" ]]; then
+    print_info "[$app] NAS_SMB_USER/PASSWORD not set in .env; skipping CIFS overlay"
   fi
   run_shell "docker compose -p \"$PROJECT\" $compose_files up -d --build --force-recreate --no-deps $services"
 
@@ -387,8 +389,12 @@ deploy_one_app() {
   if [[ "$app" == "devenkalra" ]]; then
     print_step "[$app] Seeding Music Library page"
     run_shell "docker compose -p \"$PROJECT\" $compose_files exec -T devenkalra-app python manage.py ensure_music_library_page"
-    print_step "[$app] Indexing audio library (NAS mount; can take several minutes)"
-    run_shell "docker compose -p \"$PROJECT\" $compose_files exec -T devenkalra-app python manage.py index_audio_library"
+    if [[ "$compose_files" == *"docker-compose.audio.yml"* ]]; then
+      print_step "[$app] Indexing audio library (NAS mount; can take several minutes)"
+      run_shell "docker compose -p \"$PROJECT\" $compose_files exec -T devenkalra-app python manage.py index_audio_library"
+    else
+      print_info "[$app] Skipping audio index until the NAS CIFS overlay is enabled"
+    fi
     if [[ "$WITH_EDGE" == true ]]; then
       print_step "[$app] Recreating edge-nginx"
       run_shell "EDGE_NGINX_CONF=\"$EDGE_CONF\" docker compose -p edge -f \"$EDGE_COMPOSE\" up -d --force-recreate --no-deps edge-nginx"

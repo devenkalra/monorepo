@@ -49,9 +49,11 @@ echo "[deploy] Backing up SQLite ($(du -h "$DB_FILE" | cut -f1)) to $BACKUP_FILE
 cp -a "$DB_FILE" "$BACKUP_FILE"
 
 COMPOSE_FILES=(-f "$PROD_COMPOSE_FILE")
-if [[ -f docker-compose.audio.yml ]]; then
+if [[ -f docker-compose.audio.yml ]] && grep -q '^NAS_SMB_USER=.\+' .env 2>/dev/null && grep -q '^NAS_SMB_PASSWORD=.\+' .env 2>/dev/null; then
   COMPOSE_FILES+=(-f docker-compose.audio.yml)
   echo "[deploy] Including docker-compose.audio.yml for the NAS audio mount"
+else
+  echo "[deploy] NAS_SMB_USER/PASSWORD not set in .env; skipping CIFS overlay"
 fi
 
 echo "[deploy] Building and recreating devenkalra-app"
@@ -63,8 +65,12 @@ docker compose -p data-backend "${COMPOSE_FILES[@]}" ps devenkalra-app
 echo "[deploy] Seeding Music Library page"
 docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py ensure_music_library_page
 
-echo "[deploy] Indexing audio library"
-docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py index_audio_library
+if [[ "${COMPOSE_FILES[*]}" == *docker-compose.audio.yml* ]]; then
+  echo "[deploy] Indexing audio library"
+  docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py index_audio_library
+else
+  echo "[deploy] Skipping audio index until the NAS CIFS overlay is enabled"
+fi
 
 if [[ "$WITH_EDGE" -eq 1 ]]; then
   if [[ ! -f "$EDGE_COMPOSE_FILE" ]]; then
