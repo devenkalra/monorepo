@@ -2880,6 +2880,13 @@ a.accent-link:focus-visible {
   width: min(36rem, 100%);
 }
 
+.asset-bulk-input {
+  min-height: 12rem;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
 .asset-muted {
   color: var(--text-muted);
   font-size: 0.85rem;

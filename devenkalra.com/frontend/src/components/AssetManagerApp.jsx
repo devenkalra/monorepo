@@ -478,6 +478,84 @@ function DetailPanel({
   );
 }
 
+function parseBulkNames(text) {
+  const seen = new Set();
+  const names = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const name = line.trim();
+    if (!name || seen.has(name.toLowerCase())) continue;
+    seen.add(name.toLowerCase());
+    names.push(name);
+  }
+  return names;
+}
+
+function BulkAddModal({ title, locationLabel, noun, onClose, onSubmit }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState('');
+  const names = parseBulkNames(text);
+  const nounPlural = names.length === 1 ? noun : `${noun}s`;
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!names.length) {
+      setLocalError(`Enter at least one ${noun} name, one per line.`);
+      return;
+    }
+    setBusy(true);
+    setLocalError('');
+    try {
+      await onSubmit(names);
+    } catch (err) {
+      setLocalError(err.message || `Could not create ${nounPlural}.`);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="asset-modal-backdrop" role="presentation" onClick={onClose}>
+      <div
+        className="asset-modal asset-modal--wide"
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="asset-modal-header">
+          <h3>{title}</h3>
+          <button type="button" className="asset-icon-btn" onClick={onClose} aria-label="Close">✕</button>
+        </div>
+        <form onSubmit={submit} className="asset-modal-body">
+          <p className="asset-muted">
+            One name per line. Blank lines are ignored. They will be created in <strong>{locationLabel}</strong>.
+          </p>
+          <label className="asset-field">
+            <span>Names</span>
+            <textarea
+              className="form-input asset-bulk-input"
+              rows={10}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={'Spare cables\nCamera bag\nTripod'}
+              autoFocus
+            />
+          </label>
+          <p className="asset-muted">
+            {names.length ? `${names.length} ${nounPlural} ready.` : `No ${noun} names yet.`}
+          </p>
+          {localError && <div className="error-message">{localError}</div>}
+          <div className="asset-modal-footer">
+            <button type="button" className="asset-btn-muted" onClick={onClose} disabled={busy}>Cancel</button>
+            <button type="submit" className="editorial-button asset-btn" disabled={busy || !names.length}>
+              {busy ? 'Creating…' : `Create ${names.length} ${nounPlural}`}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 function NameModal({ title, initial = '', confirmLabel = 'Create', onClose, onSubmit }) {
   const [name, setName] = useState(initial);
   const [busy, setBusy] = useState(false);
@@ -1075,6 +1153,45 @@ export function AssetManagerApp() {
     return allAreas.find((a) => a.id === location.id) || null;
   }, [location, allAreas]);
 
+  const currentLocationLabel = location.type === 'area'
+    ? (currentArea?.name || crumbs[crumbs.length - 1]?.label || 'this container')
+    : 'Inventory root';
+
+  const bulkCreate = async (kind, names) => {
+    const parentId = location.type === 'area' ? location.id : null;
+    const created = [];
+    const failed = [];
+    for (const name of names) {
+      try {
+        if (kind === 'container') {
+          await api('areas/', {
+            token,
+            method: 'POST',
+            body: { name, parent_area_id: parentId },
+          });
+        } else {
+          const body = { name };
+          if (parentId) body.area_id = parentId;
+          await api('items/', { token, method: 'POST', body });
+        }
+        created.push(name);
+      } catch (err) {
+        failed.push(`${name} (${err.message || 'failed'})`);
+      }
+    }
+    if (!created.length) {
+      throw new Error(failed.length ? `Nothing created. ${failed.join('; ')}` : 'Nothing created.');
+    }
+    setCreateModal(null);
+    const noun = kind === 'container' ? 'container' : 'item';
+    const nounPlural = created.length === 1 ? noun : `${noun}s`;
+    let message = `Created ${created.length} ${nounPlural} in ${currentLocationLabel}.`;
+    if (failed.length) message += ` Skipped ${failed.length}: ${failed.join('; ')}.`;
+    setStatus(message);
+    await refreshMeta();
+    await loadContents();
+  };
+
   const locationCounts = useMemo(() => {
     if (location.type === 'root') {
       return {
@@ -1201,6 +1318,22 @@ export function AssetManagerApp() {
           >
             <span className="asset-btn-label-full">New item</span>
             <span className="asset-btn-label-short">+ Item</span>
+          </button>
+          <button
+            type="button"
+            className="asset-btn-muted"
+            onClick={() => setCreateModal('bulk-container')}
+          >
+            <span className="asset-btn-label-full">Bulk add containers</span>
+            <span className="asset-btn-label-short">Bulk ▤</span>
+          </button>
+          <button
+            type="button"
+            className="asset-btn-muted"
+            onClick={() => setCreateModal('bulk-item')}
+          >
+            <span className="asset-btn-label-full">Bulk add items</span>
+            <span className="asset-btn-label-short">Bulk ▭</span>
           </button>
           {currentArea && (
             <button
@@ -1387,6 +1520,24 @@ export function AssetManagerApp() {
       )}
       {createModal === 'item' && (
         <NameModal title="New item" onClose={() => setCreateModal(null)} onSubmit={createItem} />
+      )}
+      {createModal === 'bulk-container' && (
+        <BulkAddModal
+          title="Bulk add containers"
+          locationLabel={currentLocationLabel}
+          noun="container"
+          onClose={() => setCreateModal(null)}
+          onSubmit={(names) => bulkCreate('container', names)}
+        />
+      )}
+      {createModal === 'bulk-item' && (
+        <BulkAddModal
+          title="Bulk add items"
+          locationLabel={currentLocationLabel}
+          noun="item"
+          onClose={() => setCreateModal(null)}
+          onSubmit={(names) => bulkCreate('item', names)}
+        />
       )}
       {editModal && selected && (
         <EditEntityModal
