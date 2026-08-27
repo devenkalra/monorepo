@@ -197,6 +197,17 @@ Ported from `lister` inventory domain:
 | `StaticFile` | Uploads or fetch-from-URL → `/api/media/` |
 | `PageData` | JSON blob keyed by `page_slug` (e.g. exercise planner) |
 
+### 3.10 Image Search (`image_search` app)
+
+Bing Image Search API is retired and browsers cannot call Bing (CORS), so the server fetches Bing's public `images/async` HTML and extracts result cards. Logged-in users only.
+
+Outbound HTTP goes through **`core.http_client`** (`fetch_url` / `is_public_http_url`): public http(s) only, DNS SSRF checks, timeout, and byte cap. This is an internal library, not a browser-facing open proxy.
+
+- API (Token or session, `IsAuthenticated`): `/api/images/search/`, `POST /api/images/sizes/`, `POST /api/images/quality/`, `POST /api/images/download/`
+- SPA: slug `image-search` → `ImageSearchApp`
+- Seed: `python manage.py ensure_image_search_page` (also `backend/add_image_search_page.py`)
+- Desktop-only folder picker from the standalone tool is not ported; downloads use the browser
+
 ---
 
 ## 4. Custom apps (slug mounts)
@@ -210,6 +221,8 @@ After rendering page content, `PageView.jsx` mounts React apps by **page slug**:
 | `notes` | Notes folder tree + editor |
 | `vacation-list` | Packing lists (`vacation_list`) |
 | `asset-manager` | Physical inventory (`asset_manager`) |
+| `music-library` | NAS audio catalog (`audio_library`) |
+| `image-search` | Bing image search (`image_search`) |
 | `creative-projects` | ClickUp-backed projects |
 | `contacts` | ClickUp-backed contacts |
 | `book-reviews`, `indian-music`, `cooking-snacks`, `track-ideas` | Inline catalog UIs |
@@ -326,6 +339,7 @@ See `backend/.env.template` (and host `.env`):
 | Notes UI | `frontend/src/components/NotesApp.jsx` |
 | Vacation list | `backend/vacation_list/`, `frontend/src/components/VacationListApp.jsx` |
 | Asset manager | `backend/asset_manager/`, `frontend/src/components/AssetManagerApp.jsx` |
+| Image search | `backend/image_search/`, `backend/core/http_client.py`, `frontend/src/components/ImageSearchApp.jsx` |
 | Vac/Asset page seed | `backend/add_vacation_asset_pages.py` |
 | Dockerfile | `devenkalra.com/Dockerfile` |
 | Local compose | monorepo `docker-compose.local.yml` (`devenkalra-app`) |

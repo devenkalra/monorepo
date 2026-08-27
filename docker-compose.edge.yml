@@ -31,8 +31,18 @@ services:
       # Allows proxying to services published on host loopback from inside Linux containers.
       # Safe on Docker Desktop; useful on Linux with host-gateway support.
       - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      # Join app network so upstreams can use container DNS
+      # (bldrdojo-local-frontend, devenkalra-local-app) instead of host ports.
+      - bldrdojo_backend
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+
+networks:
+  bldrdojo_backend:
+    external: true
+    name: bldrdojo-local-backend-network

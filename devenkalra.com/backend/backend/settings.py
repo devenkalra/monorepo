@@ -99,6 +99,7 @@ INSTALLED_APPS = [
     'vacation_list',
     'asset_manager',
     'audio_library.apps.AudioLibraryConfig',
+    'image_search.apps.ImageSearchConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -219,6 +220,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'vacation-list', 'description': 'Packing lists (Vac* models)'},
         {'name': 'asset-manager', 'description': 'Physical asset inventory'},
         {'name': 'audio-library', 'description': 'NAS audio catalog and signed streams'},
+        {'name': 'image-search', 'description': 'Authenticated Bing image search, size/quality probes, and downloads'},
     ],
 }
 

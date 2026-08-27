@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import ImageLightbox from './ImageLightbox';
+import ImageLightbox, { prepareImageFileDrag } from './ImageLightbox';
 import RichTextEditor from './RichTextEditor';
 import TagInput from './TagInput';
 import api from '../services/api';
@@ -17,7 +17,7 @@ const generateUUID = () => {
     });
 };
 
-function DecryptedImage({ src, alt, className, onClick, title, decryptionKey }) {
+function DecryptedImage({ src, alt, className, onClick, title, decryptionKey, onLoad, draggable = true, onDragStart }) {
     const { decryptBlob } = useEncryption();
     const [decryptedSrc, setDecryptedSrc] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -78,7 +78,283 @@ function DecryptedImage({ src, alt, className, onClick, title, decryptionKey }) 
             className={className}
             onClick={onClick}
             title={title}
+            onLoad={onLoad}
+            draggable={draggable}
+            onDragStart={onDragStart}
         />
+    );
+}
+
+const PHOTO_DRAG_TYPE = 'application/x-entity-photo';
+const PHOTO_FIT_KEY = 'entity-photo-grid-fit';
+
+function firstDroppedUri(dataTransfer) {
+    if (!dataTransfer || typeof dataTransfer.getData !== 'function') return '';
+    const raw = dataTransfer.getData('text/uri-list') || dataTransfer.getData('text/plain') || '';
+    return raw.split('\n').map((line) => line.trim()).find((line) => line && !line.startsWith('#')) || '';
+}
+
+function filenameFromDroppedUrl(url) {
+    try {
+        const path = decodeURIComponent(String(url).split('?')[0].split('#')[0]);
+        const name = path.split('/').pop();
+        return name || 'file';
+    } catch {
+        return 'file';
+    }
+}
+
+async function fileFromDroppedUrl(url) {
+    if (!url) return null;
+    const isInline = url.startsWith('blob:') || url.startsWith('data:');
+    const target = isInline
+        ? url
+        : (url.startsWith('http') || url.startsWith('/') ? url : getMediaUrl(url));
+    const response = isInline ? await fetch(target) : await api.fetch(target);
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    if (!blob || blob.size === 0) return null;
+    let name = filenameFromDroppedUrl(url);
+    const type = blob.type || 'application/octet-stream';
+    if (!name.includes('.') && type.includes('/')) {
+        const ext = type.split('/')[1].split(';')[0] || 'bin';
+        name = `${name}.${ext}`;
+    }
+    return new File([blob], name, { type });
+}
+
+let photoGridFitPref = null;
+
+function readPhotoGridFitPref() {
+    if (photoGridFitPref != null) return photoGridFitPref;
+    try {
+        photoGridFitPref =
+            sessionStorage.getItem(PHOTO_FIT_KEY) === '1'
+            || localStorage.getItem(PHOTO_FIT_KEY) === '1';
+    } catch {
+        photoGridFitPref = false;
+    }
+    return photoGridFitPref;
+}
+
+function writePhotoGridFitPref(value) {
+    photoGridFitPref = Boolean(value);
+    try {
+        const stored = photoGridFitPref ? '1' : '0';
+        sessionStorage.setItem(PHOTO_FIT_KEY, stored);
+        localStorage.setItem(PHOTO_FIT_KEY, stored);
+    } catch {
+        /* ignore quota / private mode */
+    }
+    return photoGridFitPref;
+}
+
+function isPendingPhoto(photo) {
+    return Boolean(photo && typeof photo === 'object' && photo._pending && photo.file);
+}
+
+function formatPhotoBytes(n) {
+    if (n == null || n < 0 || !Number.isFinite(Number(n))) return null;
+    const bytes = Number(n);
+    if (bytes < 1024) return `${bytes} B`;
+    const kb = bytes / 1024;
+    if (kb < 1024) return `${kb.toFixed(kb < 10 ? 1 : 0)} KB`;
+    return `${(kb / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function makePendingPhotos(files) {
+    return files.map((file) => ({
+        _pending: true,
+        file,
+        caption: '',
+        filename: file.name,
+        previewUrl: URL.createObjectURL(file),
+    }));
+}
+
+function revokePendingPreview(photo) {
+    if (isPendingPhoto(photo) && photo.previewUrl) {
+        URL.revokeObjectURL(photo.previewUrl);
+    }
+}
+
+function PhotoMetaLine({ width, height, bytes }) {
+    const parts = [];
+    if (width && height) parts.push(`${width}×${height}`);
+    const size = formatPhotoBytes(bytes);
+    if (size) parts.push(size);
+    if (!parts.length) return null;
+    return (
+        <div className="text-[10px] leading-tight text-gray-500 dark:text-gray-400 truncate" title={parts.join(' · ')}>
+            {parts.join(' · ')}
+        </div>
+    );
+}
+
+function PendingAttachmentRow({ file, onRemove, onCaption }) {
+    const isImage = Boolean(file.type?.startsWith('image/'));
+    const [preview, setPreview] = useState(null);
+
+    useEffect(() => {
+        if (!isImage) return undefined;
+        const url = URL.createObjectURL(file);
+        setPreview(url);
+        return () => URL.revokeObjectURL(url);
+    }, [file, isImage]);
+
+    return (
+        <div className="p-2 bg-blue-50 dark:bg-blue-900 rounded">
+            <div className="flex items-center justify-between mb-1 gap-2">
+                {preview && (
+                    <img src={preview} alt="" className="w-10 h-10 object-cover rounded flex-shrink-0" />
+                )}
+                <span className="text-gray-900 dark:text-gray-100 truncate flex-1">
+                    {file.name}
+                </span>
+                <button
+                    type="button"
+                    onClick={onRemove}
+                    className="ml-2 p-1 text-red-600 hover:text-red-700 flex-shrink-0"
+                    title="Remove attachment"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <input
+                type="text"
+                value={file.caption || ''}
+                onChange={(e) => onCaption(e.target.value)}
+                placeholder="Add caption (optional)"
+                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            />
+        </div>
+    );
+}
+
+function EditPhotoCard({
+    photo,
+    idx,
+    dropSlot,
+    total,
+    isEncrypted,
+    decryptionKey,
+    mediaSrc,
+    onOpen,
+    onDelete,
+    onCaption,
+    onDragStart,
+    onDragOver,
+    onDrop,
+    onDragEnd,
+}) {
+    const pending = isPendingPhoto(photo);
+    const photoCaption = pending ? (photo.caption || '') : (typeof photo === 'string' ? '' : (photo.caption || ''));
+    const photoFilename = pending
+        ? (photo.filename || photo.file?.name || 'image')
+        : (typeof photo === 'string' ? photo.split('/').pop() : (photo.filename || (photo.url || '').split('/').pop()));
+    const displayCaption = photoCaption || photoFilename;
+    const thumbSrc = pending ? photo.previewUrl : mediaSrc;
+    const [meta, setMeta] = useState({
+        width: 0,
+        height: 0,
+        bytes: pending ? photo.file?.size ?? null : null,
+    });
+
+    useEffect(() => {
+        if (pending) {
+            setMeta((prev) => ({ ...prev, bytes: photo.file?.size ?? null }));
+            return undefined;
+        }
+        if (!thumbSrc) return undefined;
+        let cancelled = false;
+        fetch(thumbSrc, { method: 'HEAD' })
+            .then((r) => {
+                const len = r.headers.get('Content-Length');
+                if (!cancelled && len && Number(len) > 0) {
+                    setMeta((prev) => ({ ...prev, bytes: Number(len) }));
+                }
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, [pending, photo.file, thumbSrc]);
+
+    const handleImgLoad = (e) => {
+        setMeta((prev) => ({
+            ...prev,
+            width: e.target.naturalWidth,
+            height: e.target.naturalHeight,
+        }));
+    };
+
+    return (
+        <div
+            className={`relative group flex flex-col bg-gray-50 dark:bg-gray-800 p-1 rounded border border-gray-200 dark:border-gray-700 ${dropSlot === idx ? 'ring-2 ring-blue-500' : ''}`}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+        >
+            {dropSlot === idx && (
+                <div className="absolute inset-y-0 -left-0.5 w-0.5 bg-blue-500 rounded z-10 pointer-events-none" />
+            )}
+            {dropSlot === total && idx === total - 1 && (
+                <div className="absolute inset-y-0 -right-0.5 w-0.5 bg-blue-500 rounded z-10 pointer-events-none" />
+            )}
+            <div
+                draggable
+                onDragStart={onDragStart}
+                onDragEnd={onDragEnd}
+                className="w-full aspect-square flex items-center justify-center bg-gray-100 dark:bg-gray-900 rounded overflow-hidden cursor-grab active:cursor-grabbing select-none"
+            >
+                {isEncrypted && !pending ? (
+                    <DecryptedImage
+                        src={thumbSrc}
+                        alt={displayCaption}
+                        className="max-w-full max-h-full object-contain select-none"
+                        onClick={onOpen}
+                        onLoad={handleImgLoad}
+                        title="Drag to reorder"
+                        decryptionKey={decryptionKey}
+                        draggable={false}
+                    />
+                ) : (
+                    <img
+                        src={thumbSrc}
+                        alt={displayCaption}
+                        className="max-w-full max-h-full object-contain select-none"
+                        onClick={onOpen}
+                        onLoad={handleImgLoad}
+                        title="Drag to reorder"
+                        draggable={false}
+                    />
+                )}
+            </div>
+            <button
+                type="button"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete();
+                }}
+                className="absolute top-0.5 right-0.5 p-0.5 bg-red-600 text-white rounded-full hover:bg-red-700 shadow"
+                title="Delete photo"
+            >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            <div className="mt-0.5 px-0.5">
+                <PhotoMetaLine width={meta.width} height={meta.height} bytes={meta.bytes} />
+                <input
+                    type="text"
+                    value={displayCaption}
+                    onChange={(e) => onCaption(e.target.value)}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    placeholder="Name"
+                    className="w-full h-6 mt-0.5 px-1 text-xs border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                />
+            </div>
+        </div>
     );
 }
 
@@ -125,7 +401,6 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const [processedDescription, setProcessedDescription] = useState('');
     const descriptionBlobUrlsRef = useRef([]);
     const [isSaving, setIsSaving] = useState(false);
-    const [newPhotos, setNewPhotos] = useState([]);
     const [newAttachments, setNewAttachments] = useState([]);
     const [deletedPhotos, setDeletedPhotos] = useState([]);
     const [deletedAttachments, setDeletedAttachments] = useState([]);
@@ -144,6 +419,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const [geocodeLoading, setGeocodeLoading] = useState(null); // { idx, type: 'forward'|'reverse' }
     const [isDraggingPhotos, setIsDraggingPhotos] = useState(false);
     const [isDraggingAttachments, setIsDraggingAttachments] = useState(false);
+    const [photoGridFit, setPhotoGridFit] = useState(() => readPhotoGridFitPref());
+    const [photoDropSlot, setPhotoDropSlot] = useState(null);
+    const photoDragFrom = useRef(null);
+    const suppressPhotoClick = useRef(false);
 
     useEffect(() => {
         if (entity && isVisible) {
@@ -176,7 +455,6 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 setViewMode(initialViewMode || 'details');
             }
 
-            setNewPhotos([]);
             setNewAttachments([]);
             setDeletedPhotos([]);
             setDeletedAttachments([]);
@@ -392,9 +670,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     };
 
     const handleCancelEdit = () => {
+        (editedEntity?.photos || []).forEach(revokePendingPreview);
         setEditedEntity(displayEntityRef.current);
         setIsEditing(false);
-        setNewPhotos([]);
         setNewAttachments([]);
         setDeletedPhotos([]);
         setDeletedAttachments([]);
@@ -457,58 +735,227 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         }));
     };
 
+    const insertPendingPhotos = useCallback((files, index = null) => {
+        const imageFiles = (files || []).filter((f) => f?.type?.startsWith('image/'));
+        if (!imageFiles.length) return;
+        const pending = makePendingPhotos(imageFiles);
+        setEditedEntity((prev) => {
+            const photos = [...(prev?.photos || [])];
+            const at = index == null ? photos.length : Math.max(0, Math.min(index, photos.length));
+            photos.splice(at, 0, ...pending);
+            return { ...prev, photos };
+        });
+    }, []);
+
+    const movePhotoToSlot = useCallback((from, slot) => {
+        if (from == null || slot == null || from === slot || from === slot - 1) return;
+        setEditedEntity((prev) => {
+            const photos = [...(prev?.photos || [])];
+            if (from < 0 || from >= photos.length) return prev;
+            let dest = slot;
+            const [item] = photos.splice(from, 1);
+            if (dest > from) dest -= 1;
+            dest = Math.max(0, Math.min(dest, photos.length));
+            photos.splice(dest, 0, item);
+            return { ...prev, photos };
+        });
+    }, []);
+
     const handlePhotoSelect = (e) => {
-        const files = Array.from(e.target.files);
-        setNewPhotos(prev => [...prev, ...files]);
+        insertPendingPhotos(Array.from(e.target.files || []));
+        e.target.value = '';
     };
 
     const handleAttachmentSelect = (e) => {
-        const files = Array.from(e.target.files);
-        setNewAttachments(prev => [...prev, ...files]);
+        const files = Array.from(e.target.files || []);
+        if (files.length) {
+            setNewAttachments((prev) => [...prev, ...files]);
+        }
+        e.target.value = '';
     };
 
-    const addFilesFromDrop = useCallback((e, addFiles, filter = () => true) => {
+    const collectDroppedImageFiles = useCallback((e) => {
         e.preventDefault();
         e.stopPropagation();
         if (e.dataTransfer.files?.length) {
-            const files = Array.from(e.dataTransfer.files).filter(filter);
-            if (files.length) addFiles((prev) => [...prev, ...files]);
-        } else if (e.dataTransfer.items) {
-            for (let i = 0; i < e.dataTransfer.items.length; i++) {
-                const item = e.dataTransfer.items[i];
-                if (item.kind === 'file') {
-                    const file = item.getAsFile();
-                    if (file && filter(file)) addFiles((prev) => [...prev, file]);
-                } else if (item.kind === 'string' && item.type === 'text/uri-list') {
-                    item.getAsString((url) => {
-                        fetch(url, { mode: 'cors' })
-                            .then((r) => r.blob())
-                            .then((blob) => {
-                                const ext = (blob.type || '').split('/')[1] || 'png';
-                                const file = new File([blob], `image.${ext}`, { type: blob.type || 'image/png' });
-                                if (filter(file)) addFiles((prev) => [...prev, file]);
-                            })
-                            .catch(() => {});
-                    });
-                    break;
-                }
+            return Promise.resolve(
+                Array.from(e.dataTransfer.files).filter((f) => f.type?.startsWith('image/'))
+            );
+        }
+        if (!e.dataTransfer.items) return Promise.resolve([]);
+        const items = Array.from(e.dataTransfer.items);
+        const files = [];
+        const uriItems = [];
+        for (const item of items) {
+            if (item.kind === 'file') {
+                const file = item.getAsFile();
+                if (file && file.type?.startsWith('image/')) files.push(file);
+            } else if (item.kind === 'string' && item.type === 'text/uri-list') {
+                uriItems.push(item);
             }
         }
+        if (files.length || !uriItems.length) return Promise.resolve(files);
+        return new Promise((resolve) => {
+            uriItems[0].getAsString((url) => {
+                fileFromDroppedUrl(url)
+                    .then((file) => resolve(file && file.type?.startsWith('image/') ? [file] : []))
+                    .catch(() => resolve([]));
+            });
+        });
     }, []);
 
-    const handlePhotoDrop = useCallback((e) => {
-        setIsDraggingPhotos(false);
-        if (!isEditing) return;
-        addFilesFromDrop(e, setNewPhotos, (f) => f.type?.startsWith('image/'));
-    }, [isEditing, addFilesFromDrop]);
+    const copyPhotoToAttachments = useCallback((photo) => {
+        if (!photo) return;
+        if (isPendingPhoto(photo)) {
+            setNewAttachments((prev) => [...prev, photo.file]);
+            return;
+        }
+        const obj = typeof photo === 'string' ? { url: photo } : { ...photo };
+        setEditedEntity((prev) => ({
+            ...prev,
+            attachments: [...(prev.attachments || []), obj],
+        }));
+    }, []);
 
-    const handleAttachmentDrop = useCallback((e) => {
+    const handlePhotoDrop = useCallback(async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingPhotos(false);
+        setPhotoDropSlot(null);
+        if (!isEditing) return;
+        if (photoDragFrom.current != null) {
+            const from = photoDragFrom.current;
+            photoDragFrom.current = null;
+            movePhotoToSlot(from, (editedEntity?.photos || []).length);
+            return;
+        }
+        const files = await collectDroppedImageFiles(e);
+        insertPendingPhotos(files);
+    }, [isEditing, collectDroppedImageFiles, insertPendingPhotos, movePhotoToSlot, editedEntity]);
+
+    const togglePhotoGridFit = () => {
+        setPhotoGridFit((v) => writePhotoGridFitPref(!v));
+    };
+
+    const updatePhotoCaption = (idx, value) => {
+        setEditedEntity((prev) => {
+            const photos = [...(prev.photos || [])];
+            const current = photos[idx];
+            if (isPendingPhoto(current) || (current && typeof current === 'object')) {
+                photos[idx] = { ...current, caption: value, filename: value || current.filename };
+            } else {
+                photos[idx] = { url: current, caption: value, filename: value };
+            }
+            return { ...prev, photos };
+        });
+    };
+
+    const openEditLightbox = async (idx) => {
+        const photos = editedEntity?.photos || [];
+        try {
+            if (editedEntity?.is_encrypted) {
+                const decryptedUrls = await Promise.all(
+                    photos.map(async (p) => {
+                        if (isPendingPhoto(p)) return p.previewUrl;
+                        const url = typeof p === 'string' ? p : p.url;
+                        const fullUrl = getMediaUrl(url);
+                        const response = await fetch(fullUrl);
+                        const encryptedBlob = await response.blob();
+                        let mimeType = 'image/jpeg';
+                        if (url.toLowerCase().includes('.png')) mimeType = 'image/png';
+                        if (url.toLowerCase().includes('.gif')) mimeType = 'image/gif';
+                        if (url.toLowerCase().includes('.webp')) mimeType = 'image/webp';
+                        const decryptedBlob = await decryptBlob(
+                            encryptedBlob,
+                            mimeType,
+                            editedEntity._decryption_key || encryptionKeys[encryptionKeys.length - 1]
+                        );
+                        return URL.createObjectURL(decryptedBlob);
+                    })
+                );
+                setLightboxImages(decryptedUrls);
+                setLightboxIndex(idx);
+                return;
+            }
+            setLightboxImages(
+                photos.map((p) => (
+                    isPendingPhoto(p)
+                        ? p.previewUrl
+                        : getMediaUrl(typeof p === 'string' ? p : p.url)
+                ))
+            );
+            setLightboxIndex(idx);
+        } catch (err) {
+            console.error('Failed to open photos:', err);
+            alert('Failed to open photos.');
+        }
+    };
+
+    const handlePhotoCardDragOver = (e, idx) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const slot = e.clientX < rect.left + rect.width / 2 ? idx : idx + 1;
+        setPhotoDropSlot(slot);
+    };
+
+    const handlePhotoCardDrop = async (e, idx) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDraggingPhotos(false);
+        const rect = e.currentTarget.getBoundingClientRect();
+        const slot = e.clientX < rect.left + rect.width / 2 ? idx : idx + 1;
+        setPhotoDropSlot(null);
+        if (photoDragFrom.current != null) {
+            const from = photoDragFrom.current;
+            photoDragFrom.current = null;
+            movePhotoToSlot(from, slot);
+            return;
+        }
+        const files = await collectDroppedImageFiles(e);
+        insertPendingPhotos(files, slot);
+    };
+
+    const handleAttachmentDrop = useCallback(async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         setIsDraggingAttachments(false);
         if (!isEditing) return;
-        addFilesFromDrop(e, setNewAttachments);
-    }, [isEditing, addFilesFromDrop]);
 
-    const handleDeletePhoto = (photo) => {
+        if (photoDragFrom.current != null) {
+            const from = photoDragFrom.current;
+            photoDragFrom.current = null;
+            copyPhotoToAttachments((editedEntity?.photos || [])[from]);
+            return;
+        }
+
+        const droppedFiles = e.dataTransfer.files?.length
+            ? Array.from(e.dataTransfer.files)
+            : [];
+        if (droppedFiles.length) {
+            setNewAttachments((prev) => [...prev, ...droppedFiles]);
+            return;
+        }
+
+        const uri = firstDroppedUri(e.dataTransfer);
+        if (!uri) return;
+        try {
+            const file = await fileFromDroppedUrl(uri);
+            if (file) setNewAttachments((prev) => [...prev, file]);
+        } catch (err) {
+            console.error('Failed to add dropped file as attachment:', err);
+        }
+    }, [isEditing, editedEntity, copyPhotoToAttachments]);
+
+    const handleDeletePhoto = (photo, index) => {
+        if (isPendingPhoto(photo)) {
+            revokePendingPreview(photo);
+            setEditedEntity((prev) => ({
+                ...prev,
+                photos: (prev.photos || []).filter((_, i) => i !== index),
+            }));
+            return;
+        }
         setDeletedPhotos(prev => [...prev, photo]);
         setEditedEntity(prev => ({
             ...prev,
@@ -518,10 +965,6 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 return pUrl !== photoUrl;
             })
         }));
-    };
-
-    const handleDeleteNewPhoto = (index) => {
-        setNewPhotos(prev => prev.filter((_, i) => i !== index));
     };
 
     const handleDeleteAttachment = (attachment) => {
@@ -538,25 +981,6 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
 
     const handleDeleteNewAttachment = (index) => {
         setNewAttachments(prev => prev.filter((_, i) => i !== index));
-    };
-
-    const movePhotoUp = (index) => {
-        if (index === 0) return;
-        setEditedEntity(prev => {
-            const photos = [...(prev.photos || [])];
-            [photos[index - 1], photos[index]] = [photos[index], photos[index - 1]];
-            return { ...prev, photos };
-        });
-    };
-
-    const movePhotoDown = (index) => {
-        const photos = editedEntity.photos || [];
-        if (index === photos.length - 1) return;
-        setEditedEntity(prev => {
-            const photos = [...(prev.photos || [])];
-            [photos[index], photos[index + 1]] = [photos[index + 1], photos[index]];
-            return { ...prev, photos };
-        });
     };
 
     const moveAttachmentUp = (index) => {
@@ -894,7 +1318,18 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         });
 
         if (!response.ok) {
-            throw new Error('File upload failed');
+            let detail = `Upload failed (${response.status})`;
+            if (response.status === 413) {
+                detail = 'File is too large for the server';
+            } else {
+                try {
+                    const errBody = await response.json();
+                    detail = errBody.error || errBody.detail || detail;
+                } catch {
+                    /* nginx/html error page */
+                }
+            }
+            throw new Error(detail);
         }
 
         const data = await response.json();
@@ -985,25 +1420,31 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 return await uploadFile(file);
             };
 
-            // Upload new photos and store full metadata
+            // Upload new photos in place so dropped order is preserved
             const uploadedPhotos = [];
-            for (const file of newPhotos) {
-                try {
-                    const uploadResult = await encryptAndUpload(file);
-                    // Store object with url, original filename, and caption
-                    uploadedPhotos.push({
-                        url: uploadResult.url,
-                        thumbnail_url: uploadResult.thumbnail_url || uploadResult.url,
-                        filename: file.name, // Store original filename
-                        caption: file.caption || '', // Store caption if provided
-                    });
-                } catch (error) {
-                    console.error('Failed to upload photo:', error);
+            for (const photo of editedEntity.photos || []) {
+                if (isPendingPhoto(photo)) {
+                    try {
+                        const uploadResult = await encryptAndUpload(photo.file);
+                        uploadedPhotos.push({
+                            url: uploadResult.url,
+                            thumbnail_url: uploadResult.thumbnail_url || uploadResult.url,
+                            filename: photo.filename || photo.file.name,
+                            caption: photo.caption || '',
+                        });
+                    } catch (error) {
+                        console.error('Failed to upload photo:', error);
+                    } finally {
+                        revokePendingPreview(photo);
+                    }
+                } else {
+                    uploadedPhotos.push(photo);
                 }
             }
 
             // Upload new attachments and store full metadata
             const uploadedAttachments = [];
+            const failedAttachmentUploads = [];
             for (const file of newAttachments) {
                 try {
                     const uploadResult = await encryptAndUpload(file);
@@ -1022,14 +1463,15 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     uploadedAttachments.push(attachmentData);
                 } catch (error) {
                     console.error('Failed to upload attachment:', error);
+                    failedAttachmentUploads.push(`${file.name} (${error.message || 'upload failed'})`);
                 }
+            }
+            if (failedAttachmentUploads.length) {
+                alert(`Failed to upload attachment${failedAttachmentUploads.length > 1 ? 's' : ''}: ${failedAttachmentUploads.join(', ')}`);
             }
 
             // Combine existing and new photos/attachments
-            const updatedPhotos = [
-                ...(editedEntity.photos || []),
-                ...uploadedPhotos
-            ];
+            const updatedPhotos = uploadedPhotos;
 
             const updatedAttachments = [
                 ...(editedEntity.attachments || []),
@@ -1041,52 +1483,59 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             // Convert encryption of existing photos if target state changed
             const finalPhotos = [];
             for (const photo of updatedPhotos) {
-                const isPhotoEncrypted = photo.url.endsWith('.enc');
-                const originalFilename = photo.filename || photo.url.substring(photo.url.lastIndexOf('/') + 1);
+                const photoObj = typeof photo === 'string' ? { url: photo } : photo;
+                const isPhotoEncrypted = String(photoObj.url || '').endsWith('.enc');
+                const originalFilename = photoObj.filename || photoObj.url.substring(photoObj.url.lastIndexOf('/') + 1);
                 
                 if (targetEncrypted && !isPhotoEncrypted) {
                     try {
-                        const uploadResult = await convertFileToEncrypted(photo.url, originalFilename);
+                        const uploadResult = await convertFileToEncrypted(photoObj.url, originalFilename);
                         finalPhotos.push({
-                            ...photo,
+                            ...photoObj,
                             url: uploadResult.url,
                             thumbnail_url: uploadResult.thumbnail_url || uploadResult.url,
                             filename: originalFilename + '.enc'
                         });
                     } catch (err) {
                         console.error('Failed to convert photo to encrypted:', err);
-                        finalPhotos.push(photo);
+                        finalPhotos.push(photoObj);
                     }
                 } else if (!targetEncrypted && isPhotoEncrypted) {
                     try {
                         const cleanName = originalFilename.replace(/\.enc$/, '');
-                        const uploadResult = await convertFileToDecrypted(photo.url, originalFilename);
+                        const uploadResult = await convertFileToDecrypted(photoObj.url, originalFilename);
                         finalPhotos.push({
-                            ...photo,
+                            ...photoObj,
                             url: uploadResult.url,
                             thumbnail_url: uploadResult.thumbnail_url || uploadResult.url,
                             filename: cleanName
                         });
                     } catch (err) {
                         console.error('Failed to convert photo to decrypted:', err);
-                        finalPhotos.push(photo);
+                        finalPhotos.push(photoObj);
                     }
                 } else {
-                    finalPhotos.push(photo);
+                    finalPhotos.push(photoObj);
                 }
             }
 
             // Convert encryption of existing attachments if target state changed
             const finalAttachments = [];
             for (const attachment of updatedAttachments) {
-                const isAttachmentEncrypted = attachment.url.endsWith('.enc');
-                const originalFilename = attachment.filename || attachment.url.substring(attachment.url.lastIndexOf('/') + 1);
+                const attachmentObj = typeof attachment === 'string' ? { url: attachment } : (attachment || {});
+                const attachmentUrl = String(attachmentObj.url || '');
+                if (!attachmentUrl) {
+                    finalAttachments.push(attachmentObj);
+                    continue;
+                }
+                const isAttachmentEncrypted = attachmentUrl.endsWith('.enc');
+                const originalFilename = attachmentObj.filename || attachmentUrl.substring(attachmentUrl.lastIndexOf('/') + 1);
                 
                 if (targetEncrypted && !isAttachmentEncrypted) {
                     try {
-                        const uploadResult = await convertFileToEncrypted(attachment.url, originalFilename);
+                        const uploadResult = await convertFileToEncrypted(attachmentUrl, originalFilename);
                         const attachmentData = {
-                            ...attachment,
+                            ...attachmentObj,
                             url: uploadResult.url,
                             filename: originalFilename + '.enc'
                         };
@@ -1095,14 +1544,14 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                         finalAttachments.push(attachmentData);
                     } catch (err) {
                         console.error('Failed to convert attachment to encrypted:', err);
-                        finalAttachments.push(attachment);
+                        finalAttachments.push(attachmentObj);
                     }
                 } else if (!targetEncrypted && isAttachmentEncrypted) {
                     try {
                         const cleanName = originalFilename.replace(/\.enc$/, '');
-                        const uploadResult = await convertFileToDecrypted(attachment.url, originalFilename);
+                        const uploadResult = await convertFileToDecrypted(attachmentUrl, originalFilename);
                         const attachmentData = {
-                            ...attachment,
+                            ...attachmentObj,
                             url: uploadResult.url,
                             filename: cleanName
                         };
@@ -1113,10 +1562,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                         finalAttachments.push(attachmentData);
                     } catch (err) {
                         console.error('Failed to convert attachment to decrypted:', err);
-                        finalAttachments.push(attachment);
+                        finalAttachments.push(attachmentObj);
                     }
                 } else {
-                    finalAttachments.push(attachment);
+                    finalAttachments.push(attachmentObj);
                 }
             }
 
@@ -1384,7 +1833,6 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 setDecryptedEntity(decryptedSaved);
                 setEditedEntity(decryptedSaved);
                 setIsEditing(false);
-                setNewPhotos([]);
                 setNewAttachments([]);
                 setDeletedPhotos([]);
                 setDeletedAttachments([]);
@@ -2222,167 +2670,105 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     )}
 
                     {/* Photos */}
-                    {(displayEntity.photos?.length > 0 || newPhotos.length > 0 || isEditing) && (
+                    {(displayEntity.photos?.length > 0 || isEditing) && (
                         <section
-                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (isEditing) setIsDraggingPhotos(true); }}
-                            onDragLeave={(e) => { e.preventDefault(); if (!e.currentTarget.contains(e.relatedTarget)) setIsDraggingPhotos(false); }}
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (!isEditing) return;
+                                if (photoDragFrom.current != null) {
+                                    e.dataTransfer.dropEffect = 'move';
+                                    return;
+                                }
+                                setIsDraggingPhotos(true);
+                            }}
+                            onDragLeave={(e) => {
+                                e.preventDefault();
+                                if (!e.currentTarget.contains(e.relatedTarget)) {
+                                    setIsDraggingPhotos(false);
+                                    setPhotoDropSlot(null);
+                                }
+                            }}
                             onDrop={handlePhotoDrop}
                             className={isDraggingPhotos ? 'rounded-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 p-2 -m-2' : ''}
                         >
-                            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
-                                Photos
-                            </h3>
+                            <div className="flex items-center justify-between gap-2 mb-3 border-b border-gray-200 dark:border-gray-700 pb-2">
+                                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                    Photos
+                                </h3>
+                                {!isEditing && displayEntity.photos?.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={togglePhotoGridFit}
+                                        className={`text-xs px-2 py-1 rounded border ${photoGridFit
+                                            ? 'bg-blue-600 text-white border-blue-600'
+                                            : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                                        title={photoGridFit
+                                            ? 'Showing the full image; the longer side fills the cell'
+                                            : 'Crop thumbnails to fill the cell'}
+                                    >
+                                        {photoGridFit ? 'Fitting full' : 'Fit full'}
+                                    </button>
+                                )}
+                            </div>
 
-                            {/* Existing Photos */}
                             {(editedEntity?.photos?.length > 0 || displayEntity.photos?.length > 0) && (
-                                <div className={`mb-4 ${isEditing ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'}`}>
+                                <div className={`mb-3 select-none ${isEditing ? 'grid grid-cols-2 sm:grid-cols-3 gap-1.5' : 'grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3'}`}>
                                     {(isEditing ? editedEntity.photos : displayEntity.photos)?.map((photo, idx) => {
-                                        // Handle both old format (string) and new format (object)
-                                        const photoUrl = typeof photo === 'string' ? photo : photo.url;
-                                        const thumbnailUrl = typeof photo === 'string' ? photo : (photo.thumbnail_url || photo.url);
-                                        const photoCaption = typeof photo === 'string' ? '' : (photo.caption || '');
-                                        const photoFilename = typeof photo === 'string' ? photo.split('/').pop() : (photo.filename || photo.url.split('/').pop());
+                                        const pending = isPendingPhoto(photo);
+                                        const photoUrl = pending ? photo.previewUrl : (typeof photo === 'string' ? photo : photo.url);
+                                        const thumbnailUrl = pending
+                                            ? photo.previewUrl
+                                            : (typeof photo === 'string' ? photo : (photo.thumbnail_url || photo.url));
+                                        const photoCaption = pending ? (photo.caption || '') : (typeof photo === 'string' ? '' : (photo.caption || ''));
+                                        const photoFilename = pending
+                                            ? (photo.filename || photo.file?.name || 'image')
+                                            : (typeof photo === 'string' ? photo.split('/').pop() : (photo.filename || (photo.url || '').split('/').pop()));
                                         const displayCaption = photoCaption || photoFilename;
-                                        const totalPhotos = (isEditing ? editedEntity.photos : displayEntity.photos).length;
+                                        const thumbClass = `${photoGridFit
+                                            ? 'w-full aspect-square object-contain bg-gray-200 dark:bg-gray-800 rounded cursor-grab hover:opacity-80 transition'
+                                            : 'w-full aspect-square object-cover rounded cursor-grab hover:opacity-80 transition'} select-none`;
+                                        const fullDragUrl = getMediaUrl(photoUrl);
 
                                         return isEditing ? (
-                                            // Edit Mode: Larger thumbnails with controls
-                                            <div key={idx} className="relative group flex flex-col bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
-                                                <div className="w-full h-32 md:h-40 flex items-center justify-center bg-gray-100 dark:bg-gray-900 rounded overflow-hidden">
-                                                    {editedEntity.is_encrypted ? (
-                                                        <DecryptedImage
-                                                            src={getMediaUrl(thumbnailUrl)}
-                                                            alt={displayCaption}
-                                                            className="max-w-full max-h-full object-contain cursor-pointer hover:opacity-80 transition"
-                                                            onClick={async () => {
-                                                                try {
-                                                                    const decryptedUrls = await Promise.all(
-                                                                        editedEntity.photos.map(async (p) => {
-                                                                            const url = typeof p === 'string' ? p : p.url;
-                                                                            const fullUrl = getMediaUrl(url);
-                                                                            const response = await fetch(fullUrl);
-                                                                            const encryptedBlob = await response.blob();
-                                                                            
-                                                                            let mimeType = 'image/jpeg';
-                                                                            if (url.toLowerCase().includes('.png')) mimeType = 'image/png';
-                                                                            if (url.toLowerCase().includes('.gif')) mimeType = 'image/gif';
-                                                                            if (url.toLowerCase().includes('.webp')) mimeType = 'image/webp';
-                                                                            
-                                                                            const decryptedBlob = await decryptBlob(encryptedBlob, mimeType, editedEntity._decryption_key || encryptionKeys[encryptionKeys.length - 1]);
-                                                                            return URL.createObjectURL(decryptedBlob);
-                                                                        })
-                                                                    );
-                                                                    setLightboxImages(decryptedUrls);
-                                                                    setLightboxIndex(idx);
-                                                                } catch (err) {
-                                                                    console.error('Failed to decrypt photos for lightbox:', err);
-                                                                    alert('Failed to decrypt photos.');
-                                                                }
-                                                            }}
-                                                            title={displayCaption}
-                                                            decryptionKey={editedEntity._decryption_key || encryptionKeys[encryptionKeys.length - 1]}
-                                                        />
-                                                    ) : (
-                                                        <img
-                                                            src={getMediaUrl(thumbnailUrl)}
-                                                            alt={displayCaption}
-                                                            className="max-w-full max-h-full object-contain cursor-pointer hover:opacity-80 transition"
-                                                            onClick={() => {
-                                                                const allPhotos = editedEntity.photos.map(p => {
-                                                                    const url = typeof p === 'string' ? p : p.url;
-                                                                    return getMediaUrl(url);
-                                                                });
-                                                                setLightboxImages(allPhotos);
-                                                                setLightboxIndex(idx);
-                                                            }}
-                                                            title={displayCaption}
-                                                        />
-                                                    )}
-                                                </div>
-                                                {/* Delete Button */}
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        handleDeletePhoto(photo);
-                                                    }}
-                                                    className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700 shadow-lg"
-                                                    title="Delete photo"
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                </button>
-
-                                                {/* Reorder Buttons */}
-                                                <div className="absolute top-1 left-1 flex flex-col gap-1">
-                                                    {idx > 0 && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                movePhotoUp(idx);
-                                                            }}
-                                                            className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 shadow-lg"
-                                                            title="Move up"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                                            </svg>
-                                                        </button>
-                                                    )}
-                                                    {idx < totalPhotos - 1 && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                movePhotoDown(idx);
-                                                            }}
-                                                            className="p-1 bg-blue-600 text-white rounded hover:bg-blue-700 shadow-lg"
-                                                            title="Move down"
-                                                        >
-                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                                            </svg>
-                                                        </button>
-                                                    )}
-                                                </div>
-
-                                                {/* Caption Input */}
-                                                <div className="mt-1">
-                                                    <input
-                                                        type="text"
-                                                        value={photoCaption}
-                                                        onChange={(e) => {
-                                                            const newPhotos = [...editedEntity.photos];
-                                                            if (typeof newPhotos[idx] === 'string') {
-                                                                // Convert string to object format
-                                                                newPhotos[idx] = {
-                                                                    url: newPhotos[idx],
-                                                                    caption: e.target.value
-                                                                };
-                                                            } else {
-                                                                newPhotos[idx] = {
-                                                                    ...newPhotos[idx],
-                                                                    caption: e.target.value
-                                                                };
-                                                            }
-                                                            setEditedEntity(prev => ({
-                                                                ...prev,
-                                                                photos: newPhotos
-                                                            }));
-                                                        }}
-                                                        placeholder={photoFilename}
-                                                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                                                    />
-                                                </div>
-                                            </div>
+                                            <EditPhotoCard
+                                                key={pending ? photo.previewUrl : (photoUrl || idx)}
+                                                photo={photo}
+                                                idx={idx}
+                                                dropSlot={photoDropSlot}
+                                                total={(editedEntity.photos || []).length}
+                                                isEncrypted={Boolean(editedEntity.is_encrypted)}
+                                                decryptionKey={editedEntity._decryption_key || encryptionKeys[encryptionKeys.length - 1]}
+                                                mediaSrc={pending ? photo.previewUrl : getMediaUrl(thumbnailUrl)}
+                                                onOpen={() => openEditLightbox(idx)}
+                                                onDelete={() => handleDeletePhoto(photo, idx)}
+                                                onCaption={(value) => updatePhotoCaption(idx, value)}
+                                                onDragStart={(e) => {
+                                                    window.getSelection()?.removeAllRanges();
+                                                    photoDragFrom.current = idx;
+                                                    e.dataTransfer.effectAllowed = 'move';
+                                                    e.dataTransfer.setData(PHOTO_DRAG_TYPE, String(idx));
+                                                    e.dataTransfer.setData('text/plain', String(idx));
+                                                }}
+                                                onDragOver={(e) => handlePhotoCardDragOver(e, idx)}
+                                                onDrop={(e) => handlePhotoCardDrop(e, idx)}
+                                                onDragEnd={() => {
+                                                    photoDragFrom.current = null;
+                                                    setPhotoDropSlot(null);
+                                                }}
+                                            />
                                         ) : (
-                                            // Detail Mode: Grid item with square thumbnail
                                             <div key={idx} className="flex flex-col items-center gap-1 p-2 bg-gray-50 dark:bg-gray-700 rounded">
                                                 {displayEntity.is_encrypted ? (
                                                     <DecryptedImage
                                                         src={getMediaUrl(thumbnailUrl)}
                                                         alt={displayCaption}
-                                                        className="w-full aspect-square object-cover rounded cursor-pointer hover:opacity-80 transition"
+                                                        className={thumbClass}
                                                         onClick={async () => {
+                                                            if (suppressPhotoClick.current) {
+                                                                suppressPhotoClick.current = false;
+                                                                return;
+                                                            }
                                                             try {
                                                                 const decryptedUrls = await Promise.all(
                                                                     displayEntity.photos.map(async (p) => {
@@ -2390,12 +2776,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                                         const fullUrl = getMediaUrl(url);
                                                                         const response = await fetch(fullUrl);
                                                                         const encryptedBlob = await response.blob();
-                                                                        
                                                                         let mimeType = 'image/jpeg';
                                                                         if (url.toLowerCase().includes('.png')) mimeType = 'image/png';
                                                                         if (url.toLowerCase().includes('.gif')) mimeType = 'image/gif';
                                                                         if (url.toLowerCase().includes('.webp')) mimeType = 'image/webp';
-                                                                        
                                                                         const decryptedBlob = await decryptBlob(encryptedBlob, mimeType, displayEntity._decryption_key);
                                                                         return URL.createObjectURL(decryptedBlob);
                                                                     })
@@ -2409,13 +2793,26 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                                         }}
                                                         title={displayCaption}
                                                         decryptionKey={displayEntity._decryption_key}
+                                                        onDragStart={(e) => {
+                                                            suppressPhotoClick.current = true;
+                                                            prepareImageFileDrag(e, fullDragUrl);
+                                                        }}
                                                     />
                                                 ) : (
                                                     <img
                                                         src={getMediaUrl(thumbnailUrl)}
                                                         alt={displayCaption}
-                                                        className="w-full aspect-square object-cover rounded cursor-pointer hover:opacity-80 transition"
+                                                        className={thumbClass}
+                                                        draggable
+                                                        onDragStart={(e) => {
+                                                            suppressPhotoClick.current = true;
+                                                            prepareImageFileDrag(e, fullDragUrl);
+                                                        }}
                                                         onClick={() => {
+                                                            if (suppressPhotoClick.current) {
+                                                                suppressPhotoClick.current = false;
+                                                                return;
+                                                            }
                                                             const allPhotos = displayEntity.photos.map(p => {
                                                                 const url = typeof p === 'string' ? p : p.url;
                                                                 return getMediaUrl(url);
@@ -2435,53 +2832,17 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                 </div>
                             )}
 
-                            {/* New Photos Preview */}
-                            {isEditing && newPhotos.length > 0 && (
-                                <div className="mb-4">
-                                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">New Photos:</p>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {newPhotos.map((file, idx) => (
-                                            <div key={idx} className="relative flex flex-col bg-gray-50 dark:bg-gray-800 p-2 rounded border border-gray-200 dark:border-gray-700">
-                                                <div className="w-full h-32 md:h-40 flex items-center justify-center bg-gray-100 dark:bg-gray-900 rounded overflow-hidden">
-                                                    <img
-                                                        src={URL.createObjectURL(file)}
-                                                        alt={`New photo ${idx + 1}`}
-                                                        className="max-w-full max-h-full object-contain"
-                                                    />
-                                                </div>
-                                                <button
-                                                    onClick={() => handleDeleteNewPhoto(idx)}
-                                                    className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full hover:bg-red-700"
-                                                    title="Remove photo"
-                                                >
-                                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                    </svg>
-                                                </button>
-                                                {/* Caption Input */}
-                                                <div className="mt-1">
-                                                    <input
-                                                        type="text"
-                                                        value={file.caption || ''}
-                                                        onChange={(e) => {
-                                                            const updatedPhotos = [...newPhotos];
-                                                            updatedPhotos[idx].caption = e.target.value;
-                                                            setNewPhotos(updatedPhotos);
-                                                        }}
-                                                        placeholder={file.name}
-                                                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                                                    />
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Add Photos Button + Drop Zone */}
                             {isEditing && (
-                                <div className="rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    <p className="mb-2">Drop images here (files or from a webpage)</p>
+                                <div
+                                    className="rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-3 text-center text-sm text-gray-500 dark:text-gray-400"
+                                    onDragOver={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setPhotoDropSlot((editedEntity?.photos || []).length);
+                                    }}
+                                    onDrop={handlePhotoDrop}
+                                >
+                                    <p className="mb-2">Drop images onto the grid to insert at that position, or here to add at the end.</p>
                                     <label className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">
                                         <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -2503,7 +2864,13 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     {/* Attachments */}
                     {(displayEntity.attachments?.length > 0 || newAttachments.length > 0 || isEditing) && (
                         <section
-                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (isEditing) setIsDraggingAttachments(true); }}
+                            onDragOver={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (!isEditing) return;
+                                e.dataTransfer.dropEffect = 'copy';
+                                setIsDraggingAttachments(true);
+                            }}
                             onDragLeave={(e) => { e.preventDefault(); if (!e.currentTarget.contains(e.relatedTarget)) setIsDraggingAttachments(false); }}
                             onDrop={handleAttachmentDrop}
                             className={isDraggingAttachments ? 'rounded-lg border-2 border-blue-500 bg-blue-50 dark:bg-blue-900/20 p-2 -m-2' : ''}
@@ -2783,34 +3150,16 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">New Attachments:</p>
                                     <div className="space-y-2">
                                         {newAttachments.map((file, idx) => (
-                                            <div key={idx} className="p-2 bg-blue-50 dark:bg-blue-900 rounded">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-gray-900 dark:text-gray-100 truncate flex-1">
-                                                        {file.name}
-                                                    </span>
-                                                    <button
-                                                        onClick={() => handleDeleteNewAttachment(idx)}
-                                                        className="ml-2 p-1 text-red-600 hover:text-red-700 flex-shrink-0"
-                                                        title="Remove attachment"
-                                                    >
-                                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                                {/* Caption Input */}
-                                                <input
-                                                    type="text"
-                                                    value={file.caption || ''}
-                                                    onChange={(e) => {
-                                                        const updatedAttachments = [...newAttachments];
-                                                        updatedAttachments[idx].caption = e.target.value;
-                                                        setNewAttachments(updatedAttachments);
-                                                    }}
-                                                    placeholder="Add caption (optional)"
-                                                    className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                                                />
-                                            </div>
+                                            <PendingAttachmentRow
+                                                key={`${file.name}-${file.size}-${idx}`}
+                                                file={file}
+                                                onRemove={() => handleDeleteNewAttachment(idx)}
+                                                onCaption={(value) => {
+                                                    const updatedAttachments = [...newAttachments];
+                                                    updatedAttachments[idx].caption = value;
+                                                    setNewAttachments(updatedAttachments);
+                                                }}
+                                            />
                                         ))}
                                     </div>
                                 </div>
@@ -2819,7 +3168,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             {/* Add Attachments Button + Drop Zone */}
                             {isEditing && (
                                 <div className="rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 p-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    <p className="mb-2">Drop files here (files or from a webpage)</p>
+                                    <p className="mb-2">Drop files here — images from disk, the photo grid, the full-size viewer, or a webpage</p>
                                     <label className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 cursor-pointer">
                                         <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -2828,6 +3177,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                         <input
                                             type="file"
                                             multiple
+                                            data-testid="entity-attachment-input"
                                             onChange={handleAttachmentSelect}
                                             className="hidden"
                                         />

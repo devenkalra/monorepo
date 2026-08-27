@@ -1,5 +1,24 @@
 import React, { useEffect, useState } from 'react';
 
+export function prepareImageFileDrag(e, url) {
+    window.getSelection()?.removeAllRanges();
+    if (!url) return;
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/uri-list', url);
+    e.dataTransfer.setData('text/plain', url);
+    try {
+        const name = decodeURIComponent(url.split('?')[0].split('/').pop() || 'image');
+        const lower = url.toLowerCase();
+        const mime = lower.includes('.png') ? 'image/png'
+            : lower.includes('.gif') ? 'image/gif'
+            : lower.includes('.webp') ? 'image/webp'
+            : 'image/jpeg';
+        e.dataTransfer.setData('DownloadURL', `${mime}:${name}:${url}`);
+    } catch {
+        /* some browsers reject DownloadURL */
+    }
+}
+
 function ImageLightbox({ images, currentIndex, onClose, onNavigate }) {
     const [zoom, setZoom] = useState(1);
     const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -68,7 +87,7 @@ function ImageLightbox({ images, currentIndex, onClose, onNavigate }) {
 
     return (
         <div 
-            className="fixed inset-0 bg-black bg-opacity-95 z-[100] flex items-center justify-center"
+            className="fixed inset-0 bg-black bg-opacity-95 z-[100] flex items-center justify-center select-none"
             onClick={onClose}
         >
             {/* Close Button */}
@@ -189,7 +208,7 @@ function ImageLightbox({ images, currentIndex, onClose, onNavigate }) {
                 <img
                     src={currentImage}
                     alt="Full size"
-                    className="transition-transform"
+                    className="transition-transform select-none"
                     style={{
                         maxWidth: zoom === 1 ? '100%' : 'none',
                         maxHeight: zoom === 1 ? '100%' : 'none',
@@ -197,8 +216,13 @@ function ImageLightbox({ images, currentIndex, onClose, onNavigate }) {
                         height: 'auto',
                         objectFit: 'contain',
                         transform: zoom > 1 ? `translate(${position.x}px, ${position.y}px)` : 'none',
+                        cursor: zoom === 1 ? 'grab' : (isDragging ? 'grabbing' : 'grab'),
                     }}
-                    draggable={false}
+                    draggable={zoom === 1}
+                    onDragStart={(e) => {
+                        e.stopPropagation();
+                        prepareImageFileDrag(e, currentImage);
+                    }}
                 />
             </div>
         </div>

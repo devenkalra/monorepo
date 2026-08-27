@@ -173,9 +173,9 @@ NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
 # Vector service configuration
 VECTOR_SERVICE_URL = os.environ.get('VECTOR_SERVICE_URL', 'http://vector-service:5000')
 
-# Increase data upload size limit
-DATA_UPLOAD_MAX_MEMORY_SIZE = 20971520  # 20MB
-FILE_UPLOAD_MAX_MEMORY_SIZE = 20971520  # 20MB
+# Increase data upload size limit (match nginx client_max_body_size 100m)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 104857600  # 100MB
 
 # Site configuration
 SITE_ID = 1
