@@ -19,6 +19,18 @@ vi.mock('../services/api', () => ({
   },
 }));
 
+vi.mock('../contexts/EncryptionContext', () => ({
+  useEncryption: () => ({
+    hasKeys: false,
+    encryptionKeys: [],
+    deriveKey: vi.fn(),
+    encryptText: vi.fn(),
+    decryptText: vi.fn(),
+    encryptBlob: vi.fn(),
+    decryptBlob: vi.fn(),
+  }),
+}));
+
 import api from '../services/api';
 
 const mockNavigate = vi.fn();
@@ -430,6 +442,41 @@ describe('EntityDetail Component', () => {
 
     // Should be in edit mode
     expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+  });
+
+  it('shows photo size controls and sort options', async () => {
+    const entity = {
+      ...mockEntity,
+      photos: [
+        { url: '/media/a.jpg', thumbnail_url: '/media/a_thumb.jpg', filename: 'wide.jpg', caption: 'Wide' },
+        { url: '/media/b.jpg', thumbnail_url: '/media/b_thumb.jpg', filename: 'tall.jpg', caption: 'Tall' },
+      ],
+    };
+
+    render(
+      <BrowserRouter>
+        <EntityDetail
+          entity={entity}
+          isVisible={true}
+          onClose={vi.fn()}
+          onUpdate={vi.fn()}
+        />
+      </BrowserRouter>
+    );
+
+    expect(screen.getByTitle('Decrease size')).toBeInTheDocument();
+    expect(screen.getByTitle('Increase size')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Sort photos')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /edit/i }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sort photos')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('option', { name: 'X size ↑' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Y size ↑' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'File size ↑' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Name A–Z' })).toBeInTheDocument();
   });
 
   it('deletes entity when Delete button is clicked', async () => {

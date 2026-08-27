@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .geocode_views import geocode_forward, geocode_reverse
+from .geocode_views import geocode_forward, geocode_reverse, geocode_map_thumbnail
 from .views import (
     PersonViewSet, NoteViewSet, LocationViewSet, MovieViewSet, BookViewSet,
     ContainerViewSet, AssetViewSet, OrgViewSet, EntityViewSet, EntityRelationViewSet,
@@ -27,6 +27,7 @@ urlpatterns = [
     path('entities/recent/', RecentEntityViewSet.as_view({'get': 'list'}), name='entity-recent'),
     path('geocode/forward/', geocode_forward, name='geocode-forward'),
     path('geocode/reverse/', geocode_reverse, name='geocode-reverse'),
+    path('geocode/map/', geocode_map_thumbnail, name='geocode-map'),
     path('', include(router.urls)),
 ]
 
