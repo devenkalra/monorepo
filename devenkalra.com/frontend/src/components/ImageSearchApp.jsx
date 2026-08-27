@@ -197,6 +197,19 @@ function triggerBrowserDownload(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(href), 4000);
 }
 
+function beginImageUrlDrag(e, url) {
+  if (!url) {
+    e.preventDefault();
+    return;
+  }
+  e.stopPropagation();
+  e.dataTransfer.effectAllowed = 'copy';
+  e.dataTransfer.setData('text/uri-list', `${url}\r\n`);
+  e.dataTransfer.setData('text/plain', url);
+  const safe = String(url).replace(/"/g, '&quot;');
+  e.dataTransfer.setData('text/html', `<img src="${safe}"><a href="${safe}">${safe}</a>`);
+}
+
 function Thumb({ item }) {
   const sources = [item.image_url, item.cdn_url, item.thumb_url].filter(Boolean);
   const [src, setSrc] = useState(sources[0] || '');
@@ -233,6 +246,7 @@ export function ImageSearchApp() {
   const [lbInfoOn, setLbInfoOn] = useState(false);
   const [lbZoom, setLbZoom] = useState(1);
   const [lbPan, setLbPan] = useState({ x: 0, y: 0 });
+  const [lbPanning, setLbPanning] = useState(false);
   const searchGen = useRef(0);
   const lbStageRef = useRef(null);
   const lbDrag = useRef(null);
@@ -930,9 +944,12 @@ export function ImageSearchApp() {
             }}
             onPointerDown={(e) => {
               if (e.button !== 0) return;
+              // At 1x, dragging the photo itself is a native drag (same as the grid).
+              if (lbZoom <= 1 && e.target.tagName === 'IMG') return;
               e.preventDefault();
               lbDrag.current = { x: e.clientX, y: e.clientY, tx: lbPan.x, ty: lbPan.y, moved: false };
-              e.currentTarget.setPointerCapture(e.pointerId);
+              lbStageRef.current?.setPointerCapture(e.pointerId);
+              setLbPanning(true);
             }}
             onPointerMove={(e) => {
               if (!lbDrag.current) return;
@@ -944,14 +961,20 @@ export function ImageSearchApp() {
             onPointerUp={(e) => {
               const moved = lbDrag.current?.moved;
               lbDrag.current = null;
+              setLbPanning(false);
               if (!moved && e.target === e.currentTarget) closeLightbox();
+            }}
+            onPointerCancel={() => {
+              lbDrag.current = null;
+              setLbPanning(false);
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <img
               alt=""
-              draggable={false}
+              draggable={lbZoom <= 1}
               src={lbSources[0] || ''}
+              onDragStart={(e) => beginImageUrlDrag(e, lbItem.image_url || lbItem.cdn_url || lbSources[0])}
               onError={(e) => {
                 const img = e.currentTarget;
                 const idx = lbSources.indexOf(img.src);
@@ -962,7 +985,10 @@ export function ImageSearchApp() {
                 if (lbZoom > 1) resetView();
                 else setZoom(2.5, e.clientX, e.clientY);
               }}
-              style={{ transform: `translate(${lbPan.x}px, ${lbPan.y}px) scale(${lbZoom})`, cursor: lbDrag.current ? 'grabbing' : 'grab' }}
+              style={{
+                transform: `translate(${lbPan.x}px, ${lbPan.y}px) scale(${lbZoom})`,
+                cursor: lbPanning ? 'grabbing' : 'grab',
+              }}
             />
           </div>
           <button type="button" className="imgsearch-lb-nav next" aria-label="Next image" disabled={shownItems.length < 2} onClick={(e) => { e.stopPropagation(); setLbIndex((i) => (i + 1) % shownItems.length); resetView(); }}>›</button>

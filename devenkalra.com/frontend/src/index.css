@@ -3383,6 +3383,7 @@ a.accent-link:focus-visible {
   max-height: 86vh;
   transform-origin: center center;
   user-select: none;
+  -webkit-user-drag: element;
 }
 .imgsearch-lb-nav {
   background: transparent;
