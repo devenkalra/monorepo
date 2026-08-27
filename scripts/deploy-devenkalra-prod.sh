@@ -6,15 +6,33 @@ set -euo pipefail
 # Usage:
 #   ./scripts/deploy-devenkalra-prod.sh
 #   ./scripts/deploy-devenkalra-prod.sh --with-edge
+#   ./scripts/deploy-devenkalra-prod.sh --index-audio
 #
 # Notes:
 # - Run this on the production server from the monorepo root.
 # - --with-edge also recreates edge-nginx using the multi-domain config.
+# - Audio indexing walks the NAS mount and can take several minutes. It is
+#   opt-in; pass --index-audio only when tracks may have changed.
 
 WITH_EDGE=0
-if [[ "${1:-}" == "--with-edge" ]]; then
-  WITH_EDGE=1
-fi
+INDEX_AUDIO=0
+for arg in "$@"; do
+  case "$arg" in
+    --with-edge) WITH_EDGE=1 ;;
+    --index-audio) INDEX_AUDIO=1 ;;
+    -h|--help)
+      echo "Usage: $0 [--with-edge] [--index-audio]"
+      echo "  --with-edge     Recreate edge-nginx with the multi-domain config"
+      echo "  --index-audio   Reindex the NAS audio library (slow; skip on frontend deploys)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $arg" >&2
+      echo "Usage: $0 [--with-edge] [--index-audio]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 PROD_COMPOSE_FILE="docker-compose.production.yml"
 EDGE_COMPOSE_FILE="docker-compose.edge.yml"
@@ -65,11 +83,15 @@ docker compose -p data-backend "${COMPOSE_FILES[@]}" ps devenkalra-app
 echo "[deploy] Seeding Music Library page"
 docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py ensure_music_library_page
 
-if [[ "${COMPOSE_FILES[*]}" == *docker-compose.audio.yml* ]]; then
-  echo "[deploy] Indexing audio library"
-  docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py index_audio_library
+if [[ "$INDEX_AUDIO" -eq 1 ]]; then
+  if [[ "${COMPOSE_FILES[*]}" == *docker-compose.audio.yml* ]]; then
+    echo "[deploy] Indexing audio library"
+    docker compose -p data-backend "${COMPOSE_FILES[@]}" exec -T devenkalra-app python manage.py index_audio_library
+  else
+    echo "[deploy] --index-audio requested but NAS CIFS overlay is not enabled; skipping" >&2
+  fi
 else
-  echo "[deploy] Skipping audio index until the NAS CIFS overlay is enabled"
+  echo "[deploy] Skipping audio index (pass --index-audio to reindex the NAS library)"
 fi
 
 if [[ "$WITH_EDGE" -eq 1 ]]; then
