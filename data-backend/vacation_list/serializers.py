@@ -56,7 +56,7 @@ class VacItemSerializer(serializers.ModelSerializer):
         model = VacItem
         fields = [
             'id', 'user', 'name', 'name_group', 'description',
-            'image',
+            'image', 'is_archived',
             'category', 'category_id', 'category_detail',
             'tags', 'tag_ids', 'tags_detail',
             'created_at', 'modified_on',

@@ -82,6 +82,12 @@ class VacItemViewSet(UserScopedMixin, viewsets.ModelViewSet):
                 | Q(description__icontains=q)
                 | Q(tags__name__icontains=q)
             )
+        if self.action == 'list':
+            archived = self.request.query_params.get('archived')
+            if archived is None or str(archived).lower() in ('0', 'false', 'no'):
+                qs = qs.filter(is_archived=False)
+            elif str(archived).lower() in ('1', 'true', 'yes'):
+                qs = qs.filter(is_archived=True)
         return qs.distinct()
 
     @action(detail=False, methods=['post'], url_path='bulk')
@@ -99,6 +105,14 @@ class VacItemViewSet(UserScopedMixin, viewsets.ModelViewSet):
             deleted = qs.count()
             qs.delete()
             return Response({'deleted': deleted})
+
+        if request.data.get('archive'):
+            updated = qs.update(is_archived=True, modified_on=timezone.now())
+            return Response({'updated': updated})
+
+        if request.data.get('unarchive'):
+            updated = qs.update(is_archived=False, modified_on=timezone.now())
+            return Response({'updated': updated})
 
         if 'name_group' in request.data:
             name_group = str(request.data.get('name_group') or '').strip()

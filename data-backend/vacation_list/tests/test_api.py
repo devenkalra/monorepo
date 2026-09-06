@@ -312,3 +312,59 @@ class VacationItemImageTests(APITestCase):
             format='multipart',
         )
         self.assertEqual(res.status_code, 404)
+
+
+class VacationItemArchiveTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username='vacarch', password='secret', email='vacarch@example.com')
+        self.client.force_authenticate(self.user)
+        self.active = VacItem.objects.create(name='Sunscreen', user=self.user)
+        self.hidden = VacItem.objects.create(name='Old tent', user=self.user, is_archived=True)
+
+    def test_list_hides_archived_by_default(self):
+        res = self.client.get('/api/vacation/items/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([row['name'] for row in res.data], ['Sunscreen'])
+
+        archived = self.client.get('/api/vacation/items/?archived=1')
+        self.assertEqual([row['name'] for row in archived.data], ['Old tent'])
+
+    def test_bulk_archive_and_unarchive(self):
+        res = self.client.post(
+            '/api/vacation/items/bulk/',
+            {'ids': [self.active.id], 'archive': True},
+            format='json',
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['updated'], 1)
+        self.active.refresh_from_db()
+        self.assertTrue(self.active.is_archived)
+
+        res = self.client.post(
+            '/api/vacation/items/bulk/',
+            {'ids': [self.active.id], 'unarchive': True},
+            format='json',
+        )
+        self.assertEqual(res.status_code, 200)
+        self.active.refresh_from_db()
+        self.assertFalse(self.active.is_archived)
+
+    def test_archived_item_stays_on_packing_list(self):
+        vac_list = VacList.objects.create(name='Trip', user=self.user)
+        VacListItem.objects.create(user=self.user, item=self.hidden, in_list=vac_list)
+        items = self.client.get(f'/api/vacation/lists/{vac_list.id}/items/')
+        self.assertEqual(items.status_code, 200)
+        self.assertEqual(len(items.data), 1)
+        self.assertEqual(items.data[0]['item_detail']['name'], 'Old tent')
+        self.assertTrue(items.data[0]['item_detail']['is_archived'])
+
+    def test_populate_all_skips_archived(self):
+        lst = self.client.post(
+            '/api/vacation/lists/',
+            {'name': 'Beach', 'populate': 'all_items'},
+            format='json',
+        )
+        self.assertEqual(lst.status_code, 201)
+        self.assertEqual(lst.data['added'], 1)
+        items = self.client.get(f'/api/vacation/lists/{lst.data["id"]}/items/')
+        self.assertEqual([row['item_detail']['name'] for row in items.data], ['Sunscreen'])

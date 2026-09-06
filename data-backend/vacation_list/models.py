@@ -90,6 +90,11 @@ class VacItem(models.Model):
     )
     tags = models.ManyToManyField(VacTag, blank=True, related_name='items')
     image = models.ImageField(upload_to=vac_item_image_upload_to, blank=True, null=True)
+    is_archived = models.BooleanField(
+        default=False,
+        db_index=True,
+        help_text='Archived items are hidden from the catalog but stay on packing lists.',
+    )
 
     class Meta:
         ordering = ['name']
@@ -143,7 +148,9 @@ class VacList(models.Model):
             return 0
         existing = set(self.list_items.values_list('item_id', flat=True))
         to_add = []
-        for item in VacItem.objects.filter(user=self.user, tags__in=tags).distinct():
+        for item in VacItem.objects.filter(
+            user=self.user, tags__in=tags, is_archived=False
+        ).distinct():
             if item.id in existing:
                 continue
             to_add.append(
@@ -158,7 +165,7 @@ class VacList(models.Model):
         existing = set(self.list_items.values_list('item_id', flat=True))
         to_add = [
             VacListItem(item=item, in_list=self, user=self.user, need=True, done=False)
-            for item in VacItem.objects.filter(user=self.user)
+            for item in VacItem.objects.filter(user=self.user, is_archived=False)
             if item.id not in existing
         ]
         VacListItem.objects.bulk_create(to_add)

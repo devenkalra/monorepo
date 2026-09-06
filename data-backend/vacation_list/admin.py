@@ -18,8 +18,8 @@ class VacCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(VacItem)
 class VacItemAdmin(admin.ModelAdmin):
-    list_display = ('name', 'user', 'name_group', 'category', 'has_image', 'modified_on')
-    list_filter = ('user', 'category', 'tags', 'name_group')
+    list_display = ('name', 'user', 'name_group', 'category', 'has_image', 'is_archived', 'modified_on')
+    list_filter = ('user', 'category', 'tags', 'name_group', 'is_archived')
     search_fields = ('name', 'description', 'name_group', 'user__email')
     filter_horizontal = ('tags',)
 

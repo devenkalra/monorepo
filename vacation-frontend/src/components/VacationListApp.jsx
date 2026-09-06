@@ -709,6 +709,7 @@ export function VacationListApp() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [itemEditor, setItemEditor] = useState(null); // null | { mode:'create' } | { mode:'edit', item }
   const [catalogSort, setCatalogSort] = useState({ key: 'name', dir: 'asc' });
+  const [showArchivedItems, setShowArchivedItems] = useState(false);
 
   const loadLists = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -748,9 +749,10 @@ export function VacationListApp() {
     if (catalogCategory) params.set('category', catalogCategory);
     const tagsParam = tagParam(catalogTags);
     if (tagsParam) params.set('tag', tagsParam);
+    if (showArchivedItems) params.set('archived', '1');
     const data = await api(`items/?${params}`, { token });
     setCatalog(asList(data));
-  }, [isAuthenticated, token, catalogQ, catalogCategory, catalogTags]);
+  }, [isAuthenticated, token, catalogQ, catalogCategory, catalogTags, showArchivedItems]);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -1065,6 +1067,30 @@ export function VacationListApp() {
     );
   };
 
+  const applyBulkArchive = () => {
+    const count = selectedCatalogIds.size;
+    if (!count) return;
+    return bulkCatalogAction(
+      { archive: true },
+      {
+        clearSelection: true,
+        statusText: (r) => `Archived ${r.updated || 0} item(s). They stay on packing lists.`,
+      },
+    );
+  };
+
+  const applyBulkUnarchive = () => {
+    const count = selectedCatalogIds.size;
+    if (!count) return;
+    return bulkCatalogAction(
+      { unarchive: true },
+      {
+        clearSelection: true,
+        statusText: (r) => `Unarchived ${r.updated || 0} item(s).`,
+      },
+    );
+  };
+
   const applyBulkDelete = () => {
     const count = selectedCatalogIds.size;
     if (!count) return;
@@ -1226,7 +1252,20 @@ export function VacationListApp() {
             >
               Add item…
             </button>
+            <button
+              type="button"
+              className={`vac-btn-muted${showArchivedItems ? ' active' : ''}`}
+              onClick={() => {
+                setShowArchivedItems((v) => !v);
+                setSelectedCatalogIds(new Set());
+              }}
+            >
+              {showArchivedItems ? 'Hide archived' : 'Show archived'}
+            </button>
           </div>
+          {showArchivedItems && (
+            <p className="vac-muted">Archived items are hidden from the catalog. They still appear on packing lists.</p>
+          )}
 
           <div className="vac-assign-panel">
             <div className="vac-toolbar vac-assign-bar">
@@ -1352,6 +1391,25 @@ export function VacationListApp() {
                   Remove tag
                 </button>
               </div>
+              {showArchivedItems ? (
+                <button
+                  type="button"
+                  className="vac-btn-muted"
+                  disabled={bulkBusy || selectedCatalogIds.size === 0}
+                  onClick={applyBulkUnarchive}
+                >
+                  Unarchive
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="vac-btn-muted"
+                  disabled={bulkBusy || selectedCatalogIds.size === 0}
+                  onClick={applyBulkArchive}
+                >
+                  Archive
+                </button>
+              )}
               <button
                 type="button"
                 className="vac-btn-danger"
@@ -1406,6 +1464,7 @@ export function VacationListApp() {
                   <td className="vac-name-cell">
                     <ItemImageThumb src={item.image} name={item.name} />
                     {item.name}
+                    {item.is_archived ? <span className="vac-archived-badge">Archived</span> : null}
                   </td>
                   <td>{item.name_group || '—'}</td>
                   <td>{item.category_detail?.name || '—'}</td>
@@ -1431,7 +1490,9 @@ export function VacationListApp() {
             </tbody>
           </table>
           {catalog.length === 0 && (
-            <p style={{ color: 'var(--text-muted)' }}>No catalog items found.</p>
+            <p style={{ color: 'var(--text-muted)' }}>
+              {showArchivedItems ? 'No archived items.' : 'No catalog items found.'}
+            </p>
           )}
         </div>
       ) : (
@@ -1730,6 +1791,9 @@ export function VacationListApp() {
                         <td className="vac-name-cell">
                           <ItemImageThumb src={li.item_detail?.image} name={li.item_detail?.name} />
                           {li.item_detail?.name || li.item}
+                          {li.item_detail?.is_archived ? (
+                            <span className="vac-archived-badge">Archived</span>
+                          ) : null}
                         </td>
                         <td>{li.item_detail?.name_group || '—'}</td>
                         <td>{li.item_detail?.category_detail?.name || '—'}</td>
