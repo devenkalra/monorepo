@@ -1,5 +1,16 @@
+import uuid
+from pathlib import Path
+
 from django.conf import settings
 from django.db import models
+
+
+def vac_item_image_upload_to(instance, filename):
+    ext = Path(filename).suffix.lower()
+    if ext not in {'.jpg', '.jpeg', '.png', '.gif', '.webp'}:
+        ext = '.jpg'
+    user_id = instance.user_id or 'anon'
+    return f'vacation_items/{user_id}/{uuid.uuid4().hex}{ext}'
 
 
 class VacTag(models.Model):
@@ -78,6 +89,7 @@ class VacItem(models.Model):
         related_name='items',
     )
     tags = models.ManyToManyField(VacTag, blank=True, related_name='items')
+    image = models.ImageField(upload_to=vac_item_image_upload_to, blank=True, null=True)
 
     class Meta:
         ordering = ['name']
@@ -89,6 +101,11 @@ class VacItem(models.Model):
 
     def __str__(self):
         return self.name
+
+    def delete(self, *args, **kwargs):
+        if self.image:
+            self.image.delete(save=False)
+        return super().delete(*args, **kwargs)
 
 
 class VacList(models.Model):

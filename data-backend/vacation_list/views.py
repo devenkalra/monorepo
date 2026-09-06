@@ -1,9 +1,33 @@
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from .models import VacTag, VacCategory, VacItem, VacList, VacListItem
+
+_ALLOWED_IMAGE_TYPES = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def _validate_item_image(uploaded):
+    if not uploaded:
+        return 'Image file required.'
+    if uploaded.size and uploaded.size > _MAX_IMAGE_BYTES:
+        return 'Image must be 8 MB or smaller.'
+    content_type = (getattr(uploaded, 'content_type', '') or '').lower()
+    if content_type and content_type not in _ALLOWED_IMAGE_TYPES:
+        return 'Image must be a JPEG, PNG, GIF, or WebP file.'
+    try:
+        from PIL import Image
+        uploaded.seek(0)
+        image = Image.open(uploaded)
+        image.verify()
+        uploaded.seek(0)
+    except Exception:
+        return 'Could not read that file as an image.'
+    return None
 from .serializers import (
     VacTagSerializer, VacCategorySerializer, VacItemSerializer,
     VacListSerializer, VacListItemSerializer,
@@ -59,6 +83,85 @@ class VacItemViewSet(UserScopedMixin, viewsets.ModelViewSet):
                 | Q(tags__name__icontains=q)
             )
         return qs.distinct()
+
+    @action(detail=False, methods=['post'], url_path='bulk')
+    def bulk(self, request):
+        """Bulk update catalog items: { ids, name_group?|category_id?|add_tag_id?|remove_tag_id?|delete? }."""
+        ids = request.data.get('ids') or []
+        if not ids:
+            return Response({'detail': 'ids required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        qs = VacItem.objects.filter(user=request.user, id__in=ids)
+        if not qs.exists():
+            return Response({'detail': 'No matching items.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.data.get('delete'):
+            deleted = qs.count()
+            qs.delete()
+            return Response({'deleted': deleted})
+
+        if 'name_group' in request.data:
+            name_group = str(request.data.get('name_group') or '').strip()
+            updated = qs.update(name_group=name_group, modified_on=timezone.now())
+            return Response({'updated': updated})
+
+        if 'category_id' in request.data:
+            category_id = request.data.get('category_id')
+            if category_id in (None, ''):
+                updated = qs.update(category=None, modified_on=timezone.now())
+                return Response({'updated': updated})
+            category = VacCategory.objects.filter(pk=category_id, user=request.user).first()
+            if not category:
+                return Response({'detail': 'Category not found.'}, status=status.HTTP_400_BAD_REQUEST)
+            updated = qs.update(category=category, modified_on=timezone.now())
+            return Response({'updated': updated})
+
+        add_tag_id = request.data.get('add_tag_id')
+        if add_tag_id not in (None, ''):
+            tag = VacTag.objects.filter(pk=add_tag_id, user=request.user).first()
+            if not tag:
+                return Response({'detail': 'Tag not found.'}, status=status.HTTP_400_BAD_REQUEST)
+            to_tag = list(qs.exclude(tags=tag))
+            for item in to_tag:
+                item.tags.add(tag)
+            return Response({'updated': len(to_tag)})
+
+        remove_tag_id = request.data.get('remove_tag_id')
+        if remove_tag_id not in (None, ''):
+            tag = VacTag.objects.filter(pk=remove_tag_id, user=request.user).first()
+            if not tag:
+                return Response({'detail': 'Tag not found.'}, status=status.HTTP_400_BAD_REQUEST)
+            tagged = list(qs.filter(tags=tag))
+            for item in tagged:
+                item.tags.remove(tag)
+            return Response({'updated': len(tagged)})
+
+        return Response({'detail': 'No changes specified.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(
+        detail=True,
+        methods=['post', 'delete'],
+        url_path='image',
+        parser_classes=[MultiPartParser, FormParser, JSONParser],
+    )
+    def image(self, request, pk=None):
+        item = self.get_object()
+        if request.method == 'DELETE':
+            if item.image:
+                item.image.delete(save=False)
+                item.image = None
+                item.save(update_fields=['image', 'modified_on'])
+            return Response(self.get_serializer(item).data)
+
+        uploaded = request.FILES.get('file') or request.FILES.get('image')
+        error = _validate_item_image(uploaded)
+        if error:
+            return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+        if item.image:
+            item.image.delete(save=False)
+        item.image = uploaded
+        item.save(update_fields=['image', 'modified_on'])
+        return Response(self.get_serializer(item).data)
 
 
 class VacListViewSet(UserScopedMixin, viewsets.ModelViewSet):

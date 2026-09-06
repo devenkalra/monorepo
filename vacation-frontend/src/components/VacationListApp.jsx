@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { getApiBaseUrl } from '../utils/apiUrl';
+import { getApiBaseUrl, getMediaUrl } from '../utils/apiUrl';
 
 async function api(path, { token, method = 'GET', body } = {}) {
   const headers = { Accept: 'application/json' };
   const bearer = token || (typeof localStorage !== 'undefined' && localStorage.getItem('access_token'));
   if (bearer) headers.Authorization = `Bearer ${bearer}`;
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
   const res = await fetch(`${getApiBaseUrl()}/api/vacation/${path}`, {
     method,
     headers,
     credentials: 'include',
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body === undefined ? undefined : (isForm ? body : JSON.stringify(body)),
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
@@ -265,10 +266,51 @@ function TagMultiFilter({ tags = [], selectedIds, onChange, label = 'Tags' }) {
   );
 }
 
+function ItemImageThumb({ src, name }) {
+  const [preview, setPreview] = useState(null);
+  if (!src) return null;
+  const url = getMediaUrl(src);
+
+  const showPreview = (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const size = 256;
+    const gap = 8;
+    const top = rect.bottom + size + gap > window.innerHeight
+      ? Math.max(gap, rect.top - size - gap)
+      : rect.bottom + gap;
+    const left = rect.left + size > window.innerWidth - gap
+      ? Math.max(gap, window.innerWidth - size - gap)
+      : rect.left;
+    setPreview({ top, left });
+  };
+
+  return (
+    <>
+      <img
+        className="vac-item-thumb"
+        src={url}
+        alt=""
+        onMouseEnter={showPreview}
+        onMouseLeave={() => setPreview(null)}
+      />
+      {preview && (
+        <img
+          className="vac-item-hover-preview"
+          src={url}
+          alt={name || ''}
+          style={{ top: preview.top, left: preview.left }}
+        />
+      )}
+    </>
+  );
+}
+
 function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose, onSave }) {
   const [name, setName] = useState(initial?.name || '');
   const [nameGroup, setNameGroup] = useState(initial?.name_group || '');
   const [description, setDescription] = useState(initial?.description || '');
+  const [imageFile, setImageFile] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const [categoryId, setCategoryId] = useState(
     initial?.category != null
       ? String(initial.category)
@@ -285,6 +327,14 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState('');
   const isEdit = Boolean(initial?.id);
+  const localPreview = useMemo(
+    () => (imageFile ? URL.createObjectURL(imageFile) : ''),
+    [imageFile],
+  );
+  useEffect(() => () => {
+    if (localPreview) URL.revokeObjectURL(localPreview);
+  }, [localPreview]);
+  const previewSrc = localPreview || (!removeImage && initial?.image ? getMediaUrl(initial.image) : '');
 
   const submit = async (e) => {
     e.preventDefault();
@@ -301,6 +351,8 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
         description: description.trim(),
         category_id: categoryId ? Number(categoryId) : null,
         tag_ids: [...selectedTagIds],
+        imageFile,
+        removeImage,
       });
     } catch (err) {
       setLocalError(err.message || 'Could not save item.');
@@ -323,7 +375,7 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
   return (
     <div className="vac-modal-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="vac-modal vac-modal--narrow"
+        className="vac-modal vac-modal--item"
         role="dialog"
         aria-modal="true"
         aria-label={isEdit ? 'Edit item' : 'Add item'}
@@ -408,6 +460,38 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
               onChange={(e) => setDescription(e.target.value)}
             />
           </label>
+          <div className="vac-field">
+            <span>Image</span>
+            {previewSrc ? (
+              <img className="vac-item-image-full" src={previewSrc} alt={name || 'Item'} />
+            ) : (
+              <p className="vac-muted">No image attached.</p>
+            )}
+            <div className="vac-toolbar" style={{ marginBottom: 0 }}>
+              <input
+                className="form-input"
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setImageFile(file);
+                  setRemoveImage(false);
+                }}
+              />
+              {(previewSrc || initial?.image) && (
+                <button
+                  type="button"
+                  className="vac-btn-muted"
+                  onClick={() => {
+                    setImageFile(null);
+                    setRemoveImage(true);
+                  }}
+                >
+                  Remove image
+                </button>
+              )}
+            </div>
+          </div>
           {localError && <div className="error-message">{localError}</div>}
           <div className="vac-modal-footer" style={{ borderTop: 'none', padding: '0.5rem 0 0' }}>
             <button type="button" className="vac-btn-muted" onClick={onClose} disabled={busy}>
@@ -552,7 +636,10 @@ function ItemPickerModal({
                         aria-label={`Select ${item.name}`}
                       />
                     </td>
-                    <td>{item.name}</td>
+                    <td className="vac-name-cell">
+                      <ItemImageThumb src={item.image} name={item.name} />
+                      {item.name}
+                    </td>
                     <td>{item.category_detail?.name || '—'}</td>
                     <td><TagChips tags={item.tags_detail} /></td>
                   </tr>
@@ -616,7 +703,12 @@ export function VacationListApp() {
   const [catalogTags, setCatalogTags] = useState(() => new Set());
   const [selectedCatalogIds, setSelectedCatalogIds] = useState(() => new Set());
   const [assignListId, setAssignListId] = useState('');
+  const [bulkGroup, setBulkGroup] = useState('');
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [bulkTagId, setBulkTagId] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [itemEditor, setItemEditor] = useState(null); // null | { mode:'create' } | { mode:'edit', item }
+  const [catalogSort, setCatalogSort] = useState({ key: 'name', dir: 'asc' });
 
   const loadLists = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -716,6 +808,41 @@ export function VacationListApp() {
     );
   };
 
+  const handleCatalogSort = (field) => {
+    setCatalogSort((prev) =>
+      prev.key === field
+        ? { key: field, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { key: field, dir: 'asc' }
+    );
+  };
+
+  const displayedCatalog = useMemo(() => {
+    const rows = [...catalog];
+    const dir = catalogSort.dir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase();
+      const nameB = (b.name || '').toLowerCase();
+      const groupA = (a.name_group || '').toLowerCase();
+      const groupB = (b.name_group || '').toLowerCase();
+      const catA = (a.category_detail?.name || '').toLowerCase();
+      const catB = (b.category_detail?.name || '').toLowerCase();
+      const tagsA = (a.tags_detail || []).map((t) => t.name || '').join(', ').toLowerCase();
+      const tagsB = (b.tags_detail || []).map((t) => t.name || '').join(', ').toLowerCase();
+      switch (catalogSort.key) {
+        case 'group':
+          return groupA.localeCompare(groupB) * dir || nameA.localeCompare(nameB);
+        case 'category':
+          return catA.localeCompare(catB) * dir || nameA.localeCompare(nameB);
+        case 'tags':
+          return tagsA.localeCompare(tagsB) * dir || nameA.localeCompare(nameB);
+        case 'name':
+        default:
+          return nameA.localeCompare(nameB) * dir;
+      }
+    });
+    return rows;
+  }, [catalog, catalogSort]);
+
   const displayedListItems = useMemo(() => {
     let rows = [...listItems];
     if (statusFilter === 'need') rows = rows.filter((li) => li.need);
@@ -753,6 +880,8 @@ export function VacationListApp() {
     rows.sort((a, b) => {
       const nameA = (a.item_detail?.name || '').toLowerCase();
       const nameB = (b.item_detail?.name || '').toLowerCase();
+      const groupA = (a.item_detail?.name_group || '').toLowerCase();
+      const groupB = (b.item_detail?.name_group || '').toLowerCase();
       const catA = (a.item_detail?.category_detail?.name || '').toLowerCase();
       const catB = (b.item_detail?.category_detail?.name || '').toLowerCase();
       switch (sort.key) {
@@ -760,6 +889,8 @@ export function VacationListApp() {
           return (Number(a.done) - Number(b.done)) * dir || nameA.localeCompare(nameB);
         case 'need':
           return (Number(a.need) - Number(b.need)) * dir || nameA.localeCompare(nameB);
+        case 'group':
+          return groupA.localeCompare(groupB) * dir || nameA.localeCompare(nameB);
         case 'category':
           return catA.localeCompare(catB) * dir || nameA.localeCompare(nameB);
         case 'name':
@@ -856,29 +987,135 @@ export function VacationListApp() {
     if (result) setSelectedCatalogIds(new Set());
   };
 
+  const catalogGroups = useMemo(() => {
+    const names = new Set();
+    catalog.forEach((item) => {
+      const name = (item.name_group || '').trim();
+      if (name) names.add(name);
+    });
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [catalog]);
+
+  const bulkCatalogAction = async (payload, { clearSelection = false, statusText } = {}) => {
+    if (selectedCatalogIds.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    setError('');
+    try {
+      const result = await api('items/bulk/', {
+        token,
+        method: 'POST',
+        body: { ids: [...selectedCatalogIds], ...payload },
+      });
+      if (clearSelection) setSelectedCatalogIds(new Set());
+      if (statusText) setStatus(statusText(result));
+      else if (result.deleted != null) setStatus(`Deleted ${result.deleted} item(s).`);
+      else setStatus(`Updated ${result.updated || 0} item(s).`);
+      await loadCatalog();
+      if (selectedId) await loadListItems(selectedId);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const applyBulkGroup = () => {
+    const name = bulkGroup.trim();
+    if (!name) return;
+    return bulkCatalogAction(
+      { name_group: name },
+      { statusText: (r) => `Added ${r.updated || 0} item(s) to group “${name}”.` },
+    );
+  };
+
+  const clearBulkGroup = () => bulkCatalogAction(
+    { name_group: '' },
+    { statusText: (r) => `Cleared group on ${r.updated || 0} item(s).` },
+  );
+
+  const applyBulkCategory = () => {
+    if (!bulkCategoryId) return;
+    const category = categories.find((c) => String(c.id) === String(bulkCategoryId));
+    return bulkCatalogAction(
+      { category_id: Number(bulkCategoryId) },
+      { statusText: (r) => `Added ${r.updated || 0} item(s) to category “${category?.name || ''}”.` },
+    );
+  };
+
+  const clearBulkCategory = () => bulkCatalogAction(
+    { category_id: null },
+    { statusText: (r) => `Cleared category on ${r.updated || 0} item(s).` },
+  );
+
+  const applyBulkAddTag = () => {
+    if (!bulkTagId) return;
+    const tag = tags.find((t) => String(t.id) === String(bulkTagId));
+    return bulkCatalogAction(
+      { add_tag_id: Number(bulkTagId) },
+      { statusText: (r) => `Added tag “${tag?.name || ''}” to ${r.updated || 0} item(s).` },
+    );
+  };
+
+  const applyBulkRemoveTag = () => {
+    if (!bulkTagId) return;
+    const tag = tags.find((t) => String(t.id) === String(bulkTagId));
+    return bulkCatalogAction(
+      { remove_tag_id: Number(bulkTagId) },
+      { statusText: (r) => `Removed tag “${tag?.name || ''}” from ${r.updated || 0} item(s).` },
+    );
+  };
+
+  const applyBulkDelete = () => {
+    const count = selectedCatalogIds.size;
+    if (!count) return;
+    if (!window.confirm(
+      `Delete ${count} selected item${count === 1 ? '' : 's'} from the catalog? They will also disappear from packing lists.`,
+    )) {
+      return;
+    }
+    return bulkCatalogAction(
+      { delete: true },
+      { clearSelection: true },
+    );
+  };
+
   const onModalConfirm = async (itemIds) => {
     const result = await addItemsToList(selectedId, itemIds);
     if (result) setShowAddModal(false);
   };
 
   const saveCatalogItem = async (payload) => {
+    const { imageFile, removeImage, ...fields } = payload;
+    let saved;
     if (itemEditor?.mode === 'edit' && itemEditor.item?.id) {
-      await api(`items/${itemEditor.item.id}/`, {
+      saved = await api(`items/${itemEditor.item.id}/`, {
         token,
         method: 'PATCH',
-        body: payload,
+        body: fields,
       });
-      setStatus(`Updated “${payload.name}”.`);
     } else {
-      await api('items/', {
+      saved = await api('items/', {
         token,
         method: 'POST',
-        body: payload,
+        body: fields,
       });
-      setStatus(`Created “${payload.name}”.`);
     }
+    if (saved?.id && removeImage && !imageFile) {
+      saved = await api(`items/${saved.id}/image/`, { token, method: 'DELETE' });
+    }
+    if (saved?.id && imageFile) {
+      const form = new FormData();
+      form.append('file', imageFile);
+      saved = await api(`items/${saved.id}/image/`, {
+        token,
+        method: 'POST',
+        body: form,
+      });
+    }
+    setStatus(itemEditor?.mode === 'edit' ? `Updated “${fields.name}”.` : `Created “${fields.name}”.`);
     setItemEditor(null);
     await loadCatalog();
+    if (selectedId) await loadListItems(selectedId);
   };
 
   const deleteCatalogItem = async (item) => {
@@ -991,26 +1228,139 @@ export function VacationListApp() {
             </button>
           </div>
 
-          <div className="vac-toolbar vac-assign-bar">
-            <span className="vac-muted">{selectedCatalogIds.size} selected</span>
-            <select
-              className="form-input"
-              value={assignListId}
-              onChange={(e) => setAssignListId(e.target.value)}
-            >
-              <option value="">Add to list…</option>
-              {lists.map((list) => (
-                <option key={list.id} value={list.id}>{list.name}</option>
-              ))}
-            </select>
-            <button
-              type="button"
-              className="editorial-button vac-btn"
-              disabled={!assignListId || selectedCatalogIds.size === 0}
-              onClick={assignCatalogToList}
-            >
-              Add selected to list
-            </button>
+          <div className="vac-assign-panel">
+            <div className="vac-toolbar vac-assign-bar">
+              <span className="vac-muted">{selectedCatalogIds.size} selected</span>
+              <select
+                className="form-input"
+                value={assignListId}
+                onChange={(e) => setAssignListId(e.target.value)}
+              >
+                <option value="">Add to list…</option>
+                {lists.map((list) => (
+                  <option key={list.id} value={list.id}>{list.name}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="editorial-button vac-btn"
+                disabled={!assignListId || selectedCatalogIds.size === 0}
+                onClick={assignCatalogToList}
+              >
+                Add selected to list
+              </button>
+            </div>
+            <div className="vac-toolbar vac-assign-bar vac-bulk-bar">
+              <div className="vac-bulk-group">
+                <input
+                  className="form-input"
+                  list="vac-existing-groups"
+                  placeholder="Group name"
+                  value={bulkGroup}
+                  onChange={(e) => setBulkGroup(e.target.value)}
+                  aria-label="Group name"
+                />
+                <datalist id="vac-existing-groups">
+                  {catalogGroups.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+                <div className="vac-bulk-icons">
+                  <button
+                    type="button"
+                    className="vac-bulk-icon"
+                    disabled={bulkBusy || selectedCatalogIds.size === 0 || !bulkGroup.trim()}
+                    onClick={applyBulkGroup}
+                    title="Add to group"
+                    aria-label="Add to group"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    className="vac-bulk-icon"
+                    disabled={bulkBusy || selectedCatalogIds.size === 0}
+                    onClick={clearBulkGroup}
+                    title="Clear group"
+                    aria-label="Clear group"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div className="vac-bulk-group">
+                <select
+                  className="form-input"
+                  value={bulkCategoryId}
+                  onChange={(e) => setBulkCategoryId(e.target.value)}
+                  aria-label="Category"
+                >
+                  <option value="">Category…</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <div className="vac-bulk-icons">
+                  <button
+                    type="button"
+                    className="vac-bulk-icon"
+                    disabled={bulkBusy || selectedCatalogIds.size === 0 || !bulkCategoryId}
+                    onClick={applyBulkCategory}
+                    title="Add to category"
+                    aria-label="Add to category"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    className="vac-bulk-icon"
+                    disabled={bulkBusy || selectedCatalogIds.size === 0}
+                    onClick={clearBulkCategory}
+                    title="Clear category"
+                    aria-label="Clear category"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+              <div className="vac-bulk-group">
+                <select
+                  className="form-input"
+                  value={bulkTagId}
+                  onChange={(e) => setBulkTagId(e.target.value)}
+                  aria-label="Tag"
+                >
+                  <option value="">Tag…</option>
+                  {tags.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="vac-btn-muted"
+                  disabled={bulkBusy || selectedCatalogIds.size === 0 || !bulkTagId}
+                  onClick={applyBulkAddTag}
+                >
+                  Add tag
+                </button>
+                <button
+                  type="button"
+                  className="vac-btn-muted"
+                  disabled={bulkBusy || selectedCatalogIds.size === 0 || !bulkTagId}
+                  onClick={applyBulkRemoveTag}
+                >
+                  Remove tag
+                </button>
+              </div>
+              <button
+                type="button"
+                className="vac-btn-danger"
+                disabled={bulkBusy || selectedCatalogIds.size === 0}
+                onClick={applyBulkDelete}
+              >
+                Delete
+              </button>
+            </div>
           </div>
 
           <table className="vac-table">
@@ -1019,23 +1369,31 @@ export function VacationListApp() {
                 <th style={{ width: '2.5rem' }}>
                   <input
                     type="checkbox"
-                    checked={catalog.length > 0 && catalog.every((r) => selectedCatalogIds.has(r.id))}
+                    checked={displayedCatalog.length > 0 && displayedCatalog.every((r) => selectedCatalogIds.has(r.id))}
                     onChange={(e) => {
-                      if (e.target.checked) setSelectedCatalogIds(new Set(catalog.map((r) => r.id)));
+                      if (e.target.checked) setSelectedCatalogIds(new Set(displayedCatalog.map((r) => r.id)));
                       else setSelectedCatalogIds(new Set());
                     }}
                     aria-label="Select all catalog items"
                   />
                 </th>
-                <th>Name</th>
-                <th>Group</th>
-                <th>Category</th>
-                <th>Tags</th>
+                <th>
+                  <SortHeader label="Name" field="name" sort={catalogSort} onSort={handleCatalogSort} />
+                </th>
+                <th>
+                  <SortHeader label="Group" field="group" sort={catalogSort} onSort={handleCatalogSort} />
+                </th>
+                <th>
+                  <SortHeader label="Category" field="category" sort={catalogSort} onSort={handleCatalogSort} />
+                </th>
+                <th>
+                  <SortHeader label="Tags" field="tags" sort={catalogSort} onSort={handleCatalogSort} />
+                </th>
                 <th style={{ width: '8rem' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {catalog.map((item) => (
+              {displayedCatalog.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <input
@@ -1045,7 +1403,10 @@ export function VacationListApp() {
                       aria-label={`Select ${item.name}`}
                     />
                   </td>
-                  <td>{item.name}</td>
+                  <td className="vac-name-cell">
+                    <ItemImageThumb src={item.image} name={item.name} />
+                    {item.name}
+                  </td>
                   <td>{item.name_group || '—'}</td>
                   <td>{item.category_detail?.name || '—'}</td>
                   <td><TagChips tags={item.tags_detail} /></td>
@@ -1329,6 +1690,9 @@ export function VacationListApp() {
                         <SortHeader label="Name" field="name" sort={sort} onSort={handleSort} />
                       </th>
                       <th>
+                        <SortHeader label="Group" field="group" sort={sort} onSort={handleSort} />
+                      </th>
+                      <th>
                         <SortHeader label="Category" field="category" sort={sort} onSort={handleSort} />
                       </th>
                       <th>Tags</th>
@@ -1363,7 +1727,11 @@ export function VacationListApp() {
                             aria-label="Done"
                           />
                         </td>
-                        <td className="vac-name-cell">{li.item_detail?.name || li.item}</td>
+                        <td className="vac-name-cell">
+                          <ItemImageThumb src={li.item_detail?.image} name={li.item_detail?.name} />
+                          {li.item_detail?.name || li.item}
+                        </td>
+                        <td>{li.item_detail?.name_group || '—'}</td>
                         <td>{li.item_detail?.category_detail?.name || '—'}</td>
                         <td><TagChips tags={li.item_detail?.tags_detail} /></td>
                       </tr>

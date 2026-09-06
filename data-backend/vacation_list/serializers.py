@@ -56,11 +56,12 @@ class VacItemSerializer(serializers.ModelSerializer):
         model = VacItem
         fields = [
             'id', 'user', 'name', 'name_group', 'description',
+            'image',
             'category', 'category_id', 'category_detail',
             'tags', 'tag_ids', 'tags_detail',
             'created_at', 'modified_on',
         ]
-        read_only_fields = ['category', 'tags']
+        read_only_fields = ['category', 'tags', 'image']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

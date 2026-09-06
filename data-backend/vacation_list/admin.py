@@ -18,10 +18,14 @@ class VacCategoryAdmin(admin.ModelAdmin):
 
 @admin.register(VacItem)
 class VacItemAdmin(admin.ModelAdmin):
-    list_display = ('name', 'user', 'name_group', 'category', 'modified_on')
+    list_display = ('name', 'user', 'name_group', 'category', 'has_image', 'modified_on')
     list_filter = ('user', 'category', 'tags', 'name_group')
     search_fields = ('name', 'description', 'name_group', 'user__email')
     filter_horizontal = ('tags',)
+
+    @admin.display(boolean=True, description='Image')
+    def has_image(self, obj):
+        return bool(obj.image)
 
 
 class VacListItemInline(admin.TabularInline):
