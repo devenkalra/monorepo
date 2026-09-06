@@ -1029,10 +1029,10 @@
         ) {
             if (/^https?:\/\//i.test(next)) return next;
             next = next.startsWith('/') ? next : '/' + next;
-            // Django on :8000 does not serve Vite SPAs — send to local Vite ports.
+            // Django on :8000 does not serve the SPAs. Edge/nginx on :80 does.
             if (
                 /^(localhost|127\.0\.0\.1)$/i.test(window.location.hostname) &&
-                (window.location.port === '8000' || window.location.port === '')
+                window.location.port === '8000'
             ) {
                 const host = window.location.hostname;
                 if (next.startsWith('/app/gmail')) {
@@ -1053,19 +1053,89 @@
         return '/app/people/';
     }
 
+    function decodeJwtPayload(token) {
+        const parts = String(token || '').split('.');
+        if (parts.length < 2) return null;
+        try {
+            const padded = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            const pad = (4 - (padded.length % 4)) % 4;
+            return JSON.parse(atob(padded + '='.repeat(pad)));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function isAccessTokenUsable(token) {
+        if (!token) return false;
+        const payload = decodeJwtPayload(token);
+        if (!payload) return false;
+        if (!payload.exp) return true;
+        return payload.exp * 1000 > Date.now() + 5000;
+    }
+
+    function goToApp() {
+        window.location.replace(getRedirectUrl());
+    }
+
+    async function resumeExistingSession() {
+        accessToken = localStorage.getItem('access_token');
+        refreshToken = localStorage.getItem('refresh_token');
+        const userStr = localStorage.getItem('current_user');
+        if (userStr) {
+            try {
+                currentUser = JSON.parse(userStr);
+            } catch (_) {
+                currentUser = null;
+            }
+        }
+
+        if (isAccessTokenUsable(accessToken)) {
+            goToApp();
+            return;
+        }
+
+        if (refreshToken) {
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/token/refresh/`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refresh: refreshToken }),
+                    credentials: 'include'
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    accessToken = data.access;
+                    localStorage.setItem('access_token', data.access);
+                    if (data.refresh) {
+                        refreshToken = data.refresh;
+                        localStorage.setItem('refresh_token', data.refresh);
+                    }
+                    goToApp();
+                    return;
+                }
+            } catch (_) {}
+        }
+
+        try {
+            const res = await fetch(`${API_BASE}/api/auth/user/`, { credentials: 'include' });
+            if (res.ok) {
+                const userData = await res.json();
+                if (userData && (userData.id || userData.pk || userData.email)) {
+                    currentUser = userData;
+                    localStorage.setItem('current_user', JSON.stringify(userData));
+                    goToApp();
+                }
+            }
+        } catch (_) {}
+    }
+
     window.addEventListener('DOMContentLoaded', () => {
         updateThemeIcons();
         if (isProduction) {
             const el = document.getElementById('test-users');
             if (el) el.style.display = 'none';
         }
-        accessToken = localStorage.getItem('access_token');
-        refreshToken = localStorage.getItem('refresh_token');
-        const userStr = localStorage.getItem('current_user');
-        if (accessToken && userStr) {
-            currentUser = JSON.parse(userStr);
-            window.location.href = getRedirectUrl();
-        }
+        resumeExistingSession();
     });
 
     function openAuthModal() {
