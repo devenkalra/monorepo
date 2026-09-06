@@ -35,6 +35,26 @@ function toggleId(set, id) {
   });
 }
 
+function applyRowSelection(event, id, orderedIds, setSelected, lastIdRef) {
+  if ((event.ctrlKey || event.metaKey) && lastIdRef.current != null) {
+    const from = orderedIds.indexOf(lastIdRef.current);
+    const to = orderedIds.indexOf(id);
+    if (from !== -1 && to !== -1) {
+      const start = Math.min(from, to);
+      const end = Math.max(from, to);
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (let i = start; i <= end; i++) next.add(orderedIds[i]);
+        return next;
+      });
+      lastIdRef.current = id;
+      return;
+    }
+  }
+  toggleId(setSelected, id);
+  lastIdRef.current = id;
+}
+
 function CreateListModal({ lists, onClose, onCreate }) {
   const [name, setName] = useState('');
   const [populate, setPopulate] = useState('blank'); // blank | all_items | copy
@@ -335,6 +355,23 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
     if (localPreview) URL.revokeObjectURL(localPreview);
   }, [localPreview]);
   const previewSrc = localPreview || (!removeImage && initial?.image ? getMediaUrl(initial.image) : '');
+  const formRef = useRef(null);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (!busy) onClose();
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && (event.key === 's' || event.key === 'S' || event.key === 'Enter')) {
+        event.preventDefault();
+        if (!busy) formRef.current?.requestSubmit();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [busy, onClose]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -387,7 +424,7 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
             ✕
           </button>
         </div>
-        <form onSubmit={submit} className="vac-create-form">
+        <form ref={formRef} onSubmit={submit} className="vac-create-form">
           <label className="vac-field">
             <span>Name</span>
             <input
@@ -419,38 +456,6 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
               ))}
             </select>
           </label>
-          <fieldset className="vac-tag-picker">
-            <legend>Tags</legend>
-            <div className="vac-tag-options">
-              {tags.map((tag) => (
-                <label key={tag.id} className="vac-tag-option">
-                  <input
-                    type="checkbox"
-                    checked={selectedTagIds.has(tag.id)}
-                    onChange={() => toggleId(setSelectedTagIds, tag.id)}
-                  />
-                  {tag.name}
-                </label>
-              ))}
-              {tags.length === 0 && <span className="vac-muted">No tags yet.</span>}
-            </div>
-            <div className="vac-toolbar" style={{ marginBottom: 0 }}>
-              <input
-                className="form-input"
-                placeholder="New tag name…"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-              />
-              <button
-                type="button"
-                className="vac-btn-muted"
-                disabled={!newTagName.trim()}
-                onClick={createTag}
-              >
-                Add tag
-              </button>
-            </div>
-          </fieldset>
           <label className="vac-field">
             <span>Description</span>
             <textarea
@@ -492,13 +497,52 @@ function CatalogItemModal({ categories, tags = [], onCreateTag, initial, onClose
               )}
             </div>
           </div>
+          <fieldset className="vac-tag-picker">
+            <legend>Tags</legend>
+            <div className="vac-tag-options">
+              {tags.map((tag) => (
+                <label key={tag.id} className="vac-tag-option">
+                  <input
+                    type="checkbox"
+                    checked={selectedTagIds.has(tag.id)}
+                    onChange={() => toggleId(setSelectedTagIds, tag.id)}
+                  />
+                  {tag.name}
+                </label>
+              ))}
+              {tags.length === 0 && <span className="vac-muted">No tags yet.</span>}
+            </div>
+            <div className="vac-toolbar" style={{ marginBottom: 0 }}>
+              <input
+                className="form-input"
+                placeholder="New tag name…"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    createTag();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="vac-btn-muted"
+                disabled={!newTagName.trim()}
+                onClick={createTag}
+              >
+                Add tag
+              </button>
+            </div>
+          </fieldset>
           {localError && <div className="error-message">{localError}</div>}
           <div className="vac-modal-footer" style={{ borderTop: 'none', padding: '0.5rem 0 0' }}>
             <button type="button" className="vac-btn-muted" onClick={onClose} disabled={busy}>
-              Cancel
+              Cancel <span className="vac-kbd">Esc</span>
             </button>
             <button type="submit" className="editorial-button vac-btn" disabled={busy}>
               {busy ? 'Saving…' : isEdit ? 'Save' : 'Create'}
+              {!busy && <span className="vac-kbd">Ctrl+S</span>}
             </button>
           </div>
         </form>
@@ -536,6 +580,7 @@ function ItemPickerModal({
   const [categoryId, setCategoryId] = useState('');
   const [tagIds, setTagIds] = useState(() => new Set());
   const [selected, setSelected] = useState(() => new Set());
+  const lastSelectId = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -632,7 +677,13 @@ function ItemPickerModal({
                       <input
                         type="checkbox"
                         checked={selected.has(item.id)}
-                        onChange={() => toggleId(setSelected, item.id)}
+                        onChange={(e) => applyRowSelection(
+                          e,
+                          item.id,
+                          rows.map((r) => r.id),
+                          setSelected,
+                          lastSelectId,
+                        )}
                         aria-label={`Select ${item.name}`}
                       />
                     </td>
@@ -702,6 +753,8 @@ export function VacationListApp() {
   const [catalogCategory, setCatalogCategory] = useState('');
   const [catalogTags, setCatalogTags] = useState(() => new Set());
   const [selectedCatalogIds, setSelectedCatalogIds] = useState(() => new Set());
+  const lastCatalogSelectId = useRef(null);
+  const lastListSelectId = useRef(null);
   const [assignListId, setAssignListId] = useState('');
   const [bulkGroup, setBulkGroup] = useState('');
   const [bulkCategoryId, setBulkCategoryId] = useState('');
@@ -1457,7 +1510,13 @@ export function VacationListApp() {
                     <input
                       type="checkbox"
                       checked={selectedCatalogIds.has(item.id)}
-                      onChange={() => toggleId(setSelectedCatalogIds, item.id)}
+                      onChange={(e) => applyRowSelection(
+                        e,
+                        item.id,
+                        displayedCatalog.map((r) => r.id),
+                        setSelectedCatalogIds,
+                        lastCatalogSelectId,
+                      )}
                       aria-label={`Select ${item.name}`}
                     />
                   </td>
@@ -1767,7 +1826,13 @@ export function VacationListApp() {
                             <input
                               type="checkbox"
                               checked={selectedListItemIds.has(li.id)}
-                              onChange={() => toggleId(setSelectedListItemIds, li.id)}
+                              onChange={(e) => applyRowSelection(
+                                e,
+                                li.id,
+                                displayedListItems.map((r) => r.id),
+                                setSelectedListItemIds,
+                                lastListSelectId,
+                              )}
                               aria-label={`Select ${li.item_detail?.name || li.id}`}
                             />
                           </td>
