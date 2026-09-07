@@ -956,6 +956,18 @@ export function VacationListApp() {
     return rows;
   }, [listItems, statusFilter, categoryFilter, tagFilter, listQ, sort]);
 
+  const listCounts = useMemo(() => {
+    let needed = 0;
+    let remaining = 0;
+    for (const li of listItems) {
+      if (li.need) {
+        needed += 1;
+        if (!li.done) remaining += 1;
+      }
+    }
+    return { total: listItems.length, needed, remaining };
+  }, [listItems]);
+
   const createTag = async (name) => {
     const tag = await api('tags/', {
       token,
@@ -1693,16 +1705,24 @@ export function VacationListApp() {
 
                 <div className="vac-toolbar">
                   <div className="vac-filters">
-                    {['all', 'remaining', 'done', 'need'].map((f) => (
-                      <button
-                        key={f}
-                        type="button"
-                        className={statusFilter === f ? 'active' : ''}
-                        onClick={() => setStatusFilter(f)}
-                      >
-                        {f}
-                      </button>
-                    ))}
+                    {['all', 'remaining', 'done', 'need'].map((f) => {
+                      const count =
+                        f === 'all' ? listCounts.total
+                          : f === 'remaining' ? listCounts.remaining
+                            : f === 'need' ? listCounts.needed
+                              : null;
+                      return (
+                        <button
+                          key={f}
+                          type="button"
+                          className={statusFilter === f ? 'active' : ''}
+                          onClick={() => setStatusFilter(f)}
+                        >
+                          {f}
+                          {count != null && <span className="vac-filter-count">{count}</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                   <input
                     className="form-input"

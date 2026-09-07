@@ -408,10 +408,17 @@
 }
 
 .vac-filters button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.05rem;
+  min-width: 3.4rem;
   border: 1px solid var(--border-color);
   background: transparent;
-  padding: 0.3rem 0.7rem;
+  padding: 0.22rem 0.45rem 0.18rem;
   font-size: 0.8rem;
+  line-height: 1.15;
+  white-space: nowrap;
   text-transform: capitalize;
   cursor: pointer;
   font-family: var(--font-sans);
@@ -421,6 +428,15 @@
   border-color: var(--text-strong);
   background: var(--text-strong);
   color: var(--surface-color);
+}
+
+.vac-filter-count {
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  line-height: 1;
+  text-transform: none;
+  opacity: 0.78;
 }
 
 .vac-edit-actions,
