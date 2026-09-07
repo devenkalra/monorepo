@@ -898,23 +898,17 @@ export function VacationListApp() {
     return rows;
   }, [catalog, catalogSort]);
 
-  const displayedListItems = useMemo(() => {
-    let rows = [...listItems];
-    if (statusFilter === 'need') rows = rows.filter((li) => li.need);
-    else if (statusFilter === 'done') rows = rows.filter((li) => li.done);
-    else if (statusFilter === 'remaining') rows = rows.filter((li) => li.need && !li.done);
-
+  const filteredListItems = useMemo(() => {
+    let rows = listItems;
     if (categoryFilter) {
       const catId = Number(categoryFilter);
       rows = rows.filter((li) => li.item_detail?.category === catId || li.item_detail?.category_detail?.id === catId);
     }
-
     if (tagFilter.size > 0) {
       rows = rows.filter((li) =>
         (li.item_detail?.tags_detail || []).some((t) => tagFilter.has(t.id))
       );
     }
-
     if (listQ.trim()) {
       const needle = listQ.trim().toLowerCase();
       rows = rows.filter((li) => {
@@ -930,6 +924,26 @@ export function VacationListApp() {
         );
       });
     }
+    return rows;
+  }, [listItems, categoryFilter, tagFilter, listQ]);
+
+  const listCounts = useMemo(() => {
+    let needed = 0;
+    let remaining = 0;
+    for (const li of filteredListItems) {
+      if (li.need) {
+        needed += 1;
+        if (!li.done) remaining += 1;
+      }
+    }
+    return { total: filteredListItems.length, needed, remaining };
+  }, [filteredListItems]);
+
+  const displayedListItems = useMemo(() => {
+    let rows = [...filteredListItems];
+    if (statusFilter === 'need') rows = rows.filter((li) => li.need);
+    else if (statusFilter === 'done') rows = rows.filter((li) => li.done);
+    else if (statusFilter === 'remaining') rows = rows.filter((li) => li.need && !li.done);
 
     const dir = sort.dir === 'asc' ? 1 : -1;
     rows.sort((a, b) => {
@@ -954,19 +968,7 @@ export function VacationListApp() {
       }
     });
     return rows;
-  }, [listItems, statusFilter, categoryFilter, tagFilter, listQ, sort]);
-
-  const listCounts = useMemo(() => {
-    let needed = 0;
-    let remaining = 0;
-    for (const li of listItems) {
-      if (li.need) {
-        needed += 1;
-        if (!li.done) remaining += 1;
-      }
-    }
-    return { total: listItems.length, needed, remaining };
-  }, [listItems]);
+  }, [filteredListItems, statusFilter, sort]);
 
   const createTag = async (name) => {
     const tag = await api('tags/', {
