@@ -14,13 +14,12 @@ const APPS = [
 
 export default function AppsMenu({ current }) {
   const [open, setOpen] = useState(false);
-
   return (
     <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 text-sm font-medium text-stone-600 hover:text-stone-900"
+        className="inline-flex items-center gap-1 text-sm font-medium text-stone-800 hover:text-stone-950"
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -47,8 +46,8 @@ export default function AppsMenu({ current }) {
                   onClick={() => setOpen(false)}
                   className={`block px-3 py-2 text-sm ${
                     active
-                      ? 'bg-emerald-50 font-medium text-emerald-800'
-                      : 'text-stone-700 hover:bg-stone-50'
+                      ? 'bg-amber-50 font-medium text-amber-900'
+                      : 'text-stone-900 hover:bg-stone-50'
                   }`}
                 >
                   {app.label}

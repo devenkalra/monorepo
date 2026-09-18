@@ -10,6 +10,7 @@ const APPS = [
   { id: 'gallery', label: 'Gallery', href: '/app/gallery/' },
   { id: 'vacation', label: 'Vacation', href: '/app/vacation/' },
   { id: 'trips', label: 'Trips', href: '/app/trips/' },
+  { id: 'productions', label: 'Productions', href: '/app/productions/' },
 ];
 
 export default function AppsMenu({ current }) {

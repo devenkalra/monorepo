@@ -48,8 +48,14 @@ RUN cd trip-frontend && npm ci
 COPY trip-frontend/ ./trip-frontend/
 RUN cd trip-frontend && npm run build
 
+# Build video-frontend (Productions)
+COPY video-frontend/package*.json ./video-frontend/
+RUN cd video-frontend && npm ci
+COPY video-frontend/ ./video-frontend/
+RUN cd video-frontend && npm run build
+
 # Combine outputs under /app/{name}/
-RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/gallery /out/app/vacation /out/app/trips && \
+RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/gallery /out/app/vacation /out/app/trips /out/app/productions && \
     cp people-frontend/dist/index.html /out/app/people/ && \
     cp -r people-frontend/dist/assets /out/app/people/ 2>/dev/null || true && \
     cp people-frontend/dist/favicon.svg /out/app/people/ 2>/dev/null || true && \
@@ -70,7 +76,10 @@ RUN mkdir -p /out/app/people /out/app/cad /out/app/food /out/app/gmail /out/app/
     cp vacation-frontend/dist/favicon.svg /out/app/vacation/ 2>/dev/null || true && \
     cp trip-frontend/dist/index.html /out/app/trips/ && \
     cp -r trip-frontend/dist/assets /out/app/trips/ 2>/dev/null || true && \
-    cp trip-frontend/dist/favicon.svg /out/app/trips/ 2>/dev/null || true
+    cp trip-frontend/dist/favicon.svg /out/app/trips/ 2>/dev/null || true && \
+    cp video-frontend/dist/index.html /out/app/productions/ && \
+    cp -r video-frontend/dist/assets /out/app/productions/ 2>/dev/null || true && \
+    cp video-frontend/dist/favicon.svg /out/app/productions/ 2>/dev/null || true
 
 # Final nginx image
 FROM nginx:alpine

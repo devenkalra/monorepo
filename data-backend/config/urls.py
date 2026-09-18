@@ -65,6 +65,7 @@ urlpatterns = [
     path('api/gallery/', include('gallery.urls')),
     path('api/vacation/', include('vacation_list.urls')),
     path('api/trips/', include('trips.urls')),
+    path('api/productions/', include('productions.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 if getattr(settings, 'ENABLE_MAIL_ARCHIVE', False):

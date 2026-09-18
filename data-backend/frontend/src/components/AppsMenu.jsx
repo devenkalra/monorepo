@@ -11,6 +11,9 @@ function appLinks() {
     { id: 'email', label: 'Email', href: localDev ? 'http://localhost:5176' : '/email-app/' },
     { id: 'gmail', label: 'Gmail', href: localDev ? 'http://localhost:5177/gmail-app/' : '/gmail-app/' },
     { id: 'gallery', label: 'Gallery', href: localDev ? 'http://localhost:5178/app/gallery/' : '/app/gallery/' },
+    { id: 'vacation', label: 'Vacation', href: localDev ? 'http://localhost:5179/app/vacation/' : '/app/vacation/' },
+    { id: 'trips', label: 'Trips', href: localDev ? 'http://localhost:5180/app/trips/' : '/app/trips/' },
+    { id: 'productions', label: 'Productions', href: localDev ? 'http://localhost:5181/app/productions/' : '/app/productions/' },
   ];
 }
 
