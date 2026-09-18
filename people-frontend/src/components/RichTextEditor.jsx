@@ -1,9 +1,10 @@
 import { getMediaUrl } from '../utils/apiUrl';
-import React, { useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import api from '../services/api';
 import { useEditor, EditorContent, ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react';
 import { useEncryption } from '../contexts/EncryptionContext';
-import { Extension } from '@tiptap/core';
+import { Extension, mergeAttributes } from '@tiptap/core';
+import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Image from '@tiptap/extension-image';
@@ -18,14 +19,99 @@ import TurndownService from 'turndown';
 import { marked } from 'marked';
 import './RichTextEditor.css';
 
-// Custom Node View to render and decrypt inline images
+function cssSize(value) {
+    if (value == null || value === '') return null;
+    const text = String(value).trim();
+    if (/^\d+(\.\d+)?$/.test(text)) return `${text}px`;
+    return text;
+}
+
+function imageLayoutStyle({ width, height, float, align }) {
+    const parts = [];
+    const nextWidth = cssSize(width);
+    const nextHeight = cssSize(height);
+    if (nextWidth) parts.push(`width: ${nextWidth}`);
+    if (nextHeight) parts.push(`height: ${nextHeight}`);
+    if (float === 'left' || float === 'right') {
+        parts.push(`float: ${float}`);
+        parts.push('display: block');
+        parts.push(float === 'left' ? 'margin: 0.25em 1em 0.75em 0' : 'margin: 0.25em 0 0.75em 1em');
+    } else if (align === 'center') {
+        parts.push('float: none');
+        parts.push('display: block');
+        parts.push('margin: 0.25em auto');
+    } else if (align === 'right') {
+        parts.push('float: none');
+        parts.push('display: block');
+        parts.push('margin: 0.25em 0 0.25em auto');
+    } else if (align === 'left') {
+        parts.push('float: none');
+        parts.push('display: block');
+        parts.push('margin: 0.25em auto 0.25em 0');
+    }
+    return parts.join('; ');
+}
+
+function applyImageAlign(editor, align) {
+    if (align === 'left') {
+        editor.chain().focus().updateAttributes('image', { align: 'left', float: 'left' }).run();
+        return;
+    }
+    if (align === 'right') {
+        editor.chain().focus().updateAttributes('image', { align: 'right', float: 'right' }).run();
+        return;
+    }
+    if (align === 'center') {
+        editor.chain().focus().updateAttributes('image', { align: 'center', float: null }).run();
+        return;
+    }
+    editor.chain().focus().setTextAlign(align).run();
+}
+
+const DEFAULT_IMAGE_INSERT = { width: '40%', float: 'left', align: 'left' };
+
+function moveEditorImage(view, from, to) {
+    const node = view.state.doc.nodeAt(from);
+    if (!node || node.type.name !== 'image') return false;
+    if (to >= from && to <= from + node.nodeSize) return true;
+    const tr = view.state.tr;
+    if (to > from) {
+        tr.insert(to, node).delete(from, from + node.nodeSize);
+    } else {
+        tr.delete(from, from + node.nodeSize).insert(to, node);
+    }
+    const selPos = to > from ? to - node.nodeSize : to;
+    try {
+        tr.setSelection(NodeSelection.create(tr.doc, selPos));
+    } catch {
+        /* drop position may land on a non-selectable spot */
+    }
+    view.dispatch(tr.scrollIntoView());
+    return true;
+}
+
+function insertImageAndContinue(editor, attrs) {
+    editor.chain().focus().setImage(attrs).command(({ tr, dispatch }) => {
+        const pos = tr.selection.to;
+        if (dispatch) {
+            tr.insertText(' ', pos);
+            tr.setSelection(TextSelection.create(tr.doc, pos + 1));
+        }
+        return true;
+    }).run();
+}
+
+// Custom Node View to render, decrypt, resize, and wrap inline images
 function DecryptedImageNodeView(props) {
-    const { node, updateAttributes } = props;
+    const { node, updateAttributes, selected, editor, getPos } = props;
     const src = node.attrs.src;
     const alt = node.attrs.alt;
     const width = node.attrs.width;
     const height = node.attrs.height;
-    
+    const float = node.attrs.float;
+    const align = node.attrs.align;
+    const wrapRef = useRef(null);
+
     const { decryptBlob } = useEncryption();
     const [decryptedSrc, setDecryptedSrc] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -45,14 +131,14 @@ function DecryptedImageNodeView(props) {
                 const response = await fetch(getMediaUrl(src));
                 if (!response.ok) throw new Error('Failed to fetch media');
                 const encryptedBlob = await response.blob();
-                
+
                 let mimeType = 'image/jpeg';
                 if (src.toLowerCase().includes('.png')) mimeType = 'image/png';
                 if (src.toLowerCase().includes('.gif')) mimeType = 'image/gif';
                 if (src.toLowerCase().includes('.webp')) mimeType = 'image/webp';
-                
+
                 const decryptedBlob = await decryptBlob(encryptedBlob, mimeType);
-                
+
                 if (active) {
                     const objectUrl = URL.createObjectURL(decryptedBlob);
                     localBlobUrl = objectUrl;
@@ -76,65 +162,272 @@ function DecryptedImageNodeView(props) {
         };
     }, [src]);
 
-    const style = {};
-    if (width) style.width = width;
-    if (height) style.height = height;
+    const moveCleanupRef = useRef(null);
 
-    if (loading) {
-        return (
-            <NodeViewWrapper className="tiptap-image-wrapper inline-block">
-                <div className="w-32 h-32 bg-gray-100 dark:bg-gray-800 animate-pulse flex items-center justify-center rounded">
-                    <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                </div>
-            </NodeViewWrapper>
-        );
-    }
+    useEffect(() => {
+        const renderer = wrapRef.current?.closest('.react-renderer');
+        if (renderer) renderer.draggable = false;
+        return () => {
+            moveCleanupRef.current?.();
+        };
+    }, []);
+
+    const onResizeStart = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.nativeEvent?.stopImmediatePropagation?.();
+        const wrap = wrapRef.current;
+        if (!wrap) return;
+        const handle = event.currentTarget;
+        const pointerId = event.pointerId;
+        try {
+            handle.setPointerCapture(pointerId);
+        } catch {
+            /* pointer capture is best-effort */
+        }
+        const startX = event.clientX;
+        const startWidth = wrap.getBoundingClientRect().width;
+        const editorWidth = editor?.view?.dom?.clientWidth || startWidth;
+        const direction = float === 'right' ? -1 : 1;
+
+        const onMove = (moveEvent) => {
+            moveEvent.preventDefault();
+            const delta = (moveEvent.clientX - startX) * direction;
+            const nextPx = Math.max(80, startWidth + delta);
+            const pct = Math.round((nextPx / editorWidth) * 100);
+            updateAttributes({
+                width: `${Math.min(100, Math.max(15, pct))}%`,
+                height: null,
+            });
+        };
+        const onUp = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+            try {
+                if (handle.hasPointerCapture?.(pointerId)) {
+                    handle.releasePointerCapture(pointerId);
+                }
+            } catch {
+                /* ignore */
+            }
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+    };
+
+    const onImagePointerDown = (event) => {
+        if (event.button !== 0) return;
+        if (event.target.closest('.tiptap-image-resize-handle')) return;
+        const startPos = typeof getPos === 'function' ? getPos() : null;
+        if (startPos == null) return;
+        editor.chain().setNodeSelection(startPos).run();
+
+        const pointerId = event.pointerId;
+        const startX = event.clientX;
+        const startY = event.clientY;
+        let dragging = false;
+        try {
+            event.currentTarget.setPointerCapture(pointerId);
+        } catch {
+            /* pointer capture is best-effort */
+        }
+
+        const cleanup = () => {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
+            document.body.style.removeProperty('cursor');
+            document.body.style.removeProperty('user-select');
+            wrapRef.current?.classList.remove('is-moving');
+            try {
+                if (event.currentTarget.hasPointerCapture?.(pointerId)) {
+                    event.currentTarget.releasePointerCapture(pointerId);
+                }
+            } catch {
+                /* ignore */
+            }
+            moveCleanupRef.current = null;
+        };
+
+        const onMove = (moveEvent) => {
+            if (moveEvent.pointerId !== pointerId) return;
+            if (!dragging) {
+                if (Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 8) return;
+                dragging = true;
+                document.body.style.cursor = 'grabbing';
+                document.body.style.userSelect = 'none';
+                wrapRef.current?.classList.add('is-moving');
+            }
+            moveEvent.preventDefault();
+        };
+
+        const onUp = (upEvent) => {
+            if (upEvent.pointerId !== pointerId) return;
+            const wasDragging = dragging;
+            cleanup();
+            if (!wasDragging) return;
+            upEvent.preventDefault();
+            const view = editor?.view;
+            if (!view) return;
+            const from = typeof getPos === 'function' ? getPos() : startPos;
+            const coords = view.posAtCoords({ left: upEvent.clientX, top: upEvent.clientY });
+            if (!coords) return;
+            moveEditorImage(view, from, coords.pos);
+        };
+
+        moveCleanupRef.current = cleanup;
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+    };
+
+    const wrapperClass = [
+        'tiptap-image-wrapper',
+        selected ? 'is-selected' : '',
+        float === 'left' ? 'is-float-left' : '',
+        float === 'right' ? 'is-float-right' : '',
+        align === 'center' && !float ? 'is-align-center' : '',
+        !float && align !== 'center' ? 'is-inline' : '',
+    ].filter(Boolean).join(' ');
+
+    const wrapperStyle = {
+        width: cssSize(width) || (float || align === 'center' ? '40%' : undefined),
+        maxWidth: '100%',
+        float: float === 'left' || float === 'right' ? float : 'none',
+        display: align === 'center' && !float ? 'block' : (float ? 'block' : 'inline-block'),
+        marginLeft: align === 'center' && !float ? 'auto' : undefined,
+        marginRight: align === 'center' && !float ? 'auto' : undefined,
+        verticalAlign: 'top',
+    };
 
     return (
-        <NodeViewWrapper className="tiptap-image-wrapper inline-block">
-            <img
-                src={decryptedSrc || src}
-                alt={alt}
-                style={style}
-                className="tiptap-image max-w-full rounded cursor-pointer"
-            />
+        <NodeViewWrapper
+            as="span"
+            className={wrapperClass}
+            style={wrapperStyle}
+            draggable={false}
+            onDragStart={(event) => event.preventDefault()}
+            onPointerDown={onImagePointerDown}
+        >
+            <span ref={wrapRef} className="tiptap-image-frame">
+                {loading ? (
+                    <span className="tiptap-image-loading">
+                        <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                    </span>
+                ) : (
+                    <img
+                        src={decryptedSrc || src}
+                        alt={alt}
+                        style={{ width: '100%', height: cssSize(height) || 'auto' }}
+                        className="tiptap-image"
+                        draggable={false}
+                    />
+                )}
+                <button
+                    type="button"
+                    contentEditable={false}
+                    tabIndex={-1}
+                    aria-label="Resize image"
+                    onPointerDown={onResizeStart}
+                    onMouseDown={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.nativeEvent?.stopImmediatePropagation?.();
+                    }}
+                    className={`tiptap-image-resize-handle ${float === 'right' ? 'is-left' : 'is-right'}`}
+                />
+            </span>
         </NodeViewWrapper>
     );
 }
 
-// Custom Image extension with resize support
+// Custom Image extension with resize and text-wrap support
 const ResizableImage = Image.extend({
+    draggable: false,
     addAttributes() {
         return {
             ...this.parent?.(),
             width: {
                 default: null,
-                renderHTML: attributes => {
-                    if (!attributes.width) {
-                        return {};
-                    }
-                    return {
-                        width: attributes.width,
-                    };
-                },
+                parseHTML: element => element.style.width || element.getAttribute('data-width') || element.getAttribute('width') || null,
+                renderHTML: attributes => (attributes.width ? { 'data-width': attributes.width } : {}),
             },
             height: {
                 default: null,
-                renderHTML: attributes => {
-                    if (!attributes.height) {
-                        return {};
-                    }
-                    return {
-                        height: attributes.height,
-                    };
+                parseHTML: element => element.style.height || element.getAttribute('data-height') || element.getAttribute('height') || null,
+                renderHTML: attributes => (attributes.height ? { 'data-height': attributes.height } : {}),
+            },
+            float: {
+                default: null,
+                parseHTML: element => {
+                    const value = element.style.float || element.getAttribute('data-float');
+                    return value === 'left' || value === 'right' ? value : null;
                 },
+                renderHTML: attributes => (attributes.float ? { 'data-float': attributes.float } : {}),
+            },
+            align: {
+                default: null,
+                parseHTML: element => {
+                    const data = element.getAttribute('data-align');
+                    if (data === 'left' || data === 'center' || data === 'right') return data;
+                    const textAlign = element.style.textAlign;
+                    if (textAlign === 'left' || textAlign === 'center' || textAlign === 'right') return textAlign;
+                    const floated = element.style.float || element.getAttribute('data-float');
+                    return floated === 'left' || floated === 'right' ? floated : null;
+                },
+                renderHTML: attributes => (attributes.align ? { 'data-align': attributes.align } : {}),
             },
         };
     },
+    renderHTML({ node, HTMLAttributes }) {
+        const attrs = node?.attrs || {};
+        const { style, class: className, ...rest } = HTMLAttributes;
+        const width = attrs.width ?? rest['data-width'];
+        const height = attrs.height ?? rest['data-height'];
+        const float = attrs.float ?? rest['data-float'];
+        const align = attrs.align ?? rest['data-align'];
+        const parts = [style, imageLayoutStyle({ width, height, float, align })].filter(Boolean);
+        return [
+            'img',
+            mergeAttributes(this.options.HTMLAttributes, rest, {
+                style: parts.join('; ') || undefined,
+                'data-width': width || undefined,
+                'data-height': height || undefined,
+                'data-float': float || undefined,
+                'data-align': align || undefined,
+                class: [
+                    this.options.HTMLAttributes?.class,
+                    className,
+                    float ? `tiptap-image-float-${float}` : '',
+                    !float && align === 'center' ? 'tiptap-image-align-center' : '',
+                ].filter(Boolean).join(' '),
+            }),
+        ];
+    },
     addNodeView() {
-        return ReactNodeViewRenderer(DecryptedImageNodeView);
+        return ReactNodeViewRenderer(DecryptedImageNodeView, {
+            as: 'span',
+            stopEvent: ({ event }) => {
+                if (event.type === 'dragstart' || event.type === 'drag' || event.type === 'dragend') {
+                    event.preventDefault();
+                    return true;
+                }
+                const target = event.target;
+                if (!(target instanceof Element)) return false;
+                if (target.closest('.tiptap-image-resize-handle')) return true;
+                if (
+                    (event.type === 'mousedown' || event.type === 'pointerdown' || event.type === 'touchstart')
+                    && target.closest('.tiptap-image-wrapper, .tiptap-image-frame, img.tiptap-image')
+                ) {
+                    return true;
+                }
+                return false;
+            },
+        });
     },
 });
 
@@ -226,6 +519,7 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...',
     const [editMode, setEditMode] = useState('wysiwyg'); // 'wysiwyg', 'html'
     const [rawContent, setRawContent] = useState('');
     const [originalHtml, setOriginalHtml] = useState(value || ''); // Store original HTML to preserve styles
+    const lastEmittedHtml = useRef(value || '');
 
     const editor = useEditor({
         extensions: [
@@ -270,29 +564,51 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...',
             TableCell,
         ],
         content: value || '',
+        editorProps: {
+            handleDOMEvents: {
+                dragstart: (_view, event) => {
+                    if (event.target instanceof Element && event.target.closest('.react-renderer.node-image, .tiptap-image-wrapper')) {
+                        event.preventDefault();
+                        return true;
+                    }
+                    return false;
+                },
+                drop: (_view, event) => {
+                    const types = Array.from(event.dataTransfer?.types || []);
+                    if (types.includes('text/uri-list')) event.preventDefault();
+                    return false;
+                },
+            },
+        },
         onUpdate: ({ editor }) => {
             const html = editor.getHTML();
+            lastEmittedHtml.current = html;
             setOriginalHtml(html); // Keep originalHtml in sync when editing in WYSIWYG
             onChange(html);
         },
         onSelectionUpdate: ({ editor }) => {
-            // Check if an image node is selected
             const { node } = editor.state.selection;
-            setIsImageSelected(node && node.type.name === 'image');
+            setIsImageSelected(editor.isActive('image') || (node && node.type.name === 'image'));
         },
     });
 
     // Update editor content when value changes externally
     React.useEffect(() => {
-        if (editor && value !== editor.getHTML()) {
-            editor.commands.setContent(value || '');
-            setOriginalHtml(value || ''); // Store original HTML
+        if (!editor) return;
+        const next = value || '';
+        if (next === lastEmittedHtml.current) return;
+        if (next === editor.getHTML()) {
+            lastEmittedHtml.current = next;
+            return;
         }
+        editor.commands.setContent(next, { emitUpdate: false });
+        lastEmittedHtml.current = next;
+        setOriginalHtml(next);
     }, [value, editor]);
 
     const addImage = () => {
         if (imageUrl) {
-            editor.chain().focus().setImage({ src: imageUrl }).run();
+            insertImageAndContinue(editor, { src: imageUrl, ...DEFAULT_IMAGE_INSERT });
             setImageUrl('');
             setShowImageDialog(false);
             setUploadError('');
@@ -341,7 +657,7 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...',
                 // Use the full URL from the upload result
 		const uploadedUrl = getMediaUrl(result.url);
                 
-                editor.chain().focus().setImage({ src: uploadedUrl }).run();
+                insertImageAndContinue(editor, { src: uploadedUrl, ...DEFAULT_IMAGE_INSERT });
                 setShowImageDialog(false);
                 setImageUrl('');
             } else {
@@ -592,9 +908,13 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...',
                 
                 {/* Alignment Buttons */}
                 <button
-                    onClick={() => editor.chain().focus().setTextAlign('left').run()}
+                    onClick={() => {
+                        if (isImageSelected) applyImageAlign(editor, 'left');
+                        else editor.chain().focus().setTextAlign('left').run();
+                    }}
                     className={`px-2 py-1 rounded text-sm transition ${
-                        editor.isActive({ textAlign: 'left' })
+                        (isImageSelected && (editor.getAttributes('image').float === 'left' || editor.getAttributes('image').align === 'left'))
+                        || (!isImageSelected && editor.isActive({ textAlign: 'left' }))
                             ? 'bg-blue-600 text-white'
                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
                     }`}
@@ -606,9 +926,13 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...',
                     </svg>
                 </button>
                 <button
-                    onClick={() => editor.chain().focus().setTextAlign('center').run()}
+                    onClick={() => {
+                        if (isImageSelected) applyImageAlign(editor, 'center');
+                        else editor.chain().focus().setTextAlign('center').run();
+                    }}
                     className={`px-2 py-1 rounded text-sm transition ${
-                        editor.isActive({ textAlign: 'center' })
+                        (isImageSelected && editor.getAttributes('image').align === 'center' && !editor.getAttributes('image').float)
+                        || (!isImageSelected && editor.isActive({ textAlign: 'center' }))
                             ? 'bg-blue-600 text-white'
                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
                     }`}
@@ -620,9 +944,13 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...',
                     </svg>
                 </button>
                 <button
-                    onClick={() => editor.chain().focus().setTextAlign('right').run()}
+                    onClick={() => {
+                        if (isImageSelected) applyImageAlign(editor, 'right');
+                        else editor.chain().focus().setTextAlign('right').run();
+                    }}
                     className={`px-2 py-1 rounded text-sm transition ${
-                        editor.isActive({ textAlign: 'right' })
+                        (isImageSelected && (editor.getAttributes('image').float === 'right' || editor.getAttributes('image').align === 'right'))
+                        || (!isImageSelected && editor.isActive({ textAlign: 'right' }))
                             ? 'bg-blue-600 text-white'
                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
                     }`}
@@ -742,56 +1070,85 @@ function RichTextEditor({ value, onChange, placeholder = 'Enter description...',
                 {isImageSelected && (
                     <>
                         <div className="w-px bg-gray-300 dark:bg-gray-600 mx-1" />
-                        <span className="text-xs text-gray-600 dark:text-gray-400 px-2">Image Size:</span>
-                        <button
-                            onClick={() => {
-                                editor.chain().focus().updateAttributes('image', { width: '25%', height: null }).run();
-                            }}
-                            className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
-                            type="button"
-                            title="Small (25%)"
-                        >
-                            Small
-                        </button>
-                        <button
-                            onClick={() => {
-                                editor.chain().focus().updateAttributes('image', { width: '50%', height: null }).run();
-                            }}
-                            className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
-                            type="button"
-                            title="Medium (50%)"
-                        >
-                            Medium
-                        </button>
-                        <button
-                            onClick={() => {
-                                editor.chain().focus().updateAttributes('image', { width: '75%', height: null }).run();
-                            }}
-                            className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
-                            type="button"
-                            title="Large (75%)"
-                        >
-                            Large
-                        </button>
-                        <button
-                            onClick={() => {
-                                editor.chain().focus().updateAttributes('image', { width: '100%', height: null }).run();
-                            }}
-                            className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
-                            type="button"
-                            title="Full Width (100%)"
-                        >
-                            Full
-                        </button>
+                        <span className="text-xs text-gray-600 dark:text-gray-400 px-2">Size:</span>
+                        {[
+                            ['25%', 'S'],
+                            ['40%', 'M'],
+                            ['60%', 'L'],
+                            ['100%', 'Full'],
+                        ].map(([size, label]) => (
+                            <button
+                                key={size}
+                                onClick={() => {
+                                    editor.chain().focus().updateAttributes('image', {
+                                        width: size,
+                                        height: null,
+                                        ...(size === '100%' ? { float: null } : {}),
+                                    }).run();
+                                }}
+                                className={`px-2 py-1 rounded text-xs transition ${
+                                    editor.getAttributes('image').width === size
+                                        ? 'bg-blue-600 text-white'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                                }`}
+                                type="button"
+                                title={`Width ${size}`}
+                            >
+                                {label}
+                            </button>
+                        ))}
                         <button
                             onClick={() => {
                                 editor.chain().focus().updateAttributes('image', { width: null, height: null }).run();
                             }}
                             className="px-2 py-1 rounded text-xs bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 transition"
                             type="button"
-                            title="Original Size"
+                            title="Original size"
                         >
-                            Original
+                            Orig
+                        </button>
+                        <span className="text-xs text-gray-600 dark:text-gray-400 px-2">Wrap:</span>
+                        <button
+                            onClick={() => {
+                                editor.chain().focus().updateAttributes('image', { float: 'left', align: 'left' }).run();
+                            }}
+                            className={`px-2 py-1 rounded text-xs transition ${
+                                editor.getAttributes('image').float === 'left'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                            }`}
+                            type="button"
+                            title="Text wraps to the right"
+                        >
+                            Left
+                        </button>
+                        <button
+                            onClick={() => {
+                                editor.chain().focus().updateAttributes('image', { float: 'right', align: 'right' }).run();
+                            }}
+                            className={`px-2 py-1 rounded text-xs transition ${
+                                editor.getAttributes('image').float === 'right'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                            }`}
+                            type="button"
+                            title="Text wraps to the left"
+                        >
+                            Right
+                        </button>
+                        <button
+                            onClick={() => {
+                                editor.chain().focus().updateAttributes('image', { float: null, align: editor.getAttributes('image').align || 'left' }).run();
+                            }}
+                            className={`px-2 py-1 rounded text-xs transition ${
+                                !editor.getAttributes('image').float
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'
+                            }`}
+                            type="button"
+                            title="No text wrap"
+                        >
+                            None
                         </button>
                     </>
                 )}

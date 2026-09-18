@@ -127,8 +127,7 @@
     text-decoration: line-through;
 }
 
-/* Image Styles - inline so multiple images and text can flow on same line */
-/* !important overrides Tailwind typography and other prose img { display: block } */
+/* Image styles: scalable, with optional text wrap via float */
 .prose img,
 .prose-invert img,
 .ProseMirror img,
@@ -138,33 +137,240 @@
     max-width: 100%;
     height: auto;
     border-radius: 0.5em;
-    display: inline-block !important;
-    vertical-align: middle;
+}
+
+.prose img[style*="width"],
+.prose img[data-width],
+.prose-invert img[style*="width"],
+.prose-invert img[data-width] {
+    height: auto;
+    max-width: 100%;
+}
+
+.prose::after,
+.prose-invert::after,
+.ProseMirror::after {
+    content: "";
+    display: table;
+    clear: both;
+}
+
+.tiptap-image-wrapper {
+    position: relative;
+    max-width: 100%;
+}
+
+.tiptap-image-wrapper.is-moving {
+    opacity: 0.55;
+}
+
+.tiptap-image-wrapper.is-inline {
+    display: inline-block;
+    vertical-align: top;
     margin: 0.25em 0.5em 0.25em 0;
 }
 
-/* Paragraphs containing only images: make them inline so images flow horizontally */
-.prose p:has(> img):not(:has(> :not(img))),
-.prose-invert p:has(> img):not(:has(> :not(img))),
-.ProseMirror p:has(> img):not(:has(> :not(img))) {
-    display: inline;
+/* Keep TipTap's extra renderer from becoming a full-width box. */
+.ProseMirror .react-renderer:has(.tiptap-image-wrapper) {
+    display: inline !important;
+    width: auto !important;
+    max-width: 100%;
+    float: none !important;
+    vertical-align: top;
+}
+
+.tiptap-image-wrapper.is-float-left {
+    float: left;
+    display: block;
+    margin: 0.25em 1em 0.75em 0;
+}
+
+.tiptap-image-wrapper.is-float-right {
+    float: right;
+    display: block;
+    margin: 0.25em 0 0.75em 1em;
+}
+
+.tiptap-image-wrapper.is-align-center {
+    display: block;
+    float: none;
+    margin: 0.25em auto;
+}
+
+.prose img[data-float="left"],
+.prose img.tiptap-image-float-left,
+.prose-invert img[data-float="left"],
+.prose-invert img.tiptap-image-float-left {
+    float: left !important;
+    display: block !important;
+    margin: 0.25em 1em 0.75em 0 !important;
+}
+
+.prose img[data-float="right"],
+.prose img.tiptap-image-float-right,
+.prose-invert img[data-float="right"],
+.prose-invert img.tiptap-image-float-right {
+    float: right !important;
+    display: block !important;
+    margin: 0.25em 0 0.75em 1em !important;
+}
+
+.prose img[data-align="center"]:not([data-float="left"]):not([data-float="right"]),
+.prose img.tiptap-image-align-center,
+.prose-invert img[data-align="center"]:not([data-float="left"]):not([data-float="right"]),
+.prose-invert img.tiptap-image-align-center {
+    float: none !important;
+    display: block !important;
+    margin: 0.25em auto !important;
+}
+
+.prose img[data-align="right"]:not([data-float="left"]):not([data-float="right"]),
+.prose img.tiptap-image-align-right,
+.prose-invert img[data-align="right"]:not([data-float="left"]):not([data-float="right"]),
+.prose-invert img.tiptap-image-align-right {
+    float: none !important;
+    display: block !important;
+    margin: 0.25em 0 0.25em auto !important;
+}
+
+.prose img[data-align="left"]:not([data-float="left"]):not([data-float="right"]),
+.prose img.tiptap-image-align-left,
+.prose-invert img[data-align="left"]:not([data-float="left"]):not([data-float="right"]),
+.prose-invert img.tiptap-image-align-left {
+    float: none !important;
+    display: block !important;
+    margin: 0.25em auto 0.25em 0 !important;
+}
+
+.prose .tiptap-image-display-align,
+.prose-invert .tiptap-image-display-align {
+    clear: both;
+    width: 100%;
+}
+
+.prose .tiptap-image-display-align.is-center,
+.prose-invert .tiptap-image-display-align.is-center {
+    text-align: center;
+}
+
+.prose .tiptap-image-display-align.is-right,
+.prose-invert .tiptap-image-display-align.is-right {
+    text-align: right;
+}
+
+.prose .tiptap-image-display-align img,
+.prose-invert .tiptap-image-display-align img {
+    float: none !important;
+    display: inline-block !important;
+    margin-left: 0.25em !important;
+    margin-right: 0.25em !important;
+}
+
+.prose p:has(img[style*="float"]),
+.prose p:has(img.tiptap-image-float-left),
+.prose p:has(img.tiptap-image-float-right),
+.ProseMirror p:has(.is-float-left),
+.ProseMirror p:has(.is-float-right),
+.ProseMirror p:has(img[style*="float"]) {
+    overflow: visible !important;
+}
+
+.tiptap-image-frame {
+    display: block;
+    position: relative;
+    width: 100%;
+}
+
+.tiptap-image-wrapper img.tiptap-image {
+    display: block !important;
+    width: 100%;
+    height: auto;
     margin: 0;
+    cursor: grab;
+}
+
+.tiptap-image-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 8rem;
+    height: 8rem;
+    background: #f3f4f6;
+    border-radius: 0.5em;
+}
+
+.dark .tiptap-image-loading {
+    background: #1f2937;
+}
+
+.tiptap-image-wrapper.is-selected .tiptap-image-frame {
+    outline: 3px solid #3b82f6;
+    outline-offset: 2px;
+}
+
+.tiptap-image-resize-handle {
+    position: absolute;
+    bottom: -7px;
+    width: 16px;
+    height: 16px;
     padding: 0;
+    border: 2px solid #fff;
+    border-radius: 3px;
+    background: #2563eb;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+    z-index: 50;
+    pointer-events: auto;
+    touch-action: none;
+    opacity: 0;
+}
+
+.tiptap-image-resize-handle::before {
+    content: "";
+    position: absolute;
+    inset: -10px;
+}
+
+.tiptap-image-wrapper:hover .tiptap-image-resize-handle,
+.tiptap-image-wrapper.is-selected .tiptap-image-resize-handle,
+.tiptap-image-resize-handle:active {
+    opacity: 1;
+}
+
+.tiptap-image-resize-handle.is-right {
+    right: -7px;
+    cursor: nwse-resize;
+}
+
+.tiptap-image-resize-handle.is-left {
+    left: -7px;
+    cursor: nesw-resize;
+}
+
+.prose img[style*="float: left"],
+.prose img[style*="float:left"],
+.prose img.tiptap-image-float-left,
+.prose-invert img.tiptap-image-float-left {
+    float: left !important;
+    display: block !important;
+    margin: 0.25em 1em 0.75em 0 !important;
+}
+
+.prose img[style*="float: right"],
+.prose img[style*="float:right"],
+.prose img.tiptap-image-float-right,
+.prose-invert img.tiptap-image-float-right {
+    float: right !important;
+    display: block !important;
+    margin: 0.25em 0 0.75em 1em !important;
 }
 
 .ProseMirror img {
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.ProseMirror img:hover {
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    cursor: grab;
 }
 
 .ProseMirror img.ProseMirror-selectednode {
     outline: 3px solid #3b82f6;
     outline-offset: 2px;
-    box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3), 0 4px 6px -2px rgba(59, 130, 246, 0.2);
 }
 
 /* Image alignment - when inside aligned block, inherit alignment */

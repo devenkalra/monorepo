@@ -6,6 +6,7 @@ import TagInput from './TagInput';
 import api from '../services/api';
 import { getMediaUrl } from '../utils/apiUrl';
 import { useEncryption } from '../contexts/EncryptionContext';
+import DropCreateZone from './DropCreateZone';
 
 const generateUUID = () => {
     if (typeof self !== 'undefined' && self.crypto && typeof self.crypto.randomUUID === 'function') {
@@ -107,23 +108,58 @@ function filenameFromDroppedUrl(url) {
     }
 }
 
-async function fileFromDroppedUrl(url) {
-    if (!url) return null;
-    const isInline = url.startsWith('blob:') || url.startsWith('data:');
-    const target = isInline
-        ? url
-        : (url.startsWith('http') || url.startsWith('/') ? url : getMediaUrl(url));
-    const response = isInline ? await fetch(target) : await api.fetch(target);
-    if (!response.ok) return null;
+function isSameOriginUrl(url) {
+    try {
+        return new URL(url, window.location.origin).origin === window.location.origin;
+    } catch {
+        return false;
+    }
+}
+
+async function fileFromBlobResponse(response, urlOrName) {
     const blob = await response.blob();
     if (!blob || blob.size === 0) return null;
-    let name = filenameFromDroppedUrl(url);
+    let name = filenameFromDroppedUrl(urlOrName);
     const type = blob.type || 'application/octet-stream';
     if (!name.includes('.') && type.includes('/')) {
         const ext = type.split('/')[1].split(';')[0] || 'bin';
         name = `${name}.${ext}`;
     }
     return new File([blob], name, { type });
+}
+
+async function fileFromDroppedUrl(url) {
+    if (!url) return null;
+    if (url.startsWith('blob:') || url.startsWith('data:')) {
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        return fileFromBlobResponse(response, url);
+    }
+    if ((url.startsWith('http://') || url.startsWith('https://')) && !isSameOriginUrl(url)) {
+        const response = await api.fetch('/api/upload/from-url/', {
+            method: 'POST',
+            body: JSON.stringify({ url }),
+        });
+        if (!response.ok) {
+            let detail = `Could not download that file (HTTP ${response.status}).`;
+            try {
+                const data = await response.json();
+                if (data.detail) detail = data.detail;
+            } catch {
+                /* ignore */
+            }
+            throw new Error(detail);
+        }
+        const data = await response.json();
+        if (!data?.url) return null;
+        const mediaRes = await api.fetch(data.url);
+        if (!mediaRes.ok) return null;
+        return fileFromBlobResponse(mediaRes, data.filename || url);
+    }
+    const target = url.startsWith('http') || url.startsWith('/') ? url : getMediaUrl(url);
+    const response = await api.fetch(target);
+    if (!response.ok) return null;
+    return fileFromBlobResponse(response, url);
 }
 
 let photoGridFitPref = null;
@@ -369,6 +405,84 @@ async function persistEntityLocations(entity) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ locations: entity.locations || [] }),
     });
+}
+
+function isFloatedDescriptionImage(img) {
+    const style = img.getAttribute('style') || '';
+    const float = img.getAttribute('data-float') || '';
+    return /float:\s*(left|right)/i.test(style)
+        || float === 'left'
+        || float === 'right'
+        || img.classList.contains('tiptap-image-float-left')
+        || img.classList.contains('tiptap-image-float-right');
+}
+
+function applyDescriptionImageLayout(img) {
+    const width = img.style.width || img.getAttribute('data-width');
+    const height = img.style.height || img.getAttribute('data-height');
+    const float = img.getAttribute('data-float') || img.style.float || '';
+    const align = img.getAttribute('data-align') || '';
+    if (width) img.style.width = width;
+    if (height) img.style.height = height;
+    if (float === 'left') {
+        img.style.float = 'left';
+        img.style.display = 'block';
+        img.style.margin = '0.25em 1em 0.75em 0';
+        img.classList.add('tiptap-image-float-left');
+        return;
+    }
+    if (float === 'right') {
+        img.style.float = 'right';
+        img.style.display = 'block';
+        img.style.margin = '0.25em 0 0.75em 1em';
+        img.classList.add('tiptap-image-float-right');
+        return;
+    }
+    img.style.float = 'none';
+    img.style.display = 'block';
+    if (align === 'center') {
+        img.style.margin = '0.25em auto';
+        img.classList.add('tiptap-image-align-center');
+    } else if (align === 'right') {
+        img.style.margin = '0.25em 0 0.25em auto';
+        img.classList.add('tiptap-image-align-right');
+    } else if (align === 'left') {
+        img.style.margin = '0.25em auto 0.25em 0';
+        img.classList.add('tiptap-image-align-left');
+    }
+}
+
+function hoistFloatedDescriptionImages(html) {
+    if (!html || !html.includes('<img')) return html;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    doc.querySelectorAll('img').forEach((img) => applyDescriptionImageLayout(img));
+    doc.querySelectorAll('img').forEach((img) => {
+        const float = img.getAttribute('data-float') || img.style.float;
+        const align = img.getAttribute('data-align') || '';
+        if (float === 'left' || float === 'right') return;
+        if (align !== 'center' && align !== 'right') return;
+        if (img.parentElement?.classList.contains('tiptap-image-display-align')) return;
+        if (!img.parentNode) return;
+        const wrap = doc.createElement('div');
+        wrap.className = `tiptap-image-display-align is-${align}`;
+        img.parentNode.insertBefore(wrap, img);
+        wrap.appendChild(img);
+    });
+    doc.querySelectorAll('p, h1, h2, h3, h4, li').forEach((block) => {
+        Array.from(block.querySelectorAll(':scope > img')).forEach((img) => {
+            if (!isFloatedDescriptionImage(img) || !block.parentNode) return;
+            block.parentNode.insertBefore(img, block);
+        });
+        if (
+            block.parentNode
+            && !block.textContent.trim()
+            && !block.querySelector('img, iframe, table')
+        ) {
+            block.remove();
+        }
+    });
+    return doc.body.innerHTML;
 }
 
 function PhotoMetaLine({ width, height, bytes, className = 'text-white/80' }) {
@@ -996,7 +1110,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         }
 
         if (!displayEntity._decrypted) {
-            setProcessedDescription(displayEntity.description);
+            setProcessedDescription(hoistFloatedDescriptionImages(displayEntity.description));
             return;
         }
 
@@ -1014,7 +1128,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 });
 
                 if (encImages.length === 0) {
-                    if (active) setProcessedDescription(displayEntity.description);
+                    if (active) setProcessedDescription(hoistFloatedDescriptionImages(displayEntity.description));
                     return;
                 }
 
@@ -1042,7 +1156,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 if (active) {
                     descriptionBlobUrlsRef.current.forEach(url => URL.revokeObjectURL(url));
                     descriptionBlobUrlsRef.current = blobUrlsToCleanup;
-                    setProcessedDescription(doc.body.innerHTML);
+                    setProcessedDescription(hoistFloatedDescriptionImages(doc.body.innerHTML));
                 } else {
                     blobUrlsToCleanup.forEach(url => URL.revokeObjectURL(url));
                 }
@@ -1196,6 +1310,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const collectDroppedImageFiles = useCallback((e) => {
         e.preventDefault();
         e.stopPropagation();
+        const types = Array.from(e.dataTransfer?.types || []);
+        if (types.includes(PHOTO_DRAG_TYPE)) {
+            return Promise.resolve([]);
+        }
         if (e.dataTransfer.files?.length) {
             return Promise.resolve(
                 Array.from(e.dataTransfer.files).filter((f) => f.type?.startsWith('image/'))
@@ -1216,6 +1334,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         if (files.length || !uriItems.length) return Promise.resolve(files);
         return new Promise((resolve) => {
             uriItems[0].getAsString((url) => {
+                if (!url) {
+                    resolve([]);
+                    return;
+                }
                 fileFromDroppedUrl(url)
                     .then((file) => resolve(file && file.type?.startsWith('image/') ? [file] : []))
                     .catch(() => resolve([]));
@@ -1371,6 +1493,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             return;
         }
 
+        const types = Array.from(e.dataTransfer?.types || []);
+        if (types.includes(PHOTO_DRAG_TYPE)) return;
         const uri = firstDroppedUri(e.dataTransfer);
         if (!uri) return;
         try {
@@ -2275,13 +2399,27 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 delete dataToSave.id;
             }
 
-            // Clean up empty/null fields to avoid validation errors
+            // Omit empty arrays / unknown empties so required fields don't fail validation.
+            // Send null for clearable text fields so PATCH actually blanks them.
+            const clearableFields = new Set([
+                'summary', 'description', 'language', 'country', 'year',
+                'profession', 'first_name', 'last_name', 'dob', 'date',
+                'address1', 'address2', 'postal_code', 'city', 'state',
+                'name', 'acquired_on', 'value',
+            ]);
             Object.keys(dataToSave).forEach(key => {
                 const value = dataToSave[key];
                 if (key === 'locations') return; // Always send locations (including [])
-                if (value === '' || value === null ||
-                    (Array.isArray(value) && value.length === 0)) {
+                if (Array.isArray(value) && value.length === 0) {
                     delete dataToSave[key];
+                    return;
+                }
+                if (value === '' || value === null) {
+                    if (clearableFields.has(key)) {
+                        dataToSave[key] = null;
+                    } else {
+                        delete dataToSave[key];
+                    }
                 }
             });
 
@@ -2577,15 +2715,49 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             )}
 
             {/* Detail Panel */}
-            <div className={`fixed inset-0 bg-white dark:bg-gray-800 shadow-2xl z-50 overflow-y-auto transition-transform duration-300 ease-in-out print:overflow-visible ${
-                isAnimating ? 'translate-x-0' : 'translate-x-full'
-            }`}>
+            <div
+                className={`fixed inset-0 bg-white dark:bg-gray-800 shadow-2xl z-50 overflow-y-auto transition-transform duration-300 ease-in-out print:overflow-visible ${
+                    isAnimating ? 'translate-x-0' : 'translate-x-full'
+                }`}
+                onDragOver={(e) => {
+                    const types = Array.from(e.dataTransfer?.types || []);
+                    if (types.includes('Files') || types.includes('text/uri-list') || types.includes(PHOTO_DRAG_TYPE)) {
+                        e.preventDefault();
+                    }
+                }}
+                onDrop={(e) => {
+                    const types = Array.from(e.dataTransfer?.types || []);
+                    if (types.includes('Files') || types.includes('text/uri-list') || types.includes(PHOTO_DRAG_TYPE)) {
+                        e.preventDefault();
+                    }
+                    setIsDraggingPhotos(false);
+                    setIsDraggingAttachments(false);
+                    setPhotoDropSlot(null);
+                    photoDragFrom.current = null;
+                }}
+                onDragEnd={() => {
+                    setIsDraggingPhotos(false);
+                    setIsDraggingAttachments(false);
+                    setPhotoDropSlot(null);
+                    photoDragFrom.current = null;
+                }}
+            >
                 {/* Header */}
                 <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4 flex items-center justify-between z-10 print:static print:border-b-2">
                     <div className="flex-1 min-w-0">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">
-                            {entity?.isNew ? 'New Entity' : (displayEntity?.display || 'Untitled')}
-                        </h2>
+                        <div className="flex items-center gap-3 min-w-0">
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">
+                                {entity?.isNew ? 'New Entity' : (displayEntity?.display || 'Untitled')}
+                            </h2>
+                            <DropCreateZone
+                                hidden={!entity?.isNew}
+                                entityType={editedEntity?.type || entity?.type}
+                                size="md"
+                                onCreated={(created) => {
+                                    if (onCreate) onCreate(created);
+                                }}
+                            />
+                        </div>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                             {entity?.isNew ? 'Create new entity' : displayEntity?.type}
                         </p>
@@ -3338,7 +3510,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                     e.dataTransfer.dropEffect = 'move';
                                     return;
                                 }
-                                setIsDraggingPhotos(true);
+                                setIsDraggingPhotos((on) => (on ? on : true));
                             }}
                             onDragLeave={(e) => {
                                 e.preventDefault();
@@ -3543,7 +3715,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                                 e.stopPropagation();
                                 if (!isEditing) return;
                                 e.dataTransfer.dropEffect = 'copy';
-                                setIsDraggingAttachments(true);
+                                setIsDraggingAttachments((on) => (on ? on : true));
                             }}
                             onDragLeave={(e) => { e.preventDefault(); if (!e.currentTarget.contains(e.relatedTarget)) setIsDraggingAttachments(false); }}
                             onDrop={handleAttachmentDrop}

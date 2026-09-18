@@ -14,6 +14,7 @@ from .serializers import (
 from .utils import save_file_deduplicated
 from .permissions import IsOwner, BothEntitiesOwned
 from .llm_text import build_text_block, relation_sentence
+from .from_drop import DropIngestError, ingest_drop
 from .import_validation import validate_import_payload
 from .import_v2_executor import execute_import_v2, ImportV2ExecutionError, normalize_legacy_snapshot_to_v2
 from django_filters.rest_framework import DjangoFilterBackend
@@ -23,6 +24,10 @@ from people.sync import meili_sync
 import tempfile
 import os
 import json
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def _prune_export_value(value):
@@ -296,6 +301,30 @@ class EntityViewSet(viewsets.ModelViewSet):
 
         text_parts = build_text_block(entity=serialized, outgoing=outgoing_data, incoming=incoming_data)
         return Response({'text_block': text_parts['text_block']})
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='from-drop',
+        parser_classes=[MultiPartParser, FormParser, JSONParser],
+    )
+    def from_drop(self, request):
+        """Parse dropped text, HTML, URLs, or files into a new entity."""
+        try:
+            entity, summary = ingest_drop(request)
+            data = self._serialize_entity(instance=entity, request=request)
+        except DropIngestError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            logger.exception('from-drop failed')
+            return Response(
+                {
+                    'detail': f'{exc.__class__.__name__}: {exc}' if str(exc) else exc.__class__.__name__,
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        status_code = status.HTTP_201_CREATED if summary.get('action') == 'created' else status.HTTP_200_OK
+        return Response({**data, 'drop_summary': summary}, status=status_code)
 
     def _import_entity_type(self, model_class, entity_data_list, entity_id_map, stats, type_name, request_user, logger, force_create=False):
         """Helper function to import a specific entity type with detailed tracking"""
@@ -1809,6 +1838,31 @@ class UploadViewSet(viewsets.ViewSet):
             return Response(result, status=status.HTTP_201_CREATED)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(
+        detail=False,
+        methods=['post'],
+        url_path='from-url',
+        parser_classes=[JSONParser, FormParser],
+    )
+    def from_url(self, request):
+        """Download a remote file on the server so the browser never hits CORS."""
+        from .from_drop import _download_media, _is_safe_to_fetch, _url_kind
+        url = str(request.data.get('url') or '').strip()
+        if not url:
+            return Response({'detail': 'Provide a URL to download.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not _is_safe_to_fetch(url):
+            return Response({'detail': 'That URL cannot be fetched.'}, status=status.HTTP_400_BAD_REQUEST)
+        kind = _url_kind(url)
+        if kind == 'page':
+            kind = 'image'
+        saved = _download_media(url, kind if kind in ('image', 'document') else 'image')
+        if not saved:
+            return Response(
+                {'detail': 'Could not download that file. The site may have blocked the request.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return Response(saved, status=status.HTTP_201_CREATED)
 
 
 class TagViewSet(viewsets.ModelViewSet):

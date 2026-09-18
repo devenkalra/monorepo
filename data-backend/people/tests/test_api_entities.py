@@ -93,6 +93,20 @@ class EntityAPITestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data['display'], 'The Great Gatsby')
         self.assertEqual(response.data['year'], 1925)
+
+    def test_clear_book_summary(self):
+        create = self.client.post('/api/books/', {
+            'type': 'Book',
+            'display': 'Clearable',
+            'summary': 'This should be removable',
+        }, format='json')
+        self.assertEqual(create.status_code, status.HTTP_201_CREATED)
+        book_id = create.data['id']
+        update = self.client.patch(f'/api/books/{book_id}/', {'summary': None}, format='json')
+        self.assertEqual(update.status_code, status.HTTP_200_OK, update.data)
+        self.assertFalse(update.data.get('summary'))
+        refetch = self.client.get(f'/api/books/{book_id}/')
+        self.assertFalse(refetch.data.get('summary'))
     
     def test_create_container(self):
         """Test creating a Container entity"""

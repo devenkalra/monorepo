@@ -7,6 +7,7 @@ import ThemeSync from './components/ThemeSync';
 import EntityDetail from './components/EntityDetail';
 import UserMenu from './components/UserMenu';
 import ConversationImport from './components/ConversationImport';
+import DropCreateZone from './components/DropCreateZone';
 import HelpModal from './components/HelpModal';
 import AppsMenu from './components/AppsMenu';
 import ProfileEdit from './components/ProfileEdit';
@@ -735,7 +736,12 @@ function App() {
       </div>
       
       {/* Floating Action Buttons */}
-      <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-30">
+      <div className="fixed bottom-6 right-6 flex flex-col items-end gap-3 z-30">
+        <DropCreateZone
+          onCreated={(created) => {
+            handleEntityCreate(created);
+          }}
+        />
         {/* Import Conversations Button */}
         <button
           onClick={() => {
