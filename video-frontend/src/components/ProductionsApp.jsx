@@ -2,6 +2,14 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useAuth } from '../contexts/AuthContext';
 import { getLoginUrl } from '../utils/apiUrl';
 import api from '../services/api';
+import {
+  ALL_FLAT_FIELD_IDS,
+  FLAT_OUTPUT_FIELDS,
+  buildFlatBlocks,
+  buildFlatOutput,
+  normalizeFlatFields,
+  parseStoredFlatFields,
+} from '../utils/flatOutput';
 import AppsMenu from './AppsMenu';
 
 const FONT_STORAGE_KEY = 'productions-font-size';
@@ -22,7 +30,8 @@ const DEFAULT_TYPES = [
   { value: 'long_form_documentary', label: 'Long Form Documentary' },
   { value: 'reel', label: 'Reel' },
 ];
-const DEFAULT_SCENE_TYPES = ['Hook', 'Intro', 'Preparation', 'Anticipation', 'Body', 'Outro'];
+const DEFAULT_SCENE_TYPE = 'Segment';
+const DEFAULT_SCENE_TYPES = [DEFAULT_SCENE_TYPE, 'Hook', 'Intro', 'Preparation', 'Anticipation', 'Body', 'Outro'];
 const ASSET_STATUSES = [
   { value: 'todo', label: 'Todo' },
   { value: 'in_progress', label: 'In progress' },
@@ -34,10 +43,19 @@ const SCENE_VIEWS = [
   { value: 'dialogue', label: 'Dialogue' },
   { value: 'expanded', label: 'Expanded' },
 ];
+const FLAT_FIELDS_STORAGE_KEY = 'productions-flat-fields';
 
 function readSceneView() {
   const value = localStorage.getItem(SCENE_VIEW_STORAGE_KEY);
   return SCENE_VIEWS.some((view) => view.value === value) ? value : 'expanded';
+}
+
+function readFlatFields() {
+  return parseStoredFlatFields(localStorage.getItem(FLAT_FIELDS_STORAGE_KEY));
+}
+
+function storeFlatFields(ids) {
+  localStorage.setItem(FLAT_FIELDS_STORAGE_KEY, JSON.stringify(ids));
 }
 
 function asList(data) {
@@ -128,7 +146,7 @@ function extraSummary(scene) {
   return parts.length ? parts.join(' · ') : 'Music, FX, notes, assets';
 }
 
-function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, onDragStart, onDragEnd, onDrop, dragging }) {
+function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPatch, onMove, onInsertAfter, onDelete, onDragStart, onDragEnd, onDrop, dragging }) {
   const [draft, setDraft] = useState(scene);
   const [assetDraft, setAssetDraft] = useState('');
   const [moreOpen, setMoreOpen] = useState(false);
@@ -170,7 +188,7 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
 
   return (
     <article
-      className={`prod-scene prod-scene-${viewMode}${dragging ? ' is-dragging' : ''}`}
+      className={`prod-scene prod-scene-${viewMode}${collapsed ? ' is-collapsed' : ''}${dragging ? ' is-dragging' : ''}`}
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
       onDragEnd={onDragEnd}
@@ -186,6 +204,10 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
         >
           ⋮⋮
         </button>
+        <label className="prod-scene-num">
+          Scene
+          <input className="prod-field" value={number} readOnly tabIndex={-1} />
+        </label>
         <label className="prod-scene-title">
           Title
           <input
@@ -243,6 +265,13 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
           )}
         </div>
         <div className="prod-scene-actions">
+          <button
+            type="button"
+            className="prod-ghost"
+            onClick={onToggleCollapsed}
+          >
+            {collapsed ? 'Expand' : 'Hide'}
+          </button>
           <button type="button" className="prod-icon-btn" title="Move up" aria-label="Move up" onClick={() => onMove(scene, 'up')}>
             <Icon name="up" />
           </button>
@@ -257,7 +286,7 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
           </button>
         </div>
       </div>
-      {viewMode === 'dialogue' && (
+      {!collapsed && viewMode === 'dialogue' && (
         <div className="prod-read-cues">
           <section>
             <h3>Visuals &amp; B-Roll</h3>
@@ -269,7 +298,7 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
           </section>
         </div>
       )}
-      {viewMode === 'expanded' && (
+      {!collapsed && viewMode !== 'dialogue' && (
         <div className="prod-cues prod-cues-script">
           <label>
             Visuals &amp; B-Roll
@@ -303,7 +332,7 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
           </label>
         </div>
       )}
-      {viewMode === 'expanded' && (
+      {!collapsed && viewMode !== 'dialogue' && (
       <button
         type="button"
         className={`prod-more${moreOpen ? ' is-open' : ''}`}
@@ -314,7 +343,7 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
         {moreOpen ? 'Hide extras' : extraSummary(scene)}
       </button>
       )}
-      {viewMode === 'expanded' && moreOpen && (
+      {!collapsed && viewMode !== 'dialogue' && moreOpen && (
         <div className="prod-scene-more">
           <div className="prod-cues">
             <label>
@@ -374,11 +403,100 @@ function SceneCard({ scene, viewMode, onPatch, onMove, onInsertAfter, onDelete, 
   );
 }
 
+function FlatOutputPanel({ production }) {
+  const [fields, setFields] = useState(readFlatFields);
+  const blocks = useMemo(
+    () => buildFlatBlocks(production.scenes, fields),
+    [production.scenes, fields],
+  );
+  const text = useMemo(
+    () => buildFlatOutput(production.scenes, fields),
+    [production.scenes, fields],
+  );
+
+  const setSelection = (next) => {
+    const normalized = normalizeFlatFields(next);
+    setFields(normalized);
+    storeFlatFields(normalized);
+  };
+
+  const toggleField = (id) => {
+    setSelection(fields.includes(id) ? fields.filter((fieldId) => fieldId !== id) : [...fields, id]);
+  };
+
+  return (
+    <section className="prod-panel">
+      <div className="prod-flat-fields" role="group" aria-label="Fields to include">
+        {FLAT_OUTPUT_FIELDS.map((field) => (
+          <label key={field.id}>
+            <input
+              type="checkbox"
+              checked={fields.includes(field.id)}
+              onChange={() => toggleField(field.id)}
+            />
+            {field.label}
+          </label>
+        ))}
+      </div>
+      <div className="mb-3 flex flex-wrap gap-2">
+        <button type="button" className="prod-ghost" onClick={() => setSelection(ALL_FLAT_FIELD_IDS)}>
+          All fields
+        </button>
+        <button type="button" className="prod-ghost" onClick={() => setSelection([])}>
+          None
+        </button>
+        <button
+          type="button"
+          className="prod-ghost"
+          onClick={() => navigator.clipboard.writeText(text)}
+        >
+          Copy
+        </button>
+        <button
+          type="button"
+          className="prod-ghost"
+          onClick={() => downloadText(`${production.title || 'script'}-flat.txt`, text)}
+        >
+          Download
+        </button>
+      </div>
+      {blocks.length === 0 ? (
+        <p className="prod-empty">No scenes yet.</p>
+      ) : (
+        <div className="prod-flat-output">
+          {blocks.map((block) => (
+            <article key={block.heading} className="prod-flat-scene">
+              <h3>{block.heading}</h3>
+              {block.rows.length === 0 ? (
+                <p className="prod-flat-empty">No selected fields are populated.</p>
+              ) : (
+                <dl>
+                  {block.rows.map((row) => (
+                    <div key={row.id} className="prod-flat-row">
+                      <dt>{row.label}</dt>
+                      <dd>{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize, onBack, onReload, onDeleted }) {
   const [header, setHeader] = useState(production);
   const [tagText, setTagText] = useState(tagsToText(production.tags));
   const [panel, setPanel] = useState('script');
   const [sceneView, setSceneView] = useState(readSceneView);
+  const [collapsedIds, setCollapsedIds] = useState(() => (
+    readSceneView() === 'compact'
+      ? new Set((production.scenes || []).map((scene) => scene.id))
+      : new Set()
+  ));
   const [dragId, setDragId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -387,6 +505,31 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
     setHeader(production);
     setTagText(tagsToText(production.tags));
   }, [production]);
+
+  useEffect(() => {
+    setCollapsedIds(
+      sceneView === 'compact'
+        ? new Set((production.scenes || []).map((scene) => scene.id))
+        : new Set()
+    );
+  }, [production.id]);
+
+  const hideAllScenes = () => {
+    setCollapsedIds(new Set((production.scenes || []).map((scene) => scene.id)));
+  };
+
+  const expandAllScenes = () => {
+    setCollapsedIds(new Set());
+  };
+
+  const toggleSceneCollapsed = (id) => {
+    setCollapsedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const saveHeader = async (patch) => {
     setError('');
@@ -422,7 +565,7 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
         method: 'POST',
         body: JSON.stringify({
           production_id: production.id,
-          scene_type: sceneTypes[0] || 'Hook',
+          scene_type: DEFAULT_SCENE_TYPE,
           duration: '10',
           ...(afterScene ? { after_id: afterScene.id } : {}),
         }),
@@ -511,6 +654,7 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
         <button type="button" className="prod-ghost" onClick={onBack}>All productions</button>
         <button type="button" className={`prod-ghost${panel === 'script' ? ' is-active' : ''}`} onClick={() => setPanel('script')}>Script</button>
         <button type="button" className={`prod-ghost${panel === 'teleprompter' ? ' is-active' : ''}`} onClick={() => setPanel('teleprompter')}>Teleprompter</button>
+        <button type="button" className={`prod-ghost${panel === 'flat' ? ' is-active' : ''}`} onClick={() => setPanel('flat')}>Flat Output</button>
         <button type="button" className={`prod-ghost${panel === 'assets' ? ' is-active' : ''}`} onClick={() => setPanel('assets')}>Assets</button>
         <FontSizeControls size={fontSize} onChange={onFontSize} />
         <div className="ml-auto flex flex-wrap gap-2">
@@ -606,6 +750,10 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
         </section>
       )}
 
+      {panel === 'flat' && (
+        <FlatOutputPanel production={production} />
+      )}
+
       {panel === 'assets' && (
         <section className="prod-panel">
           {(production.asset_todos || []).length === 0 && (
@@ -647,12 +795,17 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
                   onClick={() => {
                     setSceneView(view.value);
                     localStorage.setItem(SCENE_VIEW_STORAGE_KEY, view.value);
+                    if (view.value === 'compact') {
+                      hideAllScenes();
+                    }
                   }}
                 >
                   {view.label}
                 </button>
               ))}
             </div>
+            <button type="button" className="prod-ghost" onClick={hideAllScenes}>Hide all</button>
+            <button type="button" className="prod-ghost" onClick={expandAllScenes}>Expand all</button>
             <span className="text-sm text-[var(--text-color)]">Drag the handle or use Up/Down to reorder.</span>
           </div>
           <datalist id="scene-type-presets">
@@ -661,11 +814,14 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
             ))}
           </datalist>
           <div className="prod-timeline">
-            {(production.scenes || []).map((scene) => (
+            {(production.scenes || []).map((scene, index) => (
               <SceneCard
                 key={scene.id}
                 scene={scene}
+                number={index + 1}
                 viewMode={sceneView}
+                collapsed={collapsedIds.has(scene.id)}
+                onToggleCollapsed={() => toggleSceneCollapsed(scene.id)}
                 onPatch={patchScene}
                 onMove={moveScene}
                 onInsertAfter={addScene}

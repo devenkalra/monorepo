@@ -10,7 +10,10 @@ PRODUCTION_TYPES = [
 
 PRODUCTION_TYPE_LABELS = dict(PRODUCTION_TYPES)
 
+DEFAULT_SCENE_TYPE = 'Segment'
+
 SCENE_TYPE_PRESETS = [
+    DEFAULT_SCENE_TYPE,
     'Hook',
     'Intro',
     'Preparation',

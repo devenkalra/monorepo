@@ -10,6 +10,7 @@ from productions.timing import (
     parse_timecode,
     recompute_scene_times,
     teleprompter_text,
+    flat_output_text,
 )
 
 
@@ -69,13 +70,72 @@ class CascadeTests(TestCase):
 
 
 class TeleprompterTests(TestCase):
-    def test_skips_empty_voiceover(self):
+    def test_uses_scene_title(self):
         scenes = [
-            SimpleNamespace(scene_type='Hook', voiceover='Open on the trail'),
-            SimpleNamespace(scene_type='Intro', voiceover='  '),
-            SimpleNamespace(scene_type='Body', voiceover='We keep walking'),
+            SimpleNamespace(title='Open on the trail', scene_type='Hook', voiceover='Open on the trail'),
+            SimpleNamespace(title='Intro', scene_type='Intro', voiceover='  '),
+            SimpleNamespace(title='Keep walking', scene_type='Body', voiceover='We keep walking'),
         ]
         self.assertEqual(
             teleprompter_text(scenes),
-            '[HOOK]\nOpen on the trail\n\n[BODY]\nWe keep walking',
+            '[Open on the trail]\nOpen on the trail\n\n[Keep walking]\nWe keep walking',
+        )
+
+    def test_falls_back_to_type_when_title_empty(self):
+        scenes = [
+            SimpleNamespace(title='', scene_type='Hook', voiceover='Open on the trail'),
+        ]
+        self.assertEqual(teleprompter_text(scenes), '[Hook]\nOpen on the trail')
+
+
+class FlatOutputTests(TestCase):
+    def test_lists_populated_fields_only(self):
+        scenes = [
+            SimpleNamespace(
+                title='Open',
+                scene_type='Hook',
+                start_seconds=Decimal('0'),
+                duration_seconds=Decimal('8'),
+                end_seconds=Decimal('8'),
+                visuals='Face on the ridge',
+                voiceover='I did not pack enough water.',
+                music='thin drone',
+                fx_cues='',
+                notes='  ',
+                assets=['Drone shot', 'Map'],
+            ),
+            SimpleNamespace(
+                title='',
+                scene_type='Segment',
+                start_seconds=Decimal('8'),
+                duration_seconds=Decimal('6'),
+                end_seconds=Decimal('14'),
+                visuals='',
+                voiceover='',
+                music='',
+                fx_cues='',
+                notes='',
+                assets=[],
+            ),
+        ]
+        self.assertEqual(
+            flat_output_text(scenes),
+            (
+                'Scene 1\n'
+                'Title: Open\n'
+                'Type: Hook\n'
+                'Start: 0:00\n'
+                'Duration: 8\n'
+                'End: 8\n'
+                'Visuals & B-Roll: Face on the ridge\n'
+                'Voiceover & Dialogue: I did not pack enough water.\n'
+                'Music / Sound: thin drone\n'
+                'Assets: Drone shot, Map\n'
+                '\n'
+                'Scene 2\n'
+                'Type: Segment\n'
+                'Start: 8\n'
+                'Duration: 6\n'
+                'End: 14'
+            ),
         )

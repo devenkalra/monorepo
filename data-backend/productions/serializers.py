@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .constants import ASSET_STATUS_TODO, PRODUCTION_TYPES
+from .constants import ASSET_STATUS_TODO, DEFAULT_SCENE_TYPE, PRODUCTION_TYPES
 from .models import Production, ProductionAssetStatus, Scene, SceneAsset
 from .timing import (
     TimecodeError,
@@ -11,6 +11,7 @@ from .timing import (
     parse_timecode,
     recompute_scene_times,
     teleprompter_text,
+    flat_output_text,
 )
 
 
@@ -152,14 +153,15 @@ class ProductionSerializer(serializers.ModelSerializer):
     scenes = serializers.SerializerMethodField()
     asset_todos = serializers.SerializerMethodField()
     teleprompter = serializers.SerializerMethodField()
+    flat_output = serializers.SerializerMethodField()
     total_duration = serializers.SerializerMethodField()
 
     class Meta:
         model = Production
         fields = [
             'id', 'title', 'subtitle', 'type', 'type_label', 'description', 'tags',
-            'is_archived', 'scenes', 'asset_todos', 'teleprompter', 'total_duration',
-            'created_at', 'modified_on',
+            'is_archived', 'scenes', 'asset_todos', 'teleprompter', 'flat_output',
+            'total_duration', 'created_at', 'modified_on',
         ]
         read_only_fields = ['is_archived']
 
@@ -178,6 +180,15 @@ class ProductionSerializer(serializers.ModelSerializer):
 
     def get_teleprompter(self, obj):
         return teleprompter_text(obj.scenes.all())
+
+    def get_flat_output(self, obj):
+        scenes = obj.scenes.all()
+        if not any(
+            hasattr(scene, '_prefetched_objects_cache') and 'assets' in scene._prefetched_objects_cache
+            for scene in scenes
+        ):
+            scenes = obj.scenes.prefetch_related('assets').all()
+        return flat_output_text(scenes)
 
     def get_total_duration(self, obj):
         last = obj.scenes.order_by('sort_order', 'id').last()
@@ -264,6 +275,8 @@ class SceneSerializer(serializers.ModelSerializer):
         validated_data.pop('parsed_end', None)
         after_id = validated_data.pop('after_id', None)
         production = validated_data['production']
+        if not (validated_data.get('scene_type') or '').strip():
+            validated_data['scene_type'] = DEFAULT_SCENE_TYPE
         if parsed_duration is not None:
             validated_data['duration_seconds'] = parsed_duration
         scenes = list(production.scenes.order_by('sort_order', 'id'))

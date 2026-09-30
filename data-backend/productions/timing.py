@@ -111,8 +111,68 @@ def teleprompter_text(scenes):
         voiceover = (scene.voiceover or '').strip()
         if not voiceover:
             continue
-        label = (scene.scene_type or 'SCENE').strip().upper() or 'SCENE'
-        blocks.append(f'[{label}]\n{voiceover}')
+        title = (getattr(scene, 'title', None) or '').strip()
+        if not title:
+            title = (getattr(scene, 'scene_type', None) or 'SCENE').strip() or 'SCENE'
+        blocks.append(f'[{title}]\n{voiceover}')
+    return '\n\n'.join(blocks)
+
+
+def _text_value(scene, attr):
+    return (getattr(scene, attr, None) or '').strip()
+
+
+def _asset_names(scene):
+    raw = getattr(scene, 'assets', None)
+    if raw is None:
+        return []
+    items = raw.all() if hasattr(raw, 'all') else raw
+    names = []
+    for item in items:
+        if isinstance(item, str):
+            name = item.strip()
+        elif isinstance(item, dict):
+            name = str(item.get('name') or '').strip()
+        else:
+            name = str(getattr(item, 'name', '') or '').strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _scene_timecode(scene, formatted_attr, seconds_attr):
+    formatted = getattr(scene, formatted_attr, None)
+    if formatted not in (None, ''):
+        return str(formatted)
+    seconds = getattr(scene, seconds_attr, None)
+    if seconds is None:
+        return ''
+    return format_timecode(seconds)
+
+
+def flat_output_text(scenes):
+    blocks = []
+    for index, scene in enumerate(scenes, start=1):
+        lines = [f'Scene {index}']
+        fields = [
+            ('Title', _text_value(scene, 'title')),
+            ('Type', _text_value(scene, 'scene_type')),
+            ('Start', _scene_timecode(scene, 'start', 'start_seconds')),
+            ('Duration', _scene_timecode(scene, 'duration', 'duration_seconds')),
+            ('End', _scene_timecode(scene, 'end', 'end_seconds')),
+            ('Visuals & B-Roll', _text_value(scene, 'visuals')),
+            ('Voiceover & Dialogue', _text_value(scene, 'voiceover')),
+            ('Music / Sound', _text_value(scene, 'music')),
+            ('FX Cues', _text_value(scene, 'fx_cues')),
+            ('Notes', _text_value(scene, 'notes')),
+        ]
+        for label, value in fields:
+            if value:
+                lines.append(f'{label}: {value}')
+        assets = _asset_names(scene)
+        if assets:
+            lines.append(f'Assets: {", ".join(assets)}')
+        blocks.append('\n'.join(lines))
     return '\n\n'.join(blocks)
 
 

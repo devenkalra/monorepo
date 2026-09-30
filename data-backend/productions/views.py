@@ -15,7 +15,7 @@ from .serializers import (
     persist_scene_times,
     scene_payload,
 )
-from .timing import asset_name_key, teleprompter_text
+from .timing import asset_name_key, flat_output_text, teleprompter_text
 from .transfer import TransferError, export_document, export_filename, import_productions as load_productions
 
 
@@ -200,6 +200,12 @@ class ProductionViewSet(UserScopedMixin, viewsets.ModelViewSet):
         production = self.get_object()
         text = teleprompter_text(production.scenes.all())
         return Response({'text': text})
+
+    @action(detail=True, methods=['get'], url_path='flat-output')
+    def flat_output(self, request, pk=None):
+        production = self.get_object()
+        scenes = production.scenes.prefetch_related('assets').all()
+        return Response({'text': flat_output_text(scenes)})
 
     @action(detail=True, methods=['patch'], url_path='assets')
     def assets(self, request, pk=None):

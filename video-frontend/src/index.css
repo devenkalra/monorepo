@@ -128,6 +128,9 @@ button, input, select, textarea {
   outline: 2px solid var(--accent-color);
   outline-offset: 1px;
 }
+.prod-scene.is-collapsed {
+  padding-bottom: 0.45rem;
+}
 input:-webkit-autofill,
 textarea:-webkit-autofill,
 input:-webkit-autofill:focus,
@@ -152,6 +155,16 @@ textarea:-webkit-autofill:focus {
   cursor: grab;
   line-height: 1;
   letter-spacing: -0.12em;
+}
+.prod-scene-num {
+  width: 3.4rem;
+  flex: 0 0 3.4rem;
+}
+.prod-scene-num input {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  background: #fff;
 }
 .prod-scene-title {
   flex: 1 1 12rem;
@@ -184,6 +197,65 @@ textarea:-webkit-autofill:focus {
   display: inline-flex;
   flex-wrap: wrap;
   gap: 0.25rem;
+}
+.prod-flat-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+}
+.prod-flat-fields label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  user-select: none;
+}
+.prod-flat-fields input {
+  accent-color: var(--accent-color);
+}
+.prod-flat-output {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.prod-flat-scene {
+  padding: 0.15rem 0 1.05rem;
+}
+.prod-flat-scene + .prod-flat-scene {
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.05rem;
+}
+.prod-flat-scene h3 {
+  margin: 0 0 0.55rem;
+  font-size: 1.08em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.prod-flat-scene dl {
+  margin: 0;
+}
+.prod-flat-row {
+  display: block;
+  padding: 0.45rem 0;
+}
+.prod-flat-row dt {
+  margin: 0 0 0.15rem;
+  font-size: 1.08em;
+  font-weight: 700;
+  color: var(--text-color);
+}
+.prod-flat-row dd {
+  margin: 0;
+  font-weight: 400;
+  white-space: pre-wrap;
+  line-height: 1.45;
+}
+.prod-flat-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 .prod-times {
   display: flex;

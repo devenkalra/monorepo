@@ -83,6 +83,16 @@ class ProductionApiTests(APITestCase):
         detail = self.client.get(f'/api/productions/productions/{pk}/')
         self.assertEqual(detail.data['scenes'][0]['title'], 'Cold open')
 
+    def test_new_scene_defaults_to_segment(self):
+        pk = self._create().data['id']
+        created = self.client.post(
+            '/api/productions/scenes/',
+            {'production_id': pk, 'duration': '10'},
+            format='json',
+        )
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data['scene_type'], 'Segment')
+
     def test_scene_times_cascade_on_duration_and_end(self):
         pk = self._create().data['id']
         first = self.client.post(
@@ -177,6 +187,7 @@ class ProductionApiTests(APITestCase):
             '/api/productions/scenes/',
             {
                 'production_id': pk,
+                'title': 'Ridge open',
                 'scene_type': 'Hook',
                 'voiceover': 'Open on the ridge',
                 'assets': ['Drone shot', 'Map'],
@@ -194,7 +205,11 @@ class ProductionApiTests(APITestCase):
             format='json',
         )
         detail = self.client.get(f'/api/productions/productions/{pk}/')
-        self.assertEqual(detail.data['teleprompter'], '[HOOK]\nOpen on the ridge')
+        self.assertEqual(detail.data['teleprompter'], '[Ridge open]\nOpen on the ridge')
+        self.assertIn('Title: Ridge open', detail.data['flat_output'])
+        self.assertIn('Voiceover & Dialogue: Open on the ridge', detail.data['flat_output'])
+        self.assertIn('Assets: Drone shot, Map', detail.data['flat_output'])
+        self.assertNotIn('FX Cues:', detail.data['flat_output'])
         names = {row['name_key']: row for row in detail.data['asset_todos']}
         self.assertEqual(len(names['drone shot']['scenes']), 2)
         self.assertEqual(names['drone shot']['status'], 'todo')
