@@ -122,8 +122,12 @@ class CustomRegisterSerializer(serializers.Serializer):
 
 class BaseEntitySerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(required=False)
+    description = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     referenced_files = serializers.JSONField(write_only=True, required=False, default=list)
     active_scoped_files = serializers.JSONField(write_only=True, required=False, default=list)
+
+    def validate_description(self, value):
+        return value or ''
 
     class Meta:
         model = Entity

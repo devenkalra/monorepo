@@ -240,6 +240,41 @@ class EntityAPITestCase(TestCase):
         person.refresh_from_db()
         self.assertEqual(person.display, 'John A. Smith')
         self.assertEqual(person.profession, 'Engineer')
+
+    def test_create_entity_with_empty_description(self):
+        response = self.client.post(
+            '/api/people/',
+            {'type': 'Person', 'first_name': 'Ada', 'last_name': 'Lovelace', 'description': ''},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['description'], '')
+
+    def test_create_entity_with_null_description(self):
+        response = self.client.post(
+            '/api/people/',
+            {'type': 'Person', 'first_name': 'Ada', 'description': None},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['description'], '')
+
+    def test_update_entity_clears_description(self):
+        person = Person.objects.create(
+            user=self.user,
+            display='Ada Lovelace',
+            first_name='Ada',
+            description='Will be cleared',
+        )
+        response = self.client.patch(
+            f'/api/people/{person.id}/',
+            {'description': None},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['description'], '')
+        person.refresh_from_db()
+        self.assertEqual(person.description, '')
     
     def test_delete_entity(self):
         """Test deleting an entity"""

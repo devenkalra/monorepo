@@ -246,7 +246,7 @@ function App() {
       kind: 'Unspecified',
       isNew: true // Flag to indicate this is a new entity
     };
-    setInitialViewMode('details'); // Default to details view for new entities
+    setInitialViewMode('edit');
     setSelectedEntity(blankEntity);
     setShowDetail(true);
     // Navigate to new entity URL
@@ -254,14 +254,17 @@ function App() {
   };
 
   const handleEntityCreate = (createdEntity) => {
+    const { _keepEditing, ...savedEntity } = createdEntity;
     // Add the newly created entity to the list
-    setEntities(prevEntities => [createdEntity, ...prevEntities]);
+    setEntities(prevEntities => [savedEntity, ...prevEntities]);
     // Update the selected entity with the created data
-    setSelectedEntity(createdEntity);
+    setSelectedEntity(savedEntity);
     // Refresh the entities list from the server to ensure synchronization
     fetchEntities();
-    // Navigate to the created entity's URL
-    navigate(`/entity/${createdEntity.id}`);
+    // Stay in the editor when description autosave created the row
+    navigate(_keepEditing
+      ? `/entity/${savedEntity.id}/edit`
+      : `/entity/${savedEntity.id}`);
   };
 
   const handleBulkDelete = async () => {

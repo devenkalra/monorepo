@@ -407,6 +407,48 @@ async function persistEntityLocations(entity) {
     });
 }
 
+const DESCRIPTION_AUTOSAVE_MS = 800;
+
+function isBlankDescription(html) {
+    return !String(html || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+}
+
+function isDraftEntity(entity) {
+    return Boolean(entity?.isNew || !entity?.id || entity.id === 'new');
+}
+
+async function persistEntityDescription(entity, description) {
+    if (!entity || entity.is_encrypted) return null;
+    const desc = description ?? '';
+    const draft = isDraftEntity(entity);
+    if (draft && isBlankDescription(desc)) return null;
+
+    const type = entity.type || 'Person';
+    const payload = { description: desc };
+    if (draft) {
+        if (entity.id && entity.id !== 'new') payload.id = entity.id;
+        ['display', 'first_name', 'last_name', 'profession', 'name', 'summary'].forEach((key) => {
+            const value = entity[key];
+            if (value) payload[key] = value;
+        });
+        if (Array.isArray(entity.tags) && entity.tags.length) payload.tags = entity.tags;
+    }
+
+    const collection = `/api/${entityTypeApiPath(type)}/`;
+    const url = draft ? collection : `${collection}${entity.id}/`;
+    const response = await api.fetch(url, {
+        method: draft ? 'POST' : 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+        if (response.status === 401) throw new Error('Sign in required');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(JSON.stringify(errorData));
+    }
+    return response.json();
+}
+
 function isFloatedDescriptionImage(img) {
     const style = img.getAttribute('style') || '';
     const float = img.getAttribute('data-float') || '';
@@ -871,6 +913,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const [processedDescription, setProcessedDescription] = useState('');
     const descriptionBlobUrlsRef = useRef([]);
     const [isSaving, setIsSaving] = useState(false);
+    const [descriptionSaveStatus, setDescriptionSaveStatus] = useState('');
     const [newAttachments, setNewAttachments] = useState([]);
     const [deletedPhotos, setDeletedPhotos] = useState([]);
     const [deletedAttachments, setDeletedAttachments] = useState([]);
@@ -900,6 +943,15 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     const [photoDropSlot, setPhotoDropSlot] = useState(null);
     const photoDragFrom = useRef(null);
     const suppressPhotoClick = useRef(false);
+    const openedEntityIdRef = useRef(null);
+    const editedEntityRef = useRef(null);
+    const lastPersistedDescription = useRef(null);
+    const descriptionSaveTimer = useRef(null);
+    const descriptionCreateStarted = useRef(false);
+
+    useEffect(() => {
+        editedEntityRef.current = editedEntity;
+    }, [editedEntity]);
 
     useEffect(() => {
         if (entity && isVisible) {
@@ -911,35 +963,48 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 attachments: Array.isArray(entity.attachments) ? entity.attachments : (entity.attachments ? [] : []),
                 locations: Array.isArray(entity.locations) ? entity.locations : (entity.locations ? [] : [])
             };
+            const switchedEntity = openedEntityIdRef.current !== entity.id;
+            const becameSaved = switchedEntity
+                && (openedEntityIdRef.current === 'new' || openedEntityIdRef.current == null)
+                && entity.id
+                && entity.id !== 'new';
+            openedEntityIdRef.current = entity.id;
 
-            // Handle initial view mode
+            // Only reset editor state when opening a different entity.
+            // Creating via autosave changes id from "new" to a UUID; stay in edit mode.
+            // A parent refresh of the same row (autosave) must stay in edit mode.
             // initialViewMode can be: 'details', 'relations', 'edit', 'relations-edit'
-            if (initialViewMode === 'edit') {
-                // Edit mode on details tab
-                setIsEditing(true);
-                setViewMode('details');
-            } else if (initialViewMode === 'relations-edit') {
-                // Edit mode on relations tab
-                setIsEditing(true);
-                setViewMode('relations');
-            } else if (entity.isNew === true) {
-                // New entity - start in edit mode
-                setIsEditing(true);
-                setViewMode('details');
-            } else {
-                // Normal mode - set view mode and clear editing
-                setIsEditing(false);
-                setViewMode(initialViewMode || 'details');
-            }
+            if (switchedEntity && !becameSaved) {
+                if (initialViewMode === 'edit') {
+                    // Edit mode on details tab
+                    setIsEditing(true);
+                    setViewMode('details');
+                } else if (initialViewMode === 'relations-edit') {
+                    // Edit mode on relations tab
+                    setIsEditing(true);
+                    setViewMode('relations');
+                } else if (entity.isNew === true) {
+                    // New entity - start in edit mode
+                    setIsEditing(true);
+                    setViewMode('details');
+                } else {
+                    // Normal mode - set view mode and clear editing
+                    setIsEditing(false);
+                    setViewMode(initialViewMode || 'details');
+                }
 
-            setNewAttachments([]);
-            setDeletedPhotos([]);
-            setDeletedAttachments([]);
-            setPhotoMeta({});
-            setPhotoSort(null);
-            photoMetaProbed.current = new Set();
-            mapFetchInflight.current = new Set();
-            mapFetchFailed.current = new Set();
+                setNewAttachments([]);
+                setDeletedPhotos([]);
+                setDeletedAttachments([]);
+                setPhotoMeta({});
+                setPhotoSort(null);
+                photoMetaProbed.current = new Set();
+                mapFetchInflight.current = new Set();
+                mapFetchFailed.current = new Set();
+                lastPersistedDescription.current = null;
+                descriptionCreateStarted.current = false;
+                clearTimeout(descriptionSaveTimer.current);
+            }
             // Entity selected - mount and animate in
             setShouldRender(true);
             // Delay to ensure initial render before animation
@@ -950,6 +1015,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             });
         } else if (!entity || !isVisible) {
             // Entity deselected - animate out then unmount
+            openedEntityIdRef.current = null;
+            clearTimeout(descriptionSaveTimer.current);
             setIsAnimating(false);
             const timer = setTimeout(() => {
                 setShouldRender(false);
@@ -1024,6 +1091,10 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     useEffect(() => {
         if (decryptedEntity) {
             setEditedEntity(prev => {
+                if (prev && isEditing && (prev.isNew || prev.id === 'new')
+                    && decryptedEntity.id && decryptedEntity.id !== 'new') {
+                    return { ...prev, id: decryptedEntity.id, isNew: false };
+                }
                 if (!prev || prev.id !== decryptedEntity.id) {
                     const copy = { ...decryptedEntity };
                     if (copy.id === 'new') {
@@ -1185,7 +1256,51 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
         }
     }, [viewMode, entity]);
 
+    const cancelDescriptionAutosave = () => {
+        clearTimeout(descriptionSaveTimer.current);
+    };
+
+    const applyAutosavedEntity = (saved, savedDescription) => {
+        if (!saved) return;
+        lastPersistedDescription.current = savedDescription;
+        openedEntityIdRef.current = saved.id;
+        setEditedEntity((prev) => ({
+            ...prev,
+            id: saved.id,
+            isNew: false,
+            display: prev?.display || saved.display,
+        }));
+        if (isDraftEntity({ id: entity?.id, isNew: entity?.isNew }) && onCreate) {
+            onCreate({ ...saved, _keepEditing: true });
+        } else if (onUpdate) {
+            onUpdate(saved);
+        }
+    };
+
+    const flushDescriptionAutosave = () => {
+        clearTimeout(descriptionSaveTimer.current);
+        const current = editedEntityRef.current;
+        if (!current || !isEditing || current.is_encrypted) return;
+        const next = current.description ?? '';
+        if (next === lastPersistedDescription.current) return;
+        if (isDraftEntity(current) && isBlankDescription(next)) return;
+        if (isDraftEntity(current) && descriptionCreateStarted.current) return;
+        if (isDraftEntity(current)) descriptionCreateStarted.current = true;
+        setDescriptionSaveStatus('Saving…');
+        persistEntityDescription(current, next)
+            .then((saved) => {
+                applyAutosavedEntity(saved, next);
+                setDescriptionSaveStatus('Saved');
+            })
+            .catch((err) => {
+                if (isDraftEntity(current)) descriptionCreateStarted.current = false;
+                console.error('Failed to autosave description:', err);
+                setDescriptionSaveStatus(err?.message === 'Sign in required' ? 'Sign in required' : 'Save failed');
+            });
+    };
+
     const handleClose = () => {
+        flushDescriptionAutosave();
         setIsAnimating(false);
         setTimeout(() => {
             onClose();
@@ -1202,6 +1317,8 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     };
 
     const handleCancelEdit = () => {
+        cancelDescriptionAutosave();
+        lastPersistedDescription.current = displayEntityRef.current?.description ?? '';
         (editedEntity?.photos || []).forEach(revokePendingPreview);
         setEditedEntity(displayEntityRef.current);
         setIsEditing(false);
@@ -1266,6 +1383,42 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
             [field]: value
         }));
     };
+
+    useEffect(() => {
+        if (!isEditing || !editedEntity) return;
+        if (lastPersistedDescription.current === null) {
+            lastPersistedDescription.current = editedEntity.description ?? '';
+        }
+    }, [isEditing, editedEntity?.id]);
+
+    useEffect(() => {
+        if (!isEditing || !editedEntity || editedEntity.is_encrypted) return undefined;
+        const next = editedEntity.description ?? '';
+        if (lastPersistedDescription.current === null) {
+            lastPersistedDescription.current = next;
+            return undefined;
+        }
+        if (next === lastPersistedDescription.current) return undefined;
+        if (isDraftEntity(editedEntity) && isBlankDescription(next)) return undefined;
+
+        clearTimeout(descriptionSaveTimer.current);
+        descriptionSaveTimer.current = setTimeout(() => {
+            if (isDraftEntity(editedEntity) && descriptionCreateStarted.current) return;
+            if (isDraftEntity(editedEntity)) descriptionCreateStarted.current = true;
+            setDescriptionSaveStatus('Saving…');
+            persistEntityDescription(editedEntity, next)
+                .then((saved) => {
+                    applyAutosavedEntity(saved, next);
+                    setDescriptionSaveStatus('Saved');
+                })
+                .catch((err) => {
+                    if (isDraftEntity(editedEntity)) descriptionCreateStarted.current = false;
+                    console.error('Failed to autosave description:', err);
+                    setDescriptionSaveStatus(err?.message === 'Sign in required' ? 'Sign in required' : 'Save failed');
+                });
+        }, DESCRIPTION_AUTOSAVE_MS);
+        return () => clearTimeout(descriptionSaveTimer.current);
+    }, [isEditing, editedEntity?.id, editedEntity?.description, editedEntity?.isNew, editedEntity?.is_encrypted, editedEntity?.type]);
 
     const insertPendingPhotos = useCallback((files, index = null) => {
         const imageFiles = (files || []).filter((f) => f?.type?.startsWith('image/'));
@@ -2009,6 +2162,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
     };
 
     const handleSave = async () => {
+        cancelDescriptionAutosave();
         if (editedEntity.is_encrypted && !hasKeys) {
             alert('Vault is locked. Please enter a passphrase to unlock or set the key before saving an encrypted entity.');
             return;
@@ -2401,8 +2555,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
 
             // Omit empty arrays / unknown empties so required fields don't fail validation.
             // Send null for clearable text fields so PATCH actually blanks them.
+            // Description is optional: keep an empty string so create/update succeed.
             const clearableFields = new Set([
-                'summary', 'description', 'language', 'country', 'year',
+                'summary', 'language', 'country', 'year',
                 'profession', 'first_name', 'last_name', 'dob', 'date',
                 'address1', 'address2', 'postal_code', 'city', 'state',
                 'name', 'acquired_on', 'value',
@@ -2415,7 +2570,9 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                     return;
                 }
                 if (value === '' || value === null) {
-                    if (clearableFields.has(key)) {
+                    if (key === 'description') {
+                        dataToSave[key] = '';
+                    } else if (clearableFields.has(key)) {
                         dataToSave[key] = null;
                     } else {
                         delete dataToSave[key];
@@ -2564,6 +2721,7 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                 }
 
                 displayEntityRef.current = decryptedSaved;
+                lastPersistedDescription.current = decryptedSaved.description ?? '';
                 setDecryptedEntity(decryptedSaved);
                 setEditedEntity(decryptedSaved);
                 setIsEditing(false);
@@ -2820,6 +2978,11 @@ function EntityDetail({ entity, onClose, isVisible, onUpdate, onCreate, initialV
                             </>
                         ) : (
                             <>
+                                {descriptionSaveStatus && (
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 mr-1" aria-live="polite">
+                                        {descriptionSaveStatus}
+                                    </span>
+                                )}
                                 <button
                                     onClick={handleSave}
                                     disabled={isSaving}
