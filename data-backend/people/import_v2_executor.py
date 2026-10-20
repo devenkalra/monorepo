@@ -412,6 +412,8 @@ def execute_import_v2(data, user, check_cancelled=None):
                     setattr(model_obj, key, value)
                 model_obj.save()
                 stats["entities_updated"] += 1
+                if item.get("import_ref"):
+                    entity_id_map[item["import_ref"]] = model_obj.id
             else:
                 provided_keys = set(payload.keys())
                 for field in _iter_mutable_entity_fields(model_cls):

@@ -1,9 +1,31 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+function redirectBareBase() {
+  const redirect = (req, res, next) => {
+    const [path, query] = (req.url || '').split('?')
+    if (path === '/app/people') {
+      res.statusCode = 301
+      res.setHeader('Location', query ? `/app/people/?${query}` : '/app/people/')
+      res.end()
+      return
+    }
+    next()
+  }
+  return {
+    name: 'redirect-people-base',
+    configureServer(server) {
+      server.middlewares.use(redirect)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(redirect)
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), redirectBareBase()],
   base: '/app/people/',
   server: {
     host: '0.0.0.0',

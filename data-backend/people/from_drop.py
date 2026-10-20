@@ -28,6 +28,8 @@ from .serializers import (
 )
 from .utils import save_file_deduplicated
 
+_FENCE_RE = re.compile(r'```(?:json)?\s*([\s\S]*?)```', re.I)
+
 
 class DropIngestError(ValueError):
     pass
@@ -377,7 +379,7 @@ _JSON_SHAPE = """Return JSON only:
 }"""
 
 _TYPE_FIELD_HINTS = {
-    'Movie': 'Fill year/language/country. Put director/actors in relations (HAS_DIRECTOR, HAS_ACTOR).',
+    'Movie': 'Fill year/language/country. Put director, actors, and music director/composer in relations (HAS_DIRECTOR, HAS_ACTOR, HAS_MUS_DIRECTOR).',
     'Book': 'Fill year/summary. Put author in relations (HAS_AS_AUTHOR).',
     'Person': 'Split first/last name. Extract emails, phones, profession, and dob if present.',
     'Location': 'Fill address1/city/state/postal_code/country.',
@@ -992,7 +994,7 @@ def _normalize_relations(rows, entity_type):
             continue
         seen.add(key)
         cleaned.append({'relation_type': rel, 'display': display[:255], 'type': 'Person'})
-        if len(cleaned) >= 8:
+        if len(cleaned) >= 12:
             break
     return cleaned
 

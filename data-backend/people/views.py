@@ -326,6 +326,29 @@ class EntityViewSet(viewsets.ModelViewSet):
         status_code = status.HTTP_201_CREATED if summary.get('action') == 'created' else status.HTTP_200_OK
         return Response({**data, 'drop_summary': summary}, status=status_code)
 
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='import_text')
+    def import_text(self, request):
+        """Create one entity per text line using AI-structured fields, then import-v2."""
+        from .text_import import TextImportError, import_text
+
+        text = request.data.get('text') if hasattr(request, 'data') else None
+        entity_type = request.data.get('type') or request.data.get('entity_type') or 'Note'
+        try:
+            result = import_text(
+                text,
+                request.user,
+                entity_type=entity_type,
+                confirmations=request.data.get('confirmations'),
+                draft=request.data.get('draft'),
+                confirm=request.data.get('confirm'),
+                extra_tag=request.data.get('extra_tag') or request.data.get('tag'),
+            )
+        except TextImportError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except ImportV2ExecutionError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result, status=status.HTTP_200_OK)
+
     def _import_entity_type(self, model_class, entity_data_list, entity_id_map, stats, type_name, request_user, logger, force_create=False):
         """Helper function to import a specific entity type with detailed tracking"""
         import uuid
@@ -1321,6 +1344,46 @@ class PersonViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         """Auto-assign current user on create"""
         serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], parser_classes=[MultiPartParser, FormParser])
+    def import_file(self, request):
+        """Import vCard contacts as Person entities."""
+        from .models import Person as PersonModel
+        from .vcf import person_fields_from_vcf
+
+        if 'file' not in request.FILES:
+            return Response({'error': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+        uploaded = request.FILES['file']
+        name = (uploaded.name or '').lower()
+        if name and not name.endswith(('.vcf', '.vcard')):
+            return Response({'error': 'Please upload a .vcf or .vcard file'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            content = uploaded.read().decode('utf-8-sig')
+        except UnicodeDecodeError:
+            return Response({'error': 'File must be UTF-8 text'}, status=status.HTTP_400_BAD_REQUEST)
+
+        people = person_fields_from_vcf(content)
+        if not people:
+            return Response({'error': 'No contacts found in vCard file'}, status=status.HTTP_400_BAD_REQUEST)
+
+        created = []
+        errors = []
+        for fields in people:
+            try:
+                person = PersonModel.objects.create(user=request.user, type='Person', **fields)
+                created.append({'id': str(person.id), 'display': person.display})
+            except Exception as exc:
+                errors.append(str(exc))
+
+        return Response({
+            'success': True,
+            'message': f'Imported {len(created)} {"person" if len(created) == 1 else "people"} from vCard',
+            'created': len(created),
+            'people': created,
+            'errors': errors,
+        }, status=status.HTTP_200_OK)
 
 class NoteViewSet(viewsets.ModelViewSet):
     serializer_class = NoteSerializer
