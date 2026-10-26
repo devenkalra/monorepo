@@ -103,17 +103,13 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     // Call logout endpoint
-    if (accessToken) {
-      try {
-        await fetch(`${getApiBaseUrl()}/api/auth/logout/`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          }
-        });
-      } catch (error) {
-        console.error('Logout error:', error);
-      }
+    try {
+      await fetch(`${getApiBaseUrl()}/api/auth/logout/`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
     }
 
     // Clear local storage

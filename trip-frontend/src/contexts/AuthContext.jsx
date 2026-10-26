@@ -100,15 +100,13 @@ export const AuthProvider = ({ children }) => {
   }, [clearTokens, refreshToken]);
 
   const logout = async () => {
-    if (accessToken) {
-      try {
-        await fetch(`${getApiBaseUrl()}/api/auth/logout/`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-      } catch (_) {
-        /* ignore */
-      }
+    try {
+      await fetch(`${getApiBaseUrl()}/api/auth/logout/`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch (_) {
+      /* ignore */
     }
     clearTokens();
     window.location.href = getLoginUrl(window.location.pathname || '/app/trips/');

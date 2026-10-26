@@ -25,6 +25,7 @@ from people.static_views import (
     csrf_cookie,
     gmail_app_dev_redirect,
 )
+from people.auth_views import LogoutView
 from people.social_auth_views import GoogleLogin, google_login_redirect, google_callback
 from people.health_views import health_check, health_detailed
 
@@ -46,6 +47,7 @@ urlpatterns = [
     # CSRF cookie for SPAs
     path('api/auth/csrf/', csrf_cookie, name='csrf_cookie'),
     # Authentication endpoints
+    path('api/auth/logout/', LogoutView.as_view(), name='rest_logout'),
     path('api/auth/', include('dj_rest_auth.urls')),  # login, logout, user, password reset
     path('api/auth/registration/', include('dj_rest_auth.registration.urls')),  # registration
     path('api/auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),

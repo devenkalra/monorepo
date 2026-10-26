@@ -78,3 +78,35 @@ class LoginPageResumeTests(TestCase):
         self.client.cookies['auth-token'] = str(token)
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
+
+
+class LogoutTests(TestCase):
+    def setUp(self):
+        self.client = Client(enforce_csrf_checks=True)
+        User.objects.create_user(
+            username='logoutuser',
+            email='logoutuser@example.com',
+            password='testpass123',
+        )
+        response = self.client.post(
+            '/api/auth/login/',
+            {'email': 'logoutuser@example.com', 'password': 'testpass123'},
+            content_type='application/json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.access = response.json()['access']
+
+    def assert_logged_out(self, response):
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.client.get('/login/').status_code, 200)
+
+    def test_logout_with_cookies_only_ends_the_session(self):
+        self.assertEqual(self.client.get('/login/').status_code, 302)
+        self.assert_logged_out(self.client.post('/api/auth/logout/'))
+
+    def test_logout_with_expired_bearer_still_ends_the_session(self):
+        token = AccessToken(self.access)
+        token.set_exp(lifetime=timedelta(seconds=-30))
+        self.assert_logged_out(
+            self.client.post('/api/auth/logout/', HTTP_AUTHORIZATION=f'Bearer {token}')
+        )
