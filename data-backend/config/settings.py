@@ -102,6 +102,7 @@ INSTALLED_APPS = [
     'vacation_list.apps.VacationListConfig',
     'trips.apps.TripsConfig',
     'productions.apps.ProductionsConfig',
+    'flightstudio.apps.FlightstudioConfig',
 ]
 
 ENABLE_MAIL_ARCHIVE = os.environ.get('ENABLE_MAIL_ARCHIVE', 'False') == 'True'
@@ -119,6 +120,8 @@ if ENABLE_GMAIL_ASSISTANT:
 # Shared Google OAuth client (login + Gmail API). Gmail redirect is separate.
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
+# Browser Maps JavaScript key for FlightStudio 3D (gmp-map-3d). Restrict by HTTP referrer.
+GOOGLE_MAPS_API_KEY = os.environ.get('GOOGLE_MAPS_API_KEY', '')
 GMAIL_OAUTH_REDIRECT_URI = os.environ.get(
     'GMAIL_OAUTH_REDIRECT_URI',
     'http://localhost:8000/api/gmail/oauth/callback/',

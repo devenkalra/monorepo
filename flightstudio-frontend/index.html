@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FlightStudio</title>
+<link rel="icon" href="./favicon.svg">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body class="mode-2d dock-profile">
+
+<header>
+  <div id="apps-root" class="apps-root"></div>
+  <h1>FlightStudio</h1>
+  <div class="mode-switch" role="group" aria-label="Editor mode">
+    <button type="button" id="mode-sim" data-mode="sim" class="active" title="Camera, systems and simulator playback">Sim</button>
+    <button type="button" id="mode-2d" data-mode="2d" title="Map presentation. Play moves the aircraft on this map and does not talk to the simulator.">2D</button>
+    <button type="button" id="mode-3d" data-mode="3d" title="Photorealistic 3D. Play drives the Google 3D camera along the path.">3D</button>
+  </div>
+  <div id="sim-status" class="pill sim-only">Connecting…</div>
+  <div id="map3d-status" class="pill map3d-only">Google 3D</div>
+  <div id="solve-status" class="pill busy" hidden>Recomputing…</div>
+  <div class="spacer"></div>
+  <label>Path
+    <select id="path-select"></select>
+  </label>
+  <button id="btn-new">New…</button>
+  <button id="btn-table" title="Edit every keyframe in a spreadsheet next to the map">Table</button>
+  <button id="btn-live" class="sim-only" title="Live position and controls of the user aircraft">Live</button>
+  <button id="btn-save">Save</button>
+  <button id="btn-earth-studio" title="Download a Google Earth Studio project (.esp). Drag it into Earth Studio or use File &gt; Import.">Earth Studio</button>
+  <button id="btn-delete" class="danger">Delete</button>
+  <button id="btn-logout" title="Sign out">Sign out</button>
+</header>
+
+<div id="transport">
+  <div class="row">
+    <button id="btn-play" class="primary">Play</button>
+    <button id="btn-pause" title="Hold the take. Click again to continue from here.">Pause</button>
+    <button id="btn-preview" class="sim-only" title="Hold the aircraft and camera at the selected keyframe; edits move them in the sim immediately">Preview</button>
+    <button id="btn-record" class="sim-only" title="Play From–To at Speed. Starts and stops NVIDIA recording (Alt+F9) on the simulator; files go to Videos\NVIDIA.">Record</button>
+    <button id="btn-stop">Stop</button>
+    <label class="inline"><input type="checkbox" id="opt-loop"> Loop</label>
+    <div class="row small segment">
+      <label class="inline" title="Play from this time. Blank starts at the beginning.">From
+        <input type="number" id="seg-from" min="0" step="0.1" placeholder="start"></label>
+      <button id="seg-from-set" class="mini" title="Set From to the slider's time">⇤</button>
+      <label class="inline" title="Stop at this time. Blank plays to the end.">To
+        <input type="number" id="seg-to" min="0" step="0.1" placeholder="end"></label>
+      <button id="seg-to-set" class="mini" title="Set To to the slider's time">⇥</button>
+      <button id="seg-clear" class="mini" title="Play the whole path">×</button>
+      <label class="inline" title="How fast path time runs during pose-injection playback. Autopilot flights stay at real time.">Speed
+        <select id="play-speed">
+          <option value="0.25">¼×</option>
+          <option value="0.5">½×</option>
+          <option value="1" selected>1×</option>
+          <option value="2">2×</option>
+          <option value="4">4×</option>
+        </select>
+      </label>
+      <label class="inline map2d-only" title="How often the 2D map is drawn. 30 fps matches a typical video recording: one map frame per recorded frame.">Rate
+        <select id="map2d-fps">
+          <option value="0" selected>Display</option>
+          <option value="24">24 fps</option>
+          <option value="30">30 fps</option>
+          <option value="60">60 fps</option>
+        </select>
+      </label>
+    </div>
+    <span class="spacer"></span>
+    <span id="clock">0.0 / 0.0 s</span>
+    <span id="playback-state">IDLE</span>
+    <span id="playback-fps"></span>
+  </div>
+  <p class="hint blocked" id="play-blocked" hidden></p>
+  <p class="hint program-banner" id="program-banner" hidden>
+    Segment program — <b>Start</b> moves the origin; Add places Line / Arc /
+    Hermite / MoveTo by map click (Spline appends). Use the <b>Camera</b> tab
+    to add cinematic keys anchored to a segment.
+  </p>
+  <input type="range" id="scrub" min="0" max="1" step="0.01" value="0">
+</div>
+
+<main>
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div id="map3d-wrap" aria-hidden="true">
+      <div id="map3d-host"></div>
+      <div id="map3d-mini" hidden><div id="map3d-mini-map"></div></div>
+      <p id="map3d-banner" class="map3d-banner" hidden></p>
+    </div>
+    <div id="map-solving" hidden>
+      <span class="spinner" aria-hidden="true"></span>
+      Recomputing path…
+    </div>
+    <div id="pathadd-map-bar" hidden>
+      <span class="seg-label">Add segment</span>
+      <button type="button" data-pathadd="straight" title="Click the end. A straight 3D chord from the selected waypoint.">Straight</button>
+      <button type="button" data-pathadd="arc" title="Click the map to add a circular arc from the selected waypoint.">Arc</button>
+      <button type="button" data-pathadd="hermite" title="Click the end. Editable Hermite handles are placed along the chord.">Hermite</button>
+      <button type="button" data-pathadd="bspline" title="Click the end of a cubic B-spline span from the selected waypoint.">B-spline</button>
+    </div>
+    <div id="program-add-map-bar" hidden>
+      <span class="seg-label">Add segment</span>
+      <button type="button" data-program-add="LINE_TO">Line</button>
+      <button type="button" data-program-add="ARC">Arc</button>
+      <button type="button" data-program-add="HERMITE">Hermite</button>
+      <button type="button" data-program-add="MOVE_TO">MoveTo</button>
+      <button type="button" data-program-add="SPLINE">Spline</button>
+    </div>
+  </div>
+
+  <aside>
+    <section id="diagnostics" class="sim-only"></section>
+
+    <section id="shot-section" class="collapsed">
+      <div class="row">
+        <button type="button" id="shot-toggle" aria-expanded="false" title="Show shot and view settings">Shot</button>
+        <label class="inline">Duration
+          <input type="number" id="meta-duration" min="2" max="3600" step="1"> s
+        </label>
+        <span class="spacer"></span>
+        <label class="inline" title="Center the map on the aircraft as it moves."><input type="checkbox" id="opt-follow" checked> Follow</label>
+      </div>
+      <div id="shot-body">
+        <div class="row">
+          <label class="inline sim-only">Entity
+            <select id="meta-entity">
+              <option value="USER_AIRCRAFT">User aircraft</option>
+              <option value="AI_PROXY">AI proxy</option>
+            </select>
+          </label>
+          <label class="inline sim-only" title="Local time in the simulator when the take starts. Leave blank to keep whatever the sim is showing.">Time of day
+            <input type="time" id="meta-time-of-day">
+          </label>
+          <label class="inline sim-only" title="Leave the map where you panned it. The aircraft still moves on top."><input type="checkbox" id="opt-lock-map"> Lock map</label>
+          <label class="inline" title="Authored flight dots on the map. Off leaves the path line and the aircraft."><input type="checkbox" id="opt-waypoints" checked> Waypoints</label>
+          <label class="inline map2d-only" title="Foreshorten the aircraft as seen from above: length by pitch, span by bank."><input type="checkbox" id="opt-attitude"> Attitude</label>
+          <label class="inline map2d-only" title="Pixel size of the aircraft icon on the map.">Size
+            <input type="number" id="opt-plane-size" min="12" max="128" step="2" value="34"> px
+          </label>
+          <label class="inline sim-only" title="Camera path, handles and the orange playhead. Off is aircraft only."><input type="checkbox" id="opt-camera" checked> Camera</label>
+        </div>
+        <div class="row map3d-only" id="map3d-overlays" title="What Google draws on top of the photorealistic mesh. Place labels, POIs and road names are one HYBRID layer — 3D has no separate flags for each.">
+          <strong>Overlay</strong>
+          <label class="inline">Google
+            <select id="map3d-google-layer" title="SATELLITE is the mesh only. HYBRID adds place labels, POIs and road names together.">
+              <option value="SATELLITE">None</option>
+              <option value="HYBRID" selected>Labels, POIs &amp; roads</option>
+            </select>
+          </label>
+          <label class="inline" title="Authored flight path drawn on the 3D view."><input type="checkbox" id="map3d-path" checked> Path</label>
+          <label class="inline" title="Small 2D map in the corner showing where the aircraft sits along the whole route."><input type="checkbox" id="map3d-mini-toggle" checked> Minimap</label>
+        </div>
+        <div class="row map2d-only" id="map2d-style" title="Stroke for every flight-path leg. Centre, zoom and rotation keys live on the Map tab.">
+          <strong>Line</strong>
+          <label class="inline">Colour <input type="color" id="map2d-color" value="#4ea1ff"></label>
+          <label class="inline">Width <input type="number" id="map2d-width" min="0.5" max="20" step="0.5" value="3"> px</label>
+          <label class="inline">Opacity <input type="number" id="map2d-opacity" min="5" max="100" step="5" value="95"> %</label>
+          <label class="inline">Dash
+            <select id="map2d-dash">
+              <option value="SOLID">Solid</option>
+              <option value="DASH">Dash</option>
+              <option value="DOT">Dot</option>
+            </select>
+          </label>
+        </div>
+        <div class="row sim-only" title="AUTO bank only. Positions still go through every waypoint. Saved on the path.">
+          <strong>AUTO bank</strong>
+          <label class="inline" title="Passenger-jet envelope. MANUAL keys may exceed this.">Max
+            <input type="number" id="auto-bank-max" min="1" max="90" step="1"> °
+          </label>
+          <label class="inline" title="How fast the wings may roll. 5°/s is a jet; 15°/s chases every knot.">Roll
+            <input type="number" id="auto-bank-roll" min="0.5" max="90" step="0.5"> °/s
+          </label>
+          <label class="inline" title="Gaussian σ on bank versus time. Cover a few knot spacings (about 6 s).">Smooth
+            <input type="number" id="auto-bank-smooth" min="0.1" max="60" step="0.5"> s
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section id="outline-section">
+      <div class="tabs">
+        <button class="tab active" data-track="flight">Flight</button>
+        <button class="tab cinematic-only" data-track="camera">Camera</button>
+        <button class="tab map2d-only" data-track="map" id="tab-map" title="2D map centre, zoom and rotation over time">Map</button>
+        <button class="tab map2d-only" data-track="marks" id="tab-marks" title="Text markers on the 2D map">Marks</button>
+        <button class="tab sim-only" data-track="systems" title="Flaps and landing gear over the shot">Systems</button>
+        <button class="tab sim-only" data-track="controls" title="Let the simulator fly from control inputs">Controls</button>
+      </div>
+      <div id="group-chips" class="group-chips" hidden></div>
+      <div id="keyframe-list"></div>
+      <div class="row" id="bulk-bar" hidden>
+        <button id="btn-group" title="Put the selected waypoints in a named group">Group…</button>
+        <button id="btn-move" title="Move the selection by an offset or to an absolute position">Move…</button>
+        <button id="btn-retime" title="Shift the selection in time">Time…</button>
+        <button id="btn-redistribute" title="Place selected waypoints along the line from the first to the last">First → last</button>
+      </div>
+      <div class="row">
+        <button id="btn-add">Add keyframe</button>
+        <button id="btn-orbit" class="cinematic-only" hidden title="Fill cinematic keyframes with a level orbit around the aircraft">Orbit…</button>
+        <button id="btn-draw" title="Click the map repeatedly to lay down a path">Draw</button>
+        <span id="pathadd-seg-bar" hidden>
+          <span class="seg-label">Add segment</span>
+          <button type="button" data-pathadd="straight" title="Click the end. A straight 3D chord from the selected waypoint.">Straight</button>
+          <button type="button" data-pathadd="arc" title="Click the map to add a circular arc from the selected waypoint.">Arc</button>
+          <button type="button" data-pathadd="hermite" title="Click the end. Editable Hermite handles are placed along the chord.">Hermite</button>
+          <button type="button" data-pathadd="bspline" title="Click the end of a cubic B-spline span from the selected waypoint.">B-spline</button>
+        </span>
+        <span id="program-add-bar" hidden>
+          <span class="seg-label">Add</span>
+          <button type="button" data-program-add="LINE_TO" title="Insert a line after the selected segment — click the map for the end.">Line</button>
+          <button type="button" data-program-add="ARC" title="Insert a 90° arc after the selected segment — click the map for radius.">Arc</button>
+          <button type="button" data-program-add="HERMITE" title="Insert a Hermite after the selected segment — click the map for the end.">Hermite</button>
+          <button type="button" data-program-add="MOVE_TO" title="Insert a MoveTo cut after the selected segment — click the destination.">MoveTo</button>
+          <button type="button" data-program-add="SPLINE" title="Insert a four-point spline after the selected segment.">Spline</button>
+        </span>
+        <button id="map2d-capture" class="map2d-only" hidden title="Store the current map centre, zoom and rotation at the slider time">Capture view</button>
+        <button id="btn-remove" class="danger">Remove selected</button>
+      </div>
+      <div class="row" id="pathadd-arc-bar" hidden>
+        <label class="inline" title="Start, centre, then a point on the rim. The radius is the start-to-centre distance.">
+          <input type="radio" name="pathadd-arc-mode" value="center" checked> Center-point
+        </label>
+        <label class="inline" title="Start, a through-point, then the end. The unique circle through those three points.">
+          <input type="radio" name="pathadd-arc-mode" value="through"> Point-point
+        </label>
+        <label class="inline" title="Click a point on the circle, then where the arc should end. The end click is snapped onto the circle and does not change the radius.">
+          <input type="radio" name="pathadd-arc-mode" value="tangent"> Start-tangent
+        </label>
+      </div>
+      <div class="row" id="smooth-timing-row">
+        <button id="btn-smooth-timing" title="Move waypoint times so speed changes gradually. Positions, altitudes and the first and last times stay.">Smooth timing</button>
+        <select id="smooth-window" title="Speed changes shorter than this are evened out; longer ones are kept">
+          <option value="5">over 5 s</option>
+          <option value="10" selected>over 10 s</option>
+          <option value="20">over 20 s</option>
+          <option value="30">over 30 s</option>
+        </select>
+      </div>
+      <p class="hint" id="add-hint"></p>
+    </section>
+
+    <div id="inspector-split" role="separator" aria-orientation="horizontal" title="Drag to resize the inspector"></div>
+    <section id="inspector"></section>
+  </aside>
+</main>
+
+<footer>
+  <div id="dock-bar">
+    <div class="tabs dock-tabs">
+      <button type="button" id="dock-profile" class="active">Profile</button>
+      <button type="button" id="dock-table">Table</button>
+    </div>
+    <div id="profile-tools">
+      <span id="profile-range">whole flight</span>
+      <span class="spacer"></span>
+      <button id="profile-out" class="mini" title="Widen the time window">−</button>
+      <button id="profile-in" class="mini" title="Narrow the time window">+</button>
+      <button id="profile-fit" class="mini" title="Show the whole flight">Fit</button>
+      <button id="profile-seg" class="mini" title="Fill the profile with the play From–To range">From–To</button>
+    </div>
+    <div id="table-tools" hidden>
+      <div class="tabs">
+        <button class="table-tab active" data-track="flight">Flight</button>
+        <button class="table-tab cinematic-only" data-track="camera">Camera</button>
+        <button class="table-tab sim-only" data-track="systems">Systems</button>
+        <button class="table-tab sim-only" data-track="controls">Controls</button>
+      </div>
+      <span class="spacer"></span>
+      <button id="tbl-add">Add row</button>
+      <button id="tbl-orbit" hidden title="Fill cinematic keyframes with a level orbit around the aircraft">Orbit…</button>
+      <button id="tbl-copy" title="Copy every row as tab-separated text">Copy</button>
+      <button id="tbl-paste" title="Replace the rows from tab- or comma-separated text">Paste…</button>
+    </div>
+  </div>
+  <canvas id="profile" height="150"></canvas>
+  <div id="table-dock" hidden>
+    <p class="hint" id="tbl-hint"></p>
+    <div id="tbl-diagnostics"></div>
+    <div class="table-scroll"><table id="tbl"></table></div>
+  </div>
+</footer>
+
+<dialog id="geo-picker-dialog">
+  <form method="dialog" id="geo-picker-form">
+    <h2>Find a place</h2>
+    <p class="hint">Search by name or address, then pick one result — or cancel
+      to leave the coordinates unchanged.</p>
+    <label class="geo-picker-query">Place
+      <span>
+        <input id="geo-picker-q" type="search" placeholder="Name or address"
+               autocomplete="off">
+        <button type="button" id="geo-picker-find">Search</button>
+      </span>
+    </label>
+    <p class="hint" id="geo-picker-status"></p>
+    <div id="geo-picker-hits" class="geo-picker-hits" hidden></div>
+    <menu>
+      <button type="button" id="geo-picker-cancel">Cancel</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="new-dialog">
+  <form method="dialog">
+    <h2>New path</h2>
+    <label>Name <input id="new-id" value="shot-1" required
+                       pattern="[A-Za-z0-9][A-Za-z0-9._\-]*"></label>
+    <label>Kind
+      <select id="new-kind">
+        <option value="waypoint">Waypoint path</option>
+        <option value="program">Segment program (demo)</option>
+      </select>
+    </label>
+    <label id="new-demo-row" hidden>Demo
+      <select id="new-demo">
+        <option value="figure-eight">Figure eight</option>
+        <option value="circuit">Circuit</option>
+        <option value="cut">Cut (MoveTo)</option>
+        <option value="hermite">Hermite S-bend</option>
+        <option value="spline">Spline coast</option>
+      </select>
+    </label>
+    <label>Location <select id="new-location"></select></label>
+    <label>Duration <input id="new-duration" type="number" value="36" min="2" max="3600"> s</label>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button value="create" class="primary">Create</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="orbit-dialog">
+  <form method="dialog">
+    <h2>Orbit the aircraft</h2>
+    <p class="hint">Writes cinematic keyframes for a level drone circling the
+      aircraft. The sim has no drone API; this is the cinematic camera.
+      A cockpit keyframe in the range blocks it.</p>
+    <label>From <input id="orbit-from" type="number" min="0" step="0.1"> s</label>
+    <label>To <input id="orbit-to" type="number" min="0" step="0.1"> s</label>
+    <label>Radius <input id="orbit-radius" type="number" value="80" min="1" max="1000" step="5"> m</label>
+    <label>Height <input id="orbit-height" type="number" value="15" step="1"> m</label>
+    <label>Look at
+      <select id="orbit-look">
+        <option value="CG">Centre of gravity</option>
+        <option value="NOSE">Nose</option>
+        <option value="TAIL">Tail</option>
+        <option value="COCKPIT">Cockpit</option>
+      </select>
+    </label>
+    <label>Speed <input id="orbit-speed" type="number" value="12" min="0.1" max="180" step="1"> °/s</label>
+    <label>Direction
+      <select id="orbit-dir">
+        <option value="CW">Clockwise (aft → right wing)</option>
+        <option value="CCW">Counter-clockwise (aft → left wing)</option>
+      </select>
+    </label>
+    <label>Start azimuth <input id="orbit-az" type="number" value="0" step="5"> °</label>
+    <label>Field of view <input id="orbit-fov" type="number" min="2" max="179" step="1" placeholder="sim default"></label>
+    <p class="hint">Azimuth 0 is aft, 90 the right wing, 180 off the nose.
+      Height is world-up from the CG (negative is below). Speed is constant.</p>
+    <p class="hint blocked" id="orbit-error" hidden></p>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button type="button" id="orbit-apply" class="primary">Apply</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="views-dialog">
+  <form method="dialog">
+    <h2>Name cockpit views</h2>
+    <p class="hint"><strong id="views-aircraft"></strong></p>
+    <p class="hint" id="views-live"></p>
+    <div class="views-columns">
+      <section>
+        <h3>Instrument</h3>
+        <div id="views-instrument" class="views-list"></div>
+        <button type="button" id="views-add-instrument" class="small">Add another</button>
+      </section>
+      <section>
+        <h3>Quickview</h3>
+        <div id="views-quickview" class="views-list"></div>
+        <button type="button" id="views-add-quickview" class="small">Add another</button>
+      </section>
+      <section>
+        <h3>Custom (Ctrl+Alt+0–9)</h3>
+        <div id="views-custom" class="views-list"></div>
+      </section>
+    </div>
+    <p class="hint">Numbers are the sim's own, starting at 0. Pick each view in the
+      simulator to see which is which, then name it here. Custom slots show what the
+      sim saved in them; a name is optional. Names are kept per aircraft.</p>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button value="save" class="primary">Save names</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="group-dialog">
+  <form method="dialog">
+    <h2>Group waypoints</h2>
+    <p class="hint" id="group-count"></p>
+    <label>Existing
+      <select id="group-existing">
+        <option value="">New group</option>
+      </select>
+    </label>
+    <label>Name <input id="group-name" placeholder="Approach"></label>
+    <label>Colour <input id="group-color" type="color" value="#4ea1ff"></label>
+    <p class="hint">A waypoint belongs to one group. Assigning here removes it from any other.</p>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button type="button" id="group-dissolve" class="danger">Ungroup</button>
+      <button type="button" id="group-apply" class="primary">Apply</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="move-dialog">
+  <form method="dialog">
+    <h2>Move selection</h2>
+    <label class="inline"><input type="radio" name="move-mode" value="relative" checked> Relative</label>
+    <label class="inline"><input type="radio" name="move-mode" value="absolute"> Absolute</label>
+    <p class="hint" id="move-relative-hint">Rigid offset of every selected waypoint. Metres on the ground, feet of altitude.</p>
+    <p class="hint" id="move-absolute-hint" hidden>Set every selected waypoint to these values. Ignored fields are left as they are.</p>
+    <div id="move-relative-fields">
+      <label>North <input id="move-north" type="number" step="10" value="0"> m</label>
+      <label>East <input id="move-east" type="number" step="10" value="0"> m</label>
+      <label>Altitude <input id="move-rel-alt" type="number" step="10" value="0"> ft</label>
+    </div>
+    <div id="move-absolute-fields" hidden>
+      <div class="move-row">
+        <label class="inline"><input type="checkbox" id="move-ignore-lat" checked> Ignore</label>
+        <label>Latitude <input id="move-lat" type="number" step="0.000001"></label>
+      </div>
+      <div class="move-row">
+        <label class="inline"><input type="checkbox" id="move-ignore-lon" checked> Ignore</label>
+        <label>Longitude <input id="move-lon" type="number" step="0.000001"></label>
+      </div>
+      <div class="move-row">
+        <label class="inline"><input type="checkbox" id="move-ignore-alt"> Ignore</label>
+        <label>Altitude <input id="move-abs-alt" type="number" step="10"> ft</label>
+      </div>
+    </div>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button type="button" id="move-apply" class="primary">Move</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="retime-dialog">
+  <form method="dialog">
+    <h2>Translate time</h2>
+    <label class="inline"><input type="radio" name="retime-mode" value="by" checked> By</label>
+    <label class="inline"><input type="radio" name="retime-mode" value="to"> To (earliest becomes)</label>
+    <label>Seconds <input id="retime-seconds" type="number" step="0.1" value="0"></label>
+    <p class="hint" id="retime-warn" hidden></p>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button type="button" id="retime-apply" class="primary">Apply</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="redistribute-dialog">
+  <form method="dialog">
+    <h2>First → last</h2>
+    <p class="hint">Place the selected waypoints on the geodesic from the earliest to the latest. Endpoints stay put.</p>
+    <label>Spacing
+      <select id="redistribute-mode">
+        <option value="keep-times">Keep times — only positions change</option>
+        <option value="even-distance">Even distance — equal ground spacing</option>
+        <option value="even-time">Even time — equal Δt, positions on the line</option>
+      </select>
+    </label>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button type="button" id="redistribute-apply" class="primary">Apply</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="paste-dialog">
+  <form method="dialog">
+    <h2>Paste rows</h2>
+    <p class="hint" id="paste-hint"></p>
+    <textarea id="paste-text" rows="12" spellcheck="false"></textarea>
+    <label class="inline"><input type="checkbox" id="paste-replace" checked> Replace existing rows</label>
+    <menu>
+      <button value="cancel">Cancel</button>
+      <button value="apply" class="primary">Apply</button>
+    </menu>
+  </form>
+</dialog>
+
+<div id="live-panel" class="sim-only" hidden>
+  <div class="live-head" id="live-head">
+    <strong>Live</strong>
+    <span id="live-source" class="live-source"></span>
+    <span class="spacer"></span>
+    <button id="live-close" title="Close">×</button>
+  </div>
+  <div id="live-body"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
+<script src="./shell.js"></script>
+<script src="./programFields.js"></script>
+<script src="./app.js"></script>
+<script src="./programEdit.js"></script>
+<script src="./waypoints.js"></script>
+<script src="./pathadd.js"></script>
+<script src="./pathlegs.js"></script>
+<script src="./map2d.js"></script>
+<script src="./map3d.js"></script>
+<script src="./simflight.js"></script>
+<script src="./autofly.js"></script>
+<script src="./table.js"></script>
+<script src="./live.js"></script>
+</body>
+</html>
