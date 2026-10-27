@@ -8,6 +8,8 @@ google-api-python-client>=2.150.0
 google-auth>=2.35.0
 google-auth-httplib2>=0.2.0
 openai>=1.50.0
+phonenumbers>=8.13.0
+requests>=2.32.0
 Pillow==11.3.0
 mutagen==1.47.0
 youtube-transcript-api>=1.0.0

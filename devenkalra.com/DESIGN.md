@@ -187,7 +187,31 @@ Ported from `lister` inventory domain:
 - Legacy boxes were converted into nested areas (migration `0003`)
 - Requires **Pillow** for `ImageField`
 
-### 3.9 Other structured content
+### 3.9 Email Processor (`email_processor`)
+
+Single-user Gmail automation (PRD: `emailhandler.md`):
+
+| Model | Role |
+|-------|------|
+| `MailboxAccount` | OAuth mailbox (refresh token, `historyId`, watch expiry) |
+| `EmailMessage` | Synced message metadata + processing status |
+| `Classification` | OpenAI (or alias-bypass) intent JSON |
+| `WorkflowRun` | ClickUp / Static Files / archive outcomes |
+| `EmailJob` | SQLite-backed job queue for in-process worker thread |
+| `CommandSession` | Prompt-to-Select number→gmail_id map with TTL (SQLite stand-in for Redis) |
+
+- API (Token + **superuser role**): `/api/email/mailbox|messages|runs|command/`, OAuth start/callback, Pub/Sub push
+- SPA: slug `email-processor` → `EmailProcessorApp` (Command Center + review queue + sync)
+- Seed: `backend/add_email_processor_page.py`
+- Env: see `.env.template` (`EMAIL_*`, OpenAI, Pub/Sub topic, ClickUp list/field IDs, `EMAIL_COMMAND_SESSION_TTL`)
+- Auto path never deletes mail; Command Center trash requires explicit confirm
+- Worker: daemon thread in the web process (`EMAIL_WORKER_ENABLED`)
+- Command Center (`email_processor/command_center.py`): NL → Gmail `messages.list` → numbered list → batch archive/trash/read via Gmail batch APIs
+- Deterministic selection API: `POST /api/email/command/selection/` with `thread_ids` (+ optional `label_id`/`label_name`); SPA checkboxes support select-all and Shift+click ranges
+- Selection `summarize`: fetch full Gmail bodies for selected messages and return an ephemeral AI summary (max 10)
+- Saved searches: `SavedSearch` model + `/api/email/saved-searches/` (per-user, cross-device; optional `label`)
+
+### 3.10 Other structured content
 
 | Model | Typical use |
 |-------|-------------|
@@ -197,7 +221,7 @@ Ported from `lister` inventory domain:
 | `StaticFile` | Uploads or fetch-from-URL → `/api/media/` |
 | `PageData` | JSON blob keyed by `page_slug` (e.g. exercise planner) |
 
-### 3.10 Image Search (`image_search` app)
+### 3.11 Image Search (`image_search` app)
 
 Bing Image Search API is retired and browsers cannot call Bing (CORS), so the server fetches Bing's public `images/async` HTML and extracts result cards. Logged-in users only.
 
@@ -221,6 +245,7 @@ After rendering page content, `PageView.jsx` mounts React apps by **page slug**:
 | `notes` | Notes folder tree + editor |
 | `vacation-list` | Packing lists (`vacation_list`) |
 | `asset-manager` | Physical inventory (`asset_manager`) |
+| `email-processor` | Gmail classify / review / workflows |
 | `music-library` | NAS audio catalog (`audio_library`) |
 | `image-search` | Bing image search (`image_search`) |
 | `creative-projects` | ClickUp-backed projects |
@@ -270,6 +295,7 @@ Base: `/api/`. Interactive docs: `/api/docs/` (schema `/api/schema/`).
 | Analytics | `POST /analytics/events/` (page views; anonymous OK) |
 | Vacation | `/vacation/tags|categories|items|lists|list-items/` (auth) |
 | Assets | `/assets/categories|tags|areas|items/` (auth) |
+| Email | `/email/mailbox|messages|runs/`, OAuth, Pub/Sub (superuser) |
 | PageData | `GET\|POST /page-data/<slug>/` |
 | Catalogs | `/projects/`, `/ideas/`, `/books/`, `/tracks/`, `/recipes/` |
 | Blog | `/blog/categories|tags|posts/`, comments |

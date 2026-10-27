@@ -74,6 +74,20 @@ EMAIL_CLICKUP_SENDER_FIELD_ID = os.environ.get('EMAIL_CLICKUP_SENDER_FIELD_ID', 
 EMAIL_CONFIDENCE_AUTO = float(os.environ.get('EMAIL_CONFIDENCE_AUTO', '0.85'))
 EMAIL_COMMAND_SESSION_TTL = int(os.environ.get('EMAIL_COMMAND_SESSION_TTL', '3600'))
 
+# Contacts sync (Google / LinkedIn / WhatsApp -> ClickUp Contacts list)
+CONTACTS_CLICKUP_TOKEN = os.environ.get('CONTACTS_CLICKUP_TOKEN', '') or CLICKUP_API_TOKEN
+CONTACTS_CLICKUP_LIST_ID = os.environ.get('CONTACTS_CLICKUP_LIST_ID', '')
+CONTACTS_CLICKUP_ORGS_LIST_ID = os.environ.get('CONTACTS_CLICKUP_ORGS_LIST_ID', '')
+# Off by default: only dry runs (previews) are possible until this is set to 1.
+CONTACTS_CLICKUP_WRITES_ENABLED = os.environ.get('CONTACTS_CLICKUP_WRITES_ENABLED', '').lower() in ('1', 'true', 'yes')
+CONTACTS_PLAN_MAX_AGE_HOURS = float(os.environ.get('CONTACTS_PLAN_MAX_AGE_HOURS', '24'))
+CONTACTS_WORKER_ENABLED = os.environ.get('CONTACTS_WORKER_ENABLED', '1').lower() in ('1', 'true', 'yes')
+CONTACTS_OAUTH_REDIRECT_URI = os.environ.get('CONTACTS_OAUTH_REDIRECT_URI', '')
+CONTACTS_GOOGLE_CLIENT_ID = os.environ.get('CONTACTS_GOOGLE_CLIENT_ID', '')
+CONTACTS_GOOGLE_CLIENT_SECRET = os.environ.get('CONTACTS_GOOGLE_CLIENT_SECRET', '')
+# Uploads and pre-run snapshots hold personal data; keep them out of MEDIA_ROOT (publicly served).
+CONTACTS_DATA_DIR = Path(os.environ.get('CONTACTS_DATA_DIR', '') or BASE_DIR / 'contacts_data')
+
 
 
 # Quick-start development settings - unsuitable for production
@@ -98,6 +112,8 @@ INSTALLED_APPS = [
     'core',  # Placed first to allow overriding admin templates
     'vacation_list',
     'asset_manager',
+    'email_processor.apps.EmailProcessorConfig',
+    'contacts.apps.ContactsConfig',
     'audio_library.apps.AudioLibraryConfig',
     'image_search.apps.ImageSearchConfig',
     'django.contrib.admin',
@@ -219,6 +235,7 @@ SPECTACULAR_SETTINGS = {
         {'name': 'clickup', 'description': 'ClickUp integrations'},
         {'name': 'vacation-list', 'description': 'Packing lists (Vac* models)'},
         {'name': 'asset-manager', 'description': 'Physical asset inventory'},
+        {'name': 'email-processor', 'description': 'Gmail automation & review queue'},
         {'name': 'audio-library', 'description': 'NAS audio catalog and signed streams'},
         {'name': 'image-search', 'description': 'Authenticated Bing image search, size/quality probes, and downloads'},
     ],

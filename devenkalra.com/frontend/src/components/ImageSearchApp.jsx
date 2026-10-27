@@ -118,29 +118,50 @@ function takeUnique(batch, seen) {
   return unique;
 }
 
+function knownNonneg(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
 function matches(item, f) {
-  if (f.minW != null && item.width < f.minW) return false;
-  if (f.minH != null && item.height < f.minH) return false;
-  if (f.maxW != null && item.width > f.maxW) return false;
-  if (f.maxH != null && item.height > f.maxH) return false;
-  const sizeFilter = f.minKb != null || f.maxKb != null;
-  if (sizeFilter) {
-    if (!(item.bytes > 0)) return false;
+  // Pending/unknown metrics must not exclude an image. Only fail when a
+  // probed value is known and outside the range (bytes < 0 and quality
+  // score < 0 mean "checked, n/a").
+  if (f.minW != null && knownNonneg(item.width) && item.width < f.minW) return false;
+  if (f.minH != null && knownNonneg(item.height) && item.height < f.minH) return false;
+  if (f.maxW != null && knownNonneg(item.width) && item.width > f.maxW) return false;
+  if (f.maxH != null && knownNonneg(item.height) && item.height > f.maxH) return false;
+  if (knownNonneg(item.bytes)) {
     const kb = item.bytes / 1024;
     if (f.minKb != null && kb < f.minKb) return false;
     if (f.maxKb != null && kb > f.maxKb) return false;
   }
-  const qualityFilter =
-    f.minQuality != null || f.minSharp != null || f.minContrast != null || f.minExposure != null;
-  if (qualityFilter) {
-    const q = item.quality;
-    if (!q || !(q.score >= 0)) return false;
+  const q = item.quality;
+  if (q && q.score >= 0) {
     if (f.minQuality != null && q.score < f.minQuality) return false;
-    if (f.minSharp != null && q.sharpness < f.minSharp) return false;
-    if (f.minContrast != null && q.contrast < f.minContrast) return false;
-    if (f.minExposure != null && q.exposure < f.minExposure) return false;
+    if (f.minSharp != null && knownNonneg(q.sharpness) && q.sharpness < f.minSharp) return false;
+    if (f.minContrast != null && knownNonneg(q.contrast) && q.contrast < f.minContrast) return false;
+    if (f.minExposure != null && knownNonneg(q.exposure) && q.exposure < f.minExposure) return false;
   }
   return true;
+}
+
+function applyIngestMetrics(items, batch, sizes, quality) {
+  if (!batch.length || (sizes == null && quality == null)) return items;
+  const inBatch = new Set(batch.map(itemKey).filter(Boolean));
+  return items.map((item) => {
+    if (!inBatch.has(itemKey(item))) return item;
+    let next = item;
+    const url = item.image_url || item.cdn_url;
+    if (sizes) {
+      if (url && sizes[url] != null) next = { ...next, bytes: sizes[url] };
+      else if (next.bytes == null) next = { ...next, bytes: -1 };
+    }
+    if (quality) {
+      if (url && quality[url]) next = { ...next, quality: quality[url] };
+      else if (next.quality == null) next = { ...next, quality: { score: -1 } };
+    }
+    return next;
+  });
 }
 
 function formatBytes(bytes) {
@@ -330,30 +351,22 @@ export function ImageSearchApp() {
   }, [form, token]);
 
   const ingest = useCallback(async (batch, gen, opts = {}) => {
-    if (!batch.length) return;
+    if (!batch.length) return { sizes: null, quality: null };
     const waitSizes = opts.needsSizes ?? needsSizes;
     const waitQuality = opts.needsQuality ?? needsQuality;
     const sizeP = (async () => {
       const urls = batch.map((item) => item.image_url || item.cdn_url).filter(Boolean);
-      if (!urls.length) return;
+      if (!urls.length) return {};
       try {
         const data = await api('sizes/', { token, method: 'POST', body: { urls } });
         const sizes = data.sizes || {};
-        if (gen !== searchGen.current) return;
-        setItems((prev) => prev.map((item) => {
-          if (!batch.some((b) => itemKey(b) === itemKey(item))) return item;
-          const key = item.image_url || item.cdn_url;
-          if (key && sizes[key] != null) return { ...item, bytes: sizes[key] };
-          if (item.bytes == null) return { ...item, bytes: -1 };
-          return item;
-        }));
+        if (gen !== searchGen.current) return sizes;
+        setItems((prev) => applyIngestMetrics(prev, batch, sizes, null));
+        return sizes;
       } catch {
-        if (gen !== searchGen.current) return;
-        setItems((prev) => prev.map((item) => (
-          batch.some((b) => itemKey(b) === itemKey(item)) && item.bytes == null
-            ? { ...item, bytes: -1 }
-            : item
-        )));
+        if (gen !== searchGen.current) return {};
+        setItems((prev) => applyIngestMetrics(prev, batch, {}, null));
+        return {};
       }
     })();
     const qualityP = (async () => {
@@ -365,31 +378,24 @@ export function ImageSearchApp() {
           height: item.height,
         })).filter((row) => row.url),
       };
-      if (!payload.items.length) return;
+      if (!payload.items.length) return {};
       try {
         const data = await api('quality/', { token, method: 'POST', body: payload });
         const quality = data.quality || {};
-        if (gen !== searchGen.current) return;
-        setItems((prev) => prev.map((item) => {
-          const key = item.image_url || item.cdn_url;
-          if (!batch.some((b) => itemKey(b) === itemKey(item))) return item;
-          if (key && quality[key]) return { ...item, quality: quality[key] };
-          if (item.quality == null) return { ...item, quality: { score: -1 } };
-          return item;
-        }));
+        if (gen !== searchGen.current) return quality;
+        setItems((prev) => applyIngestMetrics(prev, batch, null, quality));
+        return quality;
       } catch {
-        if (gen !== searchGen.current) return;
-        setItems((prev) => prev.map((item) => (
-          batch.some((b) => itemKey(b) === itemKey(item)) && item.quality == null
-            ? { ...item, quality: { score: -1 } }
-            : item
-        )));
+        if (gen !== searchGen.current) return {};
+        setItems((prev) => applyIngestMetrics(prev, batch, null, {}));
+        return {};
       }
     })();
-    if (waitSizes) await sizeP;
-    else sizeP.catch(() => {});
-    if (waitQuality) await qualityP;
-    else qualityP.catch(() => {});
+    const sizes = waitSizes ? await sizeP : null;
+    const quality = waitQuality ? await qualityP : null;
+    if (!waitSizes) sizeP.catch(() => {});
+    if (!waitQuality) qualityP.catch(() => {});
+    return { sizes, quality };
   }, [needsQuality, needsSizes, token]);
 
   const fill = useCallback(async (reset, formOverride) => {
@@ -445,7 +451,9 @@ export function ImageSearchApp() {
         setItems(current);
         setOffset(nextOffset);
         setHasMore(more);
-        await ingest(page.batch, gen, ingestOpts);
+        const firstMetrics = await ingest(page.batch, gen, ingestOpts);
+        current = applyIngestMetrics(current, page.batch, firstMetrics.sizes, firstMetrics.quality);
+        setItems(current);
       } else {
         setProgress('Loading more from Bing…');
       }
@@ -465,7 +473,9 @@ export function ImageSearchApp() {
         setItems(current);
         setOffset(nextOffset);
         setHasMore(more);
-        await ingest(page.batch, gen, ingestOpts);
+        const pageMetrics = await ingest(page.batch, gen, ingestOpts);
+        current = applyIngestMetrics(current, page.batch, pageMetrics.sizes, pageMetrics.quality);
+        setItems(current);
         if (!page.batch.length) break;
       }
 
@@ -479,7 +489,9 @@ export function ImageSearchApp() {
         setItems(current);
         setOffset(page.nextOffset);
         setHasMore(page.more);
-        await ingest(page.batch, gen, ingestOpts);
+        const moreMetrics = await ingest(page.batch, gen, ingestOpts);
+        current = applyIngestMetrics(current, page.batch, moreMetrics.sizes, moreMetrics.quality);
+        setItems(current);
       }
       setProgress('');
     } catch (err) {

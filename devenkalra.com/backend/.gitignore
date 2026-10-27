@@ -6,3 +6,12 @@ db.sqlite3
 media/
 _import/
 audio_library/empty/sample/
+
+# Contact sync: OAuth tokens, exports, reports and caches hold personal data.
+contacts_mgmt/*
+!contacts_mgmt/*.py
+!contacts_mgmt/ignore_labels.txt
+contacts_mgmt/*.bak*.py
+contacts_data/
+credentials.json
+token_*.json

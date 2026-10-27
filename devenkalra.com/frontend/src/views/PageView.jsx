@@ -8,6 +8,8 @@ import { NotesApp } from '../components/NotesApp';
 import { NotesPageEditor } from '../components/NotesPageEditor';
 import { VacationListApp } from '../components/VacationListApp';
 import { AssetManagerApp } from '../components/AssetManagerApp';
+import { EmailProcessorApp } from '../components/EmailProcessorApp';
+import { ContactSyncApp } from '../components/ContactSyncApp';
 import { MusicLibraryApp } from '../components/MusicLibraryApp';
 import { ImageSearchApp } from '../components/ImageSearchApp';
 import { MarkdownBody } from '../components/MarkdownBody';
@@ -660,6 +662,14 @@ export const PageView = ({ menuItems }) => {
 
       {activeSlug === 'asset-manager' && (
         <AssetManagerApp />
+      )}
+
+      {activeSlug === 'email-processor' && (
+        <EmailProcessorApp />
+      )}
+
+      {activeSlug === 'contact-sync' && (
+        <ContactSyncApp />
       )}
 
       {activeSlug === 'music-library' && (

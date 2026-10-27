@@ -1,0 +1,5 @@
+# Google contact labels to ignore when syncing to the ClickUp "Groups" field.
+# One per line, case-insensitive. Wildcards: * (anything) and ? (one character). # starts a comment.
+# Ignored labels are never added to Groups and never reported as missing.
+Imported on *
+Imported *
