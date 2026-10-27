@@ -13,6 +13,7 @@ node_modules
 .project
 .classpath
 .env
+.nas-smb-credentials
 .c9/
 *.launch
 .settings/
@@ -74,3 +75,8 @@ venv/
 **/venv/
 **/.venv/
 data-backend/tests/integration/e2e/e2e_api_calls*.md
+
+# Runtime artifacts
+/logs/
+celerybeat-schedule*
+NUL
