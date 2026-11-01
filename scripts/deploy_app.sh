@@ -134,6 +134,7 @@ data-backend/gmail_assistant
 data-backend/gallery
 data-backend/vacation_list
 data-backend/trips
+data-backend/productions
 data-backend/static
 data-backend/requirements.txt
 data-backend/Dockerfile
@@ -147,6 +148,7 @@ gmail-frontend
 gallery-frontend
 vacation-frontend
 trip-frontend
+video-frontend
 shared-frontend
 scripts/deploy_app.sh
 EOF
