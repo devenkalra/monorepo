@@ -174,25 +174,6 @@ textarea:-webkit-autofill:focus {
   flex: 0 1 8rem;
   min-width: 6.5rem;
 }
-.prod-read-cues {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  margin-top: 0.5rem;
-}
-.prod-read-cues h3 {
-  margin: 0 0 0.2rem;
-  font-size: 0.75rem;
-  font-weight: 650;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-.prod-read-cues p {
-  margin: 0;
-  width: 100%;
-  white-space: pre-wrap;
-  line-height: 1.45;
-}
 .prod-view-toggle {
   display: inline-flex;
   flex-wrap: wrap;
@@ -257,6 +238,66 @@ textarea:-webkit-autofill:focus {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+.prod-teleprompter-scene {
+  padding: 0.15rem 0 1.05rem;
+}
+.prod-teleprompter-scene + .prod-teleprompter-scene {
+  border-top: 1px solid var(--border-color);
+  padding-top: 1.05rem;
+}
+.prod-teleprompter-scene h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.prod-teleprompter-visuals {
+  margin: 0 0 0.6rem;
+  padding: 0.35rem 0.6rem;
+  border-left: 3px solid var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-style: italic;
+}
+.prod-teleprompter-voiceover {
+  font-size: 1.15em;
+  line-height: 1.6;
+}
+.prod-md > :first-child { margin-top: 0; }
+.prod-md > :last-child { margin-bottom: 0; }
+.prod-md p, .prod-md ul, .prod-md ol, .prod-md blockquote, .prod-md pre, .prod-md table {
+  margin: 0 0 0.6em;
+}
+.prod-md h1, .prod-md h2, .prod-md h3, .prod-md h4 {
+  margin: 0.8em 0 0.4em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.prod-md h1 { font-size: 1.5em; }
+.prod-md h2 { font-size: 1.3em; }
+.prod-md h3 { font-size: 1.15em; }
+.prod-md ul { list-style: disc; padding-left: 1.4em; }
+.prod-md ol { list-style: decimal; padding-left: 1.4em; }
+.prod-md li + li { margin-top: 0.2em; }
+.prod-md strong { font-weight: 700; }
+.prod-md em { font-style: italic; }
+.prod-md a { color: var(--accent-color); text-decoration: underline; }
+.prod-md blockquote {
+  padding-left: 0.75em;
+  border-left: 3px solid var(--border-color);
+}
+.prod-md code {
+  padding: 0.05em 0.3em;
+  border-radius: 0.2rem;
+  background: rgba(0, 0, 0, 0.06);
+  font-size: 0.9em;
+}
+.prod-md pre code { display: block; padding: 0.5em; overflow-x: auto; }
+.prod-md hr { margin: 0.8em 0; border: 0; border-top: 1px solid var(--border-color); }
+.prod-md table { border-collapse: collapse; }
+.prod-md th, .prod-md td { padding: 0.2em 0.5em; border: 1px solid var(--border-color); }
 .prod-times {
   display: flex;
   align-items: flex-end;
@@ -305,6 +346,10 @@ textarea:-webkit-autofill:focus {
 .prod-cues-script {
   grid-template-columns: minmax(0, 3fr) minmax(0, 7fr);
   align-items: start;
+}
+.prod-cues-script.is-voiceover-only {
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0;
 }
 .prod-cues label, .prod-scene-top label, .prod-header-grid label, .prod-notes-label, .prod-modal label {
   display: block;

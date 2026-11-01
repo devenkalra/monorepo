@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useAuth } from '../contexts/AuthContext';
 import { getLoginUrl } from '../utils/apiUrl';
 import api from '../services/api';
@@ -39,15 +41,21 @@ const ASSET_STATUSES = [
 ];
 const SCENE_VIEW_STORAGE_KEY = 'productions-scene-view';
 const SCENE_VIEWS = [
+  { value: 'full', label: 'Full' },
+  { value: 'script', label: 'Script' },
   { value: 'compact', label: 'Compact' },
-  { value: 'dialogue', label: 'Dialogue' },
-  { value: 'expanded', label: 'Expanded' },
+  { value: 'hidden', label: 'Hide all' },
 ];
+const LEGACY_SCENE_VIEWS = { expanded: 'full', dialogue: 'script' };
+const COLLAPSED_SCENE_VIEWS = new Set(['compact', 'hidden']);
 const FLAT_FIELDS_STORAGE_KEY = 'productions-flat-fields';
+const TELEPROMPTER_OPTIONS_STORAGE_KEY = 'productions-teleprompter-options';
+const DEFAULT_TELEPROMPTER_OPTIONS = { showTitle: true, showVisuals: true };
 
 function readSceneView() {
-  const value = localStorage.getItem(SCENE_VIEW_STORAGE_KEY);
-  return SCENE_VIEWS.some((view) => view.value === value) ? value : 'expanded';
+  const stored = localStorage.getItem(SCENE_VIEW_STORAGE_KEY);
+  const value = LEGACY_SCENE_VIEWS[stored] || stored;
+  return SCENE_VIEWS.some((view) => view.value === value) ? value : 'full';
 }
 
 function readFlatFields() {
@@ -102,6 +110,16 @@ function fitTextarea(el) {
   if (!el) return;
   el.style.height = 'auto';
   el.style.height = `${el.scrollHeight}px`;
+}
+
+function fitTextareaPair(a, b) {
+  fitTextarea(a);
+  fitTextarea(b);
+  // Only equalize when side by side; stacked on narrow screens each keeps its own height.
+  if (!a || !b || a.offsetTop !== b.offsetTop) return;
+  const height = `${Math.max(a.scrollHeight, b.scrollHeight)}px`;
+  a.style.height = height;
+  b.style.height = height;
 }
 
 function Icon({ name }) {
@@ -160,14 +178,14 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
   }, [scene]);
 
   useLayoutEffect(() => {
-    const resize = () => {
-      fitTextarea(visualsRef.current);
-      fitTextarea(voiceoverRef.current);
-    };
+    const resize = () => fitTextareaPair(visualsRef.current, voiceoverRef.current);
     resize();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
-  }, [draft.visuals, draft.voiceover]);
+  }, [draft.visuals, draft.voiceover, collapsed, viewMode]);
+
+  const showDetails = viewMode === 'full' || viewMode === 'hidden';
+  const scriptOnly = viewMode === 'script';
 
   const saveField = async (field, value) => {
     if ((scene[field] || '') === (value || '')) return;
@@ -193,6 +211,7 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
       onDrop={onDrop}
       onDragEnd={onDragEnd}
     >
+      {!scriptOnly && (
       <div className="prod-scene-top">
         <button
           type="button"
@@ -220,7 +239,7 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
             onBlur={(event) => saveField('title', event.target.value)}
           />
         </label>
-        {viewMode === 'expanded' && (
+        {showDetails && (
           <label className="prod-scene-type">
             Type
             <input
@@ -234,6 +253,7 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
             />
           </label>
         )}
+        {!scriptOnly && (
         <div className="prod-times" role="group" aria-label="Scene timing">
           <label>
             Start
@@ -250,7 +270,7 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
               onBlur={(event) => saveField('duration', event.target.value)}
             />
           </label>
-          {viewMode === 'expanded' && (
+          {showDetails && (
             <label>
               End
               <input
@@ -264,6 +284,7 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
             </label>
           )}
         </div>
+        )}
         <div className="prod-scene-actions">
           <button
             type="button"
@@ -286,20 +307,10 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
           </button>
         </div>
       </div>
-      {!collapsed && viewMode === 'dialogue' && (
-        <div className="prod-read-cues">
-          <section>
-            <h3>Visuals &amp; B-Roll</h3>
-            <p>{(scene.visuals || '').trim() || '—'}</p>
-          </section>
-          <section>
-            <h3>Voiceover &amp; Dialogue</h3>
-            <p>{(scene.voiceover || '').trim() || '—'}</p>
-          </section>
-        </div>
       )}
-      {!collapsed && viewMode !== 'dialogue' && (
-        <div className="prod-cues prod-cues-script">
+      {!collapsed && (
+        <div className={`prod-cues prod-cues-script${scriptOnly ? ' is-voiceover-only' : ''}`}>
+          {!scriptOnly && (
           <label>
             Visuals &amp; B-Roll
             <textarea
@@ -308,31 +319,27 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
               autoComplete="off"
               name={`scene-visuals-${scene.id}`}
               value={draft.visuals || ''}
-              onChange={(event) => {
-                setDraft((prev) => ({ ...prev, visuals: event.target.value }));
-                fitTextarea(event.target);
-              }}
+              onChange={(event) => setDraft((prev) => ({ ...prev, visuals: event.target.value }))}
               onBlur={(event) => saveField('visuals', event.target.value)}
             />
           </label>
+          )}
           <label>
-            Voiceover &amp; Dialogue
+            {!scriptOnly && 'Voiceover & Dialogue'}
             <textarea
               ref={voiceoverRef}
               className="prod-grow"
+              aria-label="Voiceover & Dialogue"
               autoComplete="off"
               name={`scene-voiceover-${scene.id}`}
               value={draft.voiceover || ''}
-              onChange={(event) => {
-                setDraft((prev) => ({ ...prev, voiceover: event.target.value }));
-                fitTextarea(event.target);
-              }}
+              onChange={(event) => setDraft((prev) => ({ ...prev, voiceover: event.target.value }))}
               onBlur={(event) => saveField('voiceover', event.target.value)}
             />
           </label>
         </div>
       )}
-      {!collapsed && viewMode !== 'dialogue' && (
+      {!collapsed && !scriptOnly && (
       <button
         type="button"
         className={`prod-more${moreOpen ? ' is-open' : ''}`}
@@ -343,7 +350,7 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
         {moreOpen ? 'Hide extras' : extraSummary(scene)}
       </button>
       )}
-      {!collapsed && viewMode !== 'dialogue' && moreOpen && (
+      {!collapsed && !scriptOnly && moreOpen && (
         <div className="prod-scene-more">
           <div className="prod-cues">
             <label>
@@ -400,6 +407,76 @@ function SceneCard({ scene, number, viewMode, collapsed, onToggleCollapsed, onPa
         </div>
       )}
     </article>
+  );
+}
+
+function Markdown({ children }) {
+  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>;
+}
+
+function readTeleprompterOptions() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(TELEPROMPTER_OPTIONS_STORAGE_KEY) || '{}');
+    return { ...DEFAULT_TELEPROMPTER_OPTIONS, ...stored };
+  } catch {
+    return DEFAULT_TELEPROMPTER_OPTIONS;
+  }
+}
+
+function TeleprompterView({ scenes }) {
+  const [options, setOptions] = useState(readTeleprompterOptions);
+
+  const toggleOption = (key) => {
+    setOptions((current) => {
+      const next = { ...current, [key]: !current[key] };
+      localStorage.setItem(TELEPROMPTER_OPTIONS_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  const blocks = (scenes || [])
+    .map((scene) => ({
+      id: scene.id,
+      title: (scene.title || '').trim() || (scene.scene_type || '').trim() || 'Scene',
+      visuals: options.showVisuals ? (scene.visuals || '').trim() : '',
+      voiceover: (scene.voiceover || '').trim(),
+    }))
+    .filter((block) => block.visuals || block.voiceover);
+
+  return (
+    <>
+      <div className="prod-flat-fields" role="group" aria-label="Teleprompter display">
+        <label>
+          <input type="checkbox" checked={options.showTitle} onChange={() => toggleOption('showTitle')} />
+          Title
+        </label>
+        <label>
+          <input type="checkbox" checked={options.showVisuals} onChange={() => toggleOption('showVisuals')} />
+          Visuals &amp; B-Roll
+        </label>
+      </div>
+      {blocks.length === 0 ? (
+        <p className="prod-empty">No voiceover yet.</p>
+      ) : (
+        <div className="prod-teleprompter">
+          {blocks.map((block) => (
+            <section key={block.id} className="prod-teleprompter-scene">
+              {options.showTitle && <h3>{block.title}</h3>}
+              {block.visuals && (
+                <div className="prod-teleprompter-visuals prod-md">
+                  <Markdown>{block.visuals}</Markdown>
+                </div>
+              )}
+              {block.voiceover && (
+                <div className="prod-teleprompter-voiceover prod-md">
+                  <Markdown>{block.voiceover}</Markdown>
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -493,7 +570,7 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
   const [panel, setPanel] = useState('script');
   const [sceneView, setSceneView] = useState(readSceneView);
   const [collapsedIds, setCollapsedIds] = useState(() => (
-    readSceneView() === 'compact'
+    COLLAPSED_SCENE_VIEWS.has(readSceneView())
       ? new Set((production.scenes || []).map((scene) => scene.id))
       : new Set()
   ));
@@ -508,18 +585,20 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
 
   useEffect(() => {
     setCollapsedIds(
-      sceneView === 'compact'
+      COLLAPSED_SCENE_VIEWS.has(sceneView)
         ? new Set((production.scenes || []).map((scene) => scene.id))
         : new Set()
     );
   }, [production.id]);
 
-  const hideAllScenes = () => {
-    setCollapsedIds(new Set((production.scenes || []).map((scene) => scene.id)));
-  };
-
-  const expandAllScenes = () => {
-    setCollapsedIds(new Set());
+  const selectSceneView = (value) => {
+    setSceneView(value);
+    localStorage.setItem(SCENE_VIEW_STORAGE_KEY, value);
+    setCollapsedIds(
+      COLLAPSED_SCENE_VIEWS.has(value)
+        ? new Set((production.scenes || []).map((scene) => scene.id))
+        : new Set()
+    );
   };
 
   const toggleSceneCollapsed = (id) => {
@@ -746,7 +825,7 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
               Download
             </button>
           </div>
-          <pre className="whitespace-pre-wrap text-sm leading-6">{production.teleprompter || 'No voiceover yet.'}</pre>
+          <TeleprompterView scenes={production.scenes} />
         </section>
       )}
 
@@ -792,20 +871,12 @@ function ProductionDetail({ production, types, sceneTypes, fontSize, onFontSize,
                   key={view.value}
                   type="button"
                   className={`prod-ghost${sceneView === view.value ? ' is-active' : ''}`}
-                  onClick={() => {
-                    setSceneView(view.value);
-                    localStorage.setItem(SCENE_VIEW_STORAGE_KEY, view.value);
-                    if (view.value === 'compact') {
-                      hideAllScenes();
-                    }
-                  }}
+                  onClick={() => selectSceneView(view.value)}
                 >
                   {view.label}
                 </button>
               ))}
             </div>
-            <button type="button" className="prod-ghost" onClick={hideAllScenes}>Hide all</button>
-            <button type="button" className="prod-ghost" onClick={expandAllScenes}>Expand all</button>
             <span className="text-sm text-[var(--text-color)]">Drag the handle or use Up/Down to reorder.</span>
           </div>
           <datalist id="scene-type-presets">
