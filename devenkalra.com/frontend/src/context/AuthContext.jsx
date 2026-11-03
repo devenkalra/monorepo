@@ -51,6 +51,10 @@ export const AuthProvider = ({ children }) => {
           if (data.isAuthenticated) {
             setIsAuthenticated(true);
             setUser(data.user);
+            if (data.token) {
+              localStorage.setItem('authToken', data.token);
+              setToken(data.token);
+            }
           } else {
             handleLogoutState();
           }

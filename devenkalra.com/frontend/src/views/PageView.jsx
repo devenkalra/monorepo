@@ -12,6 +12,7 @@ import { EmailProcessorApp } from '../components/EmailProcessorApp';
 import { ContactSyncApp } from '../components/ContactSyncApp';
 import { MusicLibraryApp } from '../components/MusicLibraryApp';
 import { ImageSearchApp } from '../components/ImageSearchApp';
+import { LinkMediaApp } from '../components/LinkMediaApp';
 import { MarkdownBody } from '../components/MarkdownBody';
 
 export const PageView = ({ menuItems }) => {
@@ -678,6 +679,10 @@ export const PageView = ({ menuItems }) => {
 
       {activeSlug === 'image-search' && (
         <ImageSearchApp />
+      )}
+
+      {activeSlug === 'link-media' && (
+        <LinkMediaApp />
       )}
 
       {activeSlug === 'creative-projects' && (

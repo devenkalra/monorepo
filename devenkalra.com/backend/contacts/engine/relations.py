@@ -1,20 +1,21 @@
-"""Relationships stored in task descriptions, as written by the old create_relation.py / link_org.py.
+"""Relationships between People and Orgs.
 
-A description ends with managed sections, each a bold heading followed by grouped lines:
+Canonical store: the **Relationship data** custom field (JSON).
 
-    **Relationships**          person <-> person
-    **Organizations**          on a person, links to orgs
-    **People**                 on an org, links to people
+Derived view: a managed block at the **top of the description** (same section markdown as the old
+layout) so ClickUp task links open in the side panel.
 
-    - Works at
-        - [Google](https://app.clickup.com/t/86abc) — Staff SWE
+Legacy sources still read during migration:
 
-Text above the first managed heading is the user's notes. Every relationship is recorded on both tasks,
-with the inverse label on the other side.
+- Managed description sections (**Relationships** / **Organizations** / **People**)
+- The **Introduced by** task-link custom field
+
+Every relationship is recorded on both tasks, with the inverse label on the other side.
 """
+import json
 import re
 
-from .fields import task_url
+from .fields import INTRODUCED_BY_FIELD, task_url
 
 SECTIONS = ("Relationships", "Organizations", "People")
 HEADER_RE = re.compile(r"^\s*\*\*(%s)\*\*\s*$" % "|".join(SECTIONS), re.M)
@@ -25,6 +26,33 @@ LINE_RE = re.compile(r"^\s*[-*+]\s+(.+?)\s+\[(.+?)\]\((%s)\)\s*(?:[—–-]+\s*(
 GROUP_RE = re.compile(r"^\s*[-*+]\s+([^\[\]]+?)\s*:?\s*$")
 
 PEOPLE, ORGS = "people", "orgs"
+DATA_FIELD = "Relationship data"
+INTRODUCED_BY_LABEL = "Introduced by"
+
+# Description block so ClickUp task links open in the side panel (custom text fields can't).
+# ATX headings (###) interrupt Markdown lists and stay left-aligned — unlike ==== lines (setext /
+# list continuation) or raw HTML ClickUp may show literally.
+DISPLAY_BLOCK_START = "###### ==== Do Not Change Between Lines"
+DISPLAY_BLOCK_END = "###### ==== End Do Not Change Between Lines"
+# Any boundary line: "Do Not Change" (any heading level / ==== prefix) or legacy pure ==== / <p>====.
+# Must match hand-edited forms like "#### ==== Do Not Change…" or the constants above.
+_MARKER_LINE = (
+    r"(?:"
+    r"[^\n]*Do Not Change[^\n]*"
+    r"|"
+    r"(?:<p>)?={4,}[^\n]*(?:</p>)?"
+    r")"
+)
+MANAGED_BLOCK_RE = re.compile(
+    r"^\s*" + _MARKER_LINE + r"\s*\n"
+    r".*?"
+    r"^\s*" + _MARKER_LINE + r"\s*(?:\n|$)",
+    re.M | re.S | re.I,
+)
+MARKER_LINE_RE = re.compile(r"^\s*" + _MARKER_LINE + r"\s*$", re.M | re.I)
+# Back-compat aliases used in tests / older call sites.
+EQUALS_BLOCK_RE = MANAGED_BLOCK_RE
+EQUALS_LINE_RE = MARKER_LINE_RE
 
 
 def label(kind):
@@ -133,12 +161,21 @@ def split(md):
 
 
 def render(notes, lines):
-    """Inverse of split, in the grouped layout the old scripts write."""
+    """Legacy description layout (migration / export fallback). Prefer encode_data for new writes."""
     parts = [notes.rstrip()] if notes and notes.strip() else []
+    body = encode_display(lines)
+    if body:
+        parts.append(body)
+    return "\n\n".join(parts)
+
+
+def encode_display(lines):
+    """Markdown relationship sections for the managed description block (no free-form notes)."""
+    parts = []
     for section in SECTIONS:
         groups = {}
-        for ln in lines:
-            if ln["section"] == section:
+        for ln in lines or []:
+            if ln.get("section") == section:
                 groups.setdefault(ln["label"].lower(), [ln["label"], []])[1].append(ln)
         if not groups:
             continue
@@ -146,14 +183,78 @@ def render(notes, lines):
         for key in sorted(groups):
             lab, items = groups[key]
             out.append(f"- {lab}")
-            for ln in sorted(items, key=lambda x: x["name"].lower()):
-                out.append(f"    - [{ln['name']}]({task_url(ln['target_id'])})" + (f" — {ln['note']}" if ln["note"] else ""))
+            for ln in sorted(items, key=lambda x: (x.get("name") or "").lower()):
+                name = ln.get("name") or ln.get("target_id") or ""
+                out.append(f"    - [{name}]({task_url(ln['target_id'])})"
+                           + (f" — {ln['note']}" if ln.get("note") else ""))
         parts.append(f"**{section}**\n" + "\n".join(out))
     return "\n\n".join(parts)
 
 
+def strip_managed_blocks(md):
+    """Remove managed relationship blocks (### markers and legacy ==== / <p> variants)."""
+    text = md or ""
+    while True:
+        new, n = MANAGED_BLOCK_RE.subn("", text, count=1)
+        if not n:
+            break
+        text = new
+    text = MARKER_LINE_RE.sub("", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip("\n")
+
+
+# Back-compat name.
+strip_equals_blocks = strip_managed_blocks
+
+
+def split_display_block(md):
+    """Compatibility helper: strip managed blocks. Returns (None, remainder)."""
+    return None, strip_managed_blocks(md)
+
+
+def _display_block(body):
+    """Wrap display markdown between ### markers (headings stay left-aligned after lists)."""
+    return f"{DISPLAY_BLOCK_START}\n{body}\n{DISPLAY_BLOCK_END}"
+
+
+def _notes_after_managed(description):
+    """User notes below managed content: drop managed markers and legacy **Relationships** sections.
+
+    Parseable relationship lines are omitted (they live inside the managed block via encode_display).
+    Unparsed lines from those sections are kept so handwritten text is not destroyed.
+    """
+    rest = strip_managed_blocks(description or "")
+    notes, _legacy, unparsed = parse(rest)
+    parts = []
+    if notes and notes.strip():
+        parts.append(notes.rstrip())
+    if unparsed:
+        parts.append("\n".join(unparsed))
+    return "\n\n".join(parts).rstrip()
+
+
+def compose_description(lines, notes):
+    """Managed relationship block at the top (when any edges), then user notes.
+
+    Section headings (**Relationships** / **Organizations** / **People**) stay inside the markers.
+    """
+    notes = _notes_after_managed(notes or "")
+    body = encode_display(lines)
+    if not body:
+        return notes
+    block = _display_block(body)
+    return f"{block}\n\n{notes}" if notes else block
+
+
+def compose_description_over(description, lines):
+    """Replace the managed block in a full description (idempotent; never stacks markers)."""
+    notes = _notes_after_managed(description or "")
+    return compose_description(lines, notes)
+
+
 def key(ln):
-    return (ln["target_id"], ln["label"].strip().lower())
+    return (str(ln["target_id"]), ln["label"].strip().lower())
 
 
 def upsert_line(md, section, lab, target_id, name, note, remove=False):
@@ -166,3 +267,151 @@ def upsert_line(md, section, lab, target_id, name, note, remove=False):
                      "note": note if note is not None else (match[0]["note"] if match else "")})
     new = render(notes, rest)
     return new, new != render(notes, lines)
+
+
+# ---- Relationship data (JSON) ------------------------------------------------------------
+def encode_data(lines):
+    """Canonical JSON for the Relationship data field."""
+    items = []
+    for ln in sorted(lines, key=lambda x: (x["label"].lower(), str(x["target_id"]))):
+        tid = str(ln.get("target_id") or "").strip()
+        lab = " ".join(str(ln.get("label") or "").split())
+        if not tid or not lab:
+            continue
+        row = {"type": lab, "id": tid}
+        note = " ".join(str(ln.get("note") or "").split())
+        if note:
+            row["note"] = note
+        items.append(row)
+    return json.dumps(items, ensure_ascii=False, separators=(",", ":"))
+
+
+def decode_data(raw):
+    """Parse Relationship data JSON -> list of {label, target_id, note, name?}."""
+    if raw in (None, "", []):
+        return []
+    if isinstance(raw, list):
+        data = raw
+    else:
+        text = str(raw).strip()
+        if not text:
+            return []
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(data, list):
+        return []
+    out = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        tid = str(item.get("id") or item.get("target_id") or "").strip()
+        lab = " ".join(str(item.get("type") or item.get("label") or "").split())
+        if not tid or not lab:
+            continue
+        out.append({
+            "label": lab, "target_id": tid,
+            "note": " ".join(str(item.get("note") or "").split()),
+            "name": " ".join(str(item.get("name") or "").split()),
+        })
+    return out
+
+
+def introduced_by_lines(items):
+    """ClickUp tasks-field value -> relationship lines labeled Introduced by."""
+    out = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        tid = str(item.get("id") or "").strip()
+        if not tid:
+            continue
+        out.append({
+            "label": INTRODUCED_BY_LABEL, "target_id": tid,
+            "name": " ".join(str(item.get("name") or "").split()), "note": "",
+        })
+    return out
+
+
+def merge_lines(*groups):
+    """Union relationship lines by (target_id, label); first occurrence wins for name/note."""
+    out, seen = [], set()
+    for group in groups:
+        for ln in group or []:
+            k = key(ln)
+            if not ln.get("target_id") or k in seen:
+                continue
+            seen.add(k)
+            out.append(dict(ln))
+    return out
+
+
+def attach_sections(lines, own_kind, target_kind_of):
+    """Fill section / drop edges that aren't allowed for this list pairing."""
+    out = []
+    for ln in lines:
+        tkind = ln.get("target_list") or target_kind_of(ln["target_id"])
+        section = section_for(own_kind, tkind) if tkind else ln.get("section")
+        if not section and tkind:
+            continue
+        out.append(dict(ln, section=section or ln.get("section") or "Relationships",
+                        target_list=tkind))
+    return out
+
+
+def field_value(task_or_cfs, field_name, fields=None):
+    """Raw custom field value by display name from a ClickUp task or task_record custom_fields list."""
+    name = field_name.strip().lower()
+    if fields is not None:
+        fid = next((f["id"] for f in fields if f["name"].strip().lower() == name), None)
+        if not fid:
+            return None
+        cfs = task_or_cfs.get("custom_fields", []) if isinstance(task_or_cfs, dict) else task_or_cfs
+        for cf in cfs:
+            if cf.get("id") == fid:
+                return cf.get("value")
+        return None
+    # task_record style: custom_fields carry name
+    cfs = task_or_cfs.get("custom_fields", []) if isinstance(task_or_cfs, dict) else task_or_cfs
+    for cf in cfs:
+        if (cf.get("name") or "").strip().lower() == name:
+            return cf.get("value")
+        # entities/task live form uses id-only; callers should pass fields=
+    return None
+
+
+def load_lines(description, relationship_data_raw, introduced_by_raw=None):
+    """Merge structured field, legacy description sections, and Introduced by into one line list.
+
+    Prefers Relationship data when it is non-empty; otherwise uses description sections.
+    Introduced by links are always unioned in. The managed display block is ignored for parsing.
+    """
+    structured = decode_data(relationship_data_raw)
+    rest = strip_managed_blocks(description or "")
+    _notes, desc_lines, unparsed = parse(rest)
+    primary = structured if structured else desc_lines
+    intro = introduced_by_lines(introduced_by_raw)
+    return merge_lines(primary, intro), unparsed, bool(structured)
+
+
+def notes_text(description, *, structured=False):
+    """User notes below the managed display block (and above any legacy relationship sections)."""
+    rest = strip_managed_blocks(description or "")
+    notes, _, _ = parse(rest)
+    return notes
+
+
+def upsert_data(raw, lab, target_id, name, note, remove=False):
+    """Add/update/remove one edge in Relationship data JSON. Returns (new_json, changed)."""
+    lines = decode_data(raw)
+    match = [ln for ln in lines if key(ln) == (str(target_id), lab.strip().lower())]
+    rest = [ln for ln in lines if ln not in match]
+    if not remove:
+        rest.append({
+            "label": lab.strip(), "target_id": str(target_id),
+            "name": name or (match[0].get("name") if match else ""),
+            "note": note if note is not None else (match[0].get("note") if match else ""),
+        })
+    new = encode_data(rest)
+    return new, new != encode_data(lines)

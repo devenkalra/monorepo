@@ -6,7 +6,7 @@ built to add information without losing any.
 
 **Jump to:** [Workflow](#workflow) · [Safety](#safety) · [Overview tab](#tab-overview) · [Sync tab](#tab-sync) ·
 [Runs tab](#tab-runs) · [Review tab](#tab-review) · [People & Orgs](#tab-people-orgs) ·
-[Export / Import](#tab-transfer) · [Questions](#faq)
+[Google](#tab-google) · [Check & add](#tab-check-add) · [Export / Import](#tab-transfer) · [Questions](#faq)
 
 ## The workflow [#workflow]
 
@@ -138,28 +138,50 @@ Decisions are used by the **next** preview of that source, so run one after deci
 
 Browse and edit the People and Orgs lists, and the relationships between them.
 
+**Bulk actions** (checkboxes): Add to group, Add relationship, **Fill PSalutation**, and **Mail merge**.
+PSalutation uses the Google given name when the person is linked to Google (skips Google entries with no given
+name, e.g. bill-pay labels); otherwise the first name parsed from the display name (titles and leading initials
+dropped; “Kalra, Deven” → Deven). Empty values only unless *Overwrite* is on. Preview first, then Apply. Merged
+and archived are skipped. CLI: `contacts_entity_action fill_psalutation` (dry-run; `--apply --max-writes N`,
+`--overwrite`, `--ids`).
+
+**Mail merge** carries the current selection into the [Mail merge](#tab-mail-merge) tab as the campaign
+audience (names shown; no need to paste task IDs).
+
 **The list** shows both lists together. Search by name, company, email or phone; filter by type, group,
 source, match status, *Has relationships* and *Archived*; click a column heading to sort by it (click again
 to reverse). The list is a copy read from ClickUp, so it opens instantly. **Refresh list** re-reads it
 (about a minute, read-only). A banner tells you when a live sync has changed ClickUp since the last refresh.
 
-**Click a row** to see that person or organization, read fresh from ClickUp: relationships in short form
-(click a name to jump to it), filled-in fields, notes, and the fields the sync manages.
+**Click a row** to see that person or organization: relationships in short form (click a name to jump to it),
+filled-in fields, notes, and the fields the sync manages. The first open reads ClickUp and caches the detail;
+later opens reuse that cache until the person is edited here, a live sync writes them, or you **Refresh list**
+/ **Reload**.
+
+**New contact** opens a create form in the same panel (first name, last name, emails, phones, company, title,
+birthday, address, website, groups). First and last name map to Google’s given/family name. It creates the
+person in **Google Contacts first**, then a linked ClickUp People task with the Google ID set so the next sync
+updates it instead of duplicating. Needs live ClickUp writes and Google **write** access (grant it from
+Overview). Overlapping email or phone with someone already in the list is refused.
 
 **Edit** turns the details into a form. Nothing is written until you press **Save**; **Cancel** discards your
 changes, and you're asked before leaving a form with unsaved changes.
 
 - **Grayed-out fields** are managed by the sync and can't be changed here (hover for the reason): source IDs,
   hashes and links, Sources, Match status, Duplicate of, Last synced, Connected on and the last-message dates.
-  Company and Title are also locked for contacts linked to Google or LinkedIn, and Birthday, Address and
-  Website for contacts linked to Google, because every sync fills them in again. Change those in the source.
+  Company and Title are also locked for contacts linked to Google or LinkedIn, and Birthday, Address, City,
+  Country and Website for contacts linked to Google, because every sync fills them in again. Change those in
+  the source.
 - **Emails, Phones and Groups** can be edited, but syncs only ever add to them: anything you remove that's
   still in Google, LinkedIn or WhatsApp comes back on the next sync.
-- **Relationships:** each row has a type, a person or organization and an optional note, all editable.
-  **+ Add relationships** adds several at once: pick or type the type and press **Next**, then search and
-  tick everyone it applies to (ticks are kept as you change the search), optionally add a note for all of
-  them, and press **Add**. A person can be linked to people and orgs; an org only to people. Saving also updates the other side: *Parent of* shows as *Child of* on the other person, *Works at*
-  as *Employs* on the organization, and unknown types read the same both ways.
+- **Relationships:** stored in the **Relationship data** field (JSON), not in the description — so editing
+  notes can’t corrupt them. Each row has a type, a person or organization and an optional note.
+  **Introduced by** is also a relationship type here (no separate field). **+ Add relationships** adds
+  several at once: pick or type the type and press **Next**, then search and tick everyone it applies to
+  (ticks are kept as you change the search), optionally add a note for all of them, and press **Add**. A
+  person can be linked to people and orgs; an org only to people. Saving also updates the other side:
+  *Parent of* shows as *Child of* on the other person, *Works at* as *Employs* on the organization, and
+  unknown types read the same both ways.
 
 **Merging duplicates.** On a person, **Merge…** combines two records for the same person. Pick the other
 record (a record with *Duplicate of* set offers its twin automatically, and shows a "Possibly a duplicate"
@@ -170,15 +192,82 @@ active; the other is marked *merged* and archived. Two records linked to differe
 can't be merged (merge them in Google first), but a record marked *deleted in google* can be folded into
 the one that's still in Google; its dead Google ID is dropped.
 
+## Mail merge [#tab-mail-merge]
+
+Create a throttled Gmail campaign from People contacts.
+
+1. **Grant Gmail access** on Overview if you haven’t already (reconnect if drafts don’t appear — needs
+   readonly + compose + send).
+2. In **Gmail**, write the rich email and leave it as a **draft**. Put tokens in the subject/body:
+   `{{first_name}}`, `{{name}}`, `{{email}}`, `{{company}}`, `{{title}}`, `{{groups}}`, `{{outreach}}`,
+   `{{PSalutation}}`, `{{FSalutation}}`.
+3. On **People & Orgs**, filter and check recipients, then click **Mail merge**.
+4. On the Mail merge tab, pick that Gmail draft, set **From** to a verified send-as people recognize
+   (your Gmail default, usually a custom domain — not the raw `@gmail.com` login), set daily limit / pace,
+   create the campaign, then **Start / Resume**.
+5. Delivery defaults to **new Gmail drafts** (one per person) so you can spot-check; or choose **Send**.
+   The worker pauses at the daily cap (`waiting_quota`) and resumes the next UTC day. Restarts keep
+   remaining `pending` rows.
+
+Merged, archived, org-only, and no-email contacts are skipped when the campaign is created.
+
+## Google [#tab-google]
+
+A small Google Contacts manager. Writes go to **Google only**; run a Google sync afterward if you want
+ClickUp updated. Needs Google **write** access (Overview).
+
+- **Search** by name/email and filter by label; **Show more** pages through results.
+- **Select one** contact to edit first/last name, emails, phones, labels, city, state and country (emails and
+  phones are comma-separated and replace the list; labels replace membership).
+- **Select several** to bulk-add labels and/or set city, state and country in one apply (labels add-only;
+  location overwrites when filled).
+- **Add contacts** opens a grid (first/last name, email, phone, labels, city, state, country). Labels must
+  already exist in Google (comma-separated). Max 50 creates / 100 updates per request.
+
 Save is refused, with nothing written, if:
 
 - the task changed in ClickUp after you opened it (press **Reload** and redo your edit),
 - a live sync is running, or live writes are off on the server,
 - you changed a grayed-out field, or
-- the relationship part of the description has text the editor doesn't understand (edit that one in ClickUp).
+- notes can't be saved when leftover relationship text in the description is unreadable (run
+  `contacts_migrate_relationships`, or edit notes in ClickUp); relationship edits still go to
+  Relationship data.
 
 Every save is logged with what it changed. Saving makes earlier sync previews stale, so run a new preview
 before applying one.
+
+## Check & add [#tab-check-add]
+
+Checks whether people are already in ClickUp People and Google Contacts. Type one contact (name, email,
+phone) or upload a CSV. The CSV needs a header row; recognized columns are **Name** (or **First name** /
+**Last name**), **Email** and **Phone** (also Mobile, Cell, E-mail address…). A Google Contacts export works
+as-is. Other columns are ignored and listed. Up to 1,000 rows per file.
+
+**Refresh the ClickUp cache first.** ClickUp is read from the People & Orgs cache, not live, so anyone added
+or changed in ClickUp since its last refresh isn't seen. Google is re-read automatically when its copy is over
+10 minutes old (or press **Refresh Google**). Comparing never writes anything.
+
+Matching: one record with the same email or phone is a match. Several records sharing them, or the email
+pointing at one record and the phone at another, is a conflict. Without an email/phone match, a very similar
+name or the same last 10 phone digits makes a *possible* match for you to review.
+
+| Outcome | Meaning | Action you can run |
+| --- | --- | --- |
+| Exists | In ClickUp and Google, and linked | none |
+| Exists, unlinked | In both, but the ClickUp task has no Google ID | **Link** (Google ID on the task, task id on the contact) |
+| ClickUp only | In ClickUp, not in Google | **Create in Google & link** (from the ClickUp task's data) |
+| Google only | In Google, not in ClickUp | **Import into ClickUp** (new linked People task) |
+| Not found | In neither | **Create in Google & ClickUp** (from the row) |
+| Needs review | Only possible matches | pick **Use this match** or **Not in …**, then the row is re-evaluated; or **Create … as new** to ignore the possible matches and create the row (only where it has no exact match, so nothing is duplicated) |
+| Conflict | The data disagrees (different name, email or phone; duplicates; mismatched links) | none: fix it in ClickUp or Google, then **Re-check** |
+
+Each action runs only when you click it, on that row alone (or on the rows you select, one after another).
+Before writing, the row is re-evaluated; if its outcome changed it is refused, and you see the new state.
+Every contact an action creates or changes gets the **SyncDriven** label in Google (created on first use) and
+the **SyncDriven** group in ClickUp. The ClickUp option must already exist in the Groups field; if it doesn't,
+the action still runs and warns that the task wasn't labeled.
+Comparisons are saved, so you can come back, **Re-check** against refreshed data and **Download results**.
+A **Link** stores no Google hash, so the next Google sync fills the task in from Google as for any new link.
 
 ## Export / Import [#tab-transfer]
 

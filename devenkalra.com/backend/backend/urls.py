@@ -24,6 +24,8 @@ from pathlib import Path
 from django.db.models import Q
 import mimetypes
 
+from link_media.views import serve_link_media
+
 
 def serve_media_with_db_fallback(request, path=""):
     media_root = Path(settings.MEDIA_ROOT).resolve()
@@ -64,7 +66,7 @@ def serve_media_with_db_fallback(request, path=""):
 
 def serve_spa_or_asset(request, path=""):
     # Never serve SPA content for Django-owned routes.
-    reserved_prefixes = ('api', 'admin', 'static')
+    reserved_prefixes = ('api', 'admin', 'static', 'f')
     if path in reserved_prefixes or any(path.startswith(f'{prefix}/') for prefix in reserved_prefixes):
         raise Http404('Not found')
 
@@ -100,6 +102,10 @@ urlpatterns = [
     path('api/contacts/', include('contacts.urls')),
     path('api/audio/', include('audio_library.urls')),
     path('api/images/', include('image_search.urls')),
+    path('api/link-media/', include('link_media.urls')),
+    # Short public media links for email (must be before SPA catch-all).
+    path('f/<slug:slug>', serve_link_media),
+    path('f/<slug:slug>/', serve_link_media),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
     re_path(r'^(?P<path>.*)$', serve_spa_or_asset),
 ]

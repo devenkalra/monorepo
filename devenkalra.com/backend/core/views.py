@@ -397,12 +397,14 @@ class AuthStatusView(APIView):
                 or request.user.username.startswith('google_')
                 or request.user.username.startswith('github_')
             )
+            auth_token, _ = Token.objects.get_or_create(user=request.user)
             return Response({
                 "isAuthenticated": True,
+                "token": auth_token.key,
                 "user": {
                     "username": _user_display_name(request.user, social_user),
                     "email": request.user.email or (social_user or {}).get('email') or '',
-                    "isStaff": request.user.is_staff,
+                    "isStaff": bool(request.user.is_staff or request.user.is_superuser),
                     "type": "social" if is_social else "django",
                     "provider": (social_user or {}).get('provider') if is_social else None,
                     "role": get_user_role(request),
@@ -410,17 +412,32 @@ class AuthStatusView(APIView):
             })
 
         if social_user:
-            return Response({
+            # Session-only social login: still mint a DRF token so API clients
+            # (contacts, link-media, …) can use Authorization: Token without CSRF.
+            email = (social_user.get('email') or '').strip()
+            user = None
+            uid = social_user.get('uid')
+            provider = social_user.get('provider') or 'google'
+            if uid:
+                user = User.objects.filter(username=f'{provider}_{uid}').first()
+            if user is None and email:
+                user = User.objects.filter(email__iexact=email).order_by('id').first()
+            payload = {
                 "isAuthenticated": True,
                 "user": {
                     "username": social_user.get('name') or social_user.get('email'),
-                    "email": social_user.get('email'),
-                    "isStaff": False,
+                    "email": email,
+                    "isStaff": bool(user and (user.is_staff or user.is_superuser))
+                    or (email.lower() in get_social_superusers()),
                     "type": "social",
                     "provider": social_user.get('provider'),
                     "role": get_user_role(request),
                 },
-            })
+            }
+            if user is not None:
+                auth_token, _ = Token.objects.get_or_create(user=user)
+                payload['token'] = auth_token.key
+            return Response(payload)
 
         return Response({
             "isAuthenticated": False
@@ -1454,6 +1471,8 @@ def _complete_google_social_login(request, token_info):
 
     auth_token, _ = Token.objects.get_or_create(user=user)
     display = name or email
+    # Attach the Django user so get_user_role sees is_staff / is_superuser.
+    request.user = user
 
     return Response({
         "detail": "Successfully authenticated with Google.",
@@ -1461,7 +1480,7 @@ def _complete_google_social_login(request, token_info):
         "user": {
             "username": display,
             "email": email,
-            "isStaff": False,
+            "isStaff": bool(user.is_staff or user.is_superuser),
             "type": "social",
             "provider": "google",
             "role": get_user_role(request),

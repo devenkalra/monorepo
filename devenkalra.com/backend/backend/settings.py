@@ -116,6 +116,7 @@ INSTALLED_APPS = [
     'contacts.apps.ContactsConfig',
     'audio_library.apps.AudioLibraryConfig',
     'image_search.apps.ImageSearchConfig',
+    'link_media.apps.LinkMediaConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

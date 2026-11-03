@@ -2076,6 +2076,115 @@ a.accent-link:focus-visible {
   background: var(--accent-light);
 }
 
+.contacts-entity-row--checked:not(.contacts-entity-row--active) {
+  background: var(--surface-muted);
+}
+
+.contacts-check-col {
+  width: 1.75rem;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.contacts-check-col input {
+  cursor: pointer;
+}
+
+.contacts-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.55rem;
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border-color);
+  background: var(--surface-muted);
+}
+
+/* Override global .editorial-button { width: 100% } — bulk actions are a toolbar. */
+.contacts-bulk-bar > span {
+  margin-right: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.contacts-bulk-bar .editorial-button,
+.contacts-bulk-bar .asset-btn-muted {
+  width: auto;
+  margin-top: 0;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.contacts-email-list-box {
+  width: 100%;
+  min-height: 5.5rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.contacts-bulk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0 0 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border-color);
+  background: var(--surface-color);
+}
+
+.contacts-bulk-panel .contacts-field {
+  max-width: 28rem;
+}
+
+.contacts-mail-layout {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .contacts-mail-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.contacts-mail-limits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.contacts-mail-limits .contacts-field {
+  max-width: 10rem;
+}
+
+.contacts-mail-audience {
+  margin-bottom: 0.35rem;
+}
+
+.contacts-mail-audience-list {
+  margin: 0 0 0.5rem;
+  padding-left: 1.1rem;
+  max-height: 10rem;
+  overflow: auto;
+}
+
+.contacts-mail-html-preview {
+  max-width: 36rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  background: #fff;
+  color: #111;
+  font-size: 0.92rem;
+}
+
 .contacts-more {
   margin: 0.6rem 0;
 }
@@ -2293,12 +2402,117 @@ a.accent-link:focus-visible {
 
 .contacts-rel-add-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
+  align-items: center;
+}
+
+.contacts-rel-add-actions .editorial-button,
+.contacts-bulk-panel .contacts-rel-add-actions .asset-btn-muted {
+  width: auto;
+  margin-top: 0;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
 }
 
 .contacts-rel-help {
   font-size: 0.8rem;
   margin: 0;
+}
+
+.email-pill--warn {
+  color: #8a5a00;
+  border-color: color-mix(in srgb, #8a5a00 40%, var(--border-color));
+}
+
+.contacts-lookup .contacts-rel-add-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.contacts-lookup-caches {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+}
+
+.contacts-lookup-caches > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.6rem;
+}
+
+.contacts-lookup-cache--warn {
+  color: #8a5a00;
+}
+
+.contacts-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+
+.contacts-lookup-result {
+  margin-top: 1rem;
+}
+
+.contacts-lookup-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+
+.contacts-lookup-head h3 {
+  margin: 0;
+}
+
+.contacts-lookup-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.contacts-lookup-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.contacts-lookup-filter .contacts-link-btn {
+  font-size: 0.8rem;
+}
+
+.contacts-lookup-table td {
+  vertical-align: top;
+}
+
+.contacts-lookup-conflict {
+  color: #a33;
+}
+
+.contacts-lookup-choose {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.contacts-lookup-cand {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
 }
 
 .contacts-picker {

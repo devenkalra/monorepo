@@ -1,9 +1,8 @@
 """Export the People and Orgs lists to one JSON file, and import such a file into empty lists.
 
 The export keeps each task's name, status, tags, priority, dates, description and custom field values,
-plus the links between tasks: the managed description sections (**Relationships**, **Organizations**,
-**People**) and task-link custom fields such as "Introduced by". Import creates the tasks in other lists
-and rewrites those links to the new task IDs.
+plus the links between tasks: Relationship data (JSON), legacy description sections, and other task-link
+fields. Import creates the tasks in other lists and rewrites those links to the new task IDs.
 
 Import only writes into lists that are empty, or that hold only tasks it created itself on an earlier,
 interrupted attempt, so it can never change a list that's in use.
@@ -15,7 +14,6 @@ from datetime import datetime, timezone
 from .clickup import TEXT_TYPES
 from .errors import ConfigError, SafetyStop, TooManyErrors
 from .fields import task_url
-from .relations import split
 from .sync import Reporter
 
 FORMAT, VERSION = "clickup-contacts-export", 1
@@ -106,16 +104,29 @@ def task_record(t):
 
 
 def relationships(lists):
+    from . import relations as rel
+    from .fields import INTRODUCED_BY_FIELD
+
     where = {t["id"]: (key, t["name"]) for key, lst in lists.items() for t in lst["tasks"]}
     out = []
     for key, lst in lists.items():
         for t in lst["tasks"]:
-            links = [(f"section:{ln['section']}", ln["label"], ln["target_id"], ln["name"], ln["note"])
-                     for ln in split(t["description"])[1] if ln["target_id"]]
+            data_raw = next((cf.get("value") for cf in t["custom_fields"]
+                             if (cf.get("name") or "").strip().lower() == rel.DATA_FIELD.lower()), None)
+            intro_raw = next((cf.get("value") for cf in t["custom_fields"]
+                              if (cf.get("name") or "").strip().lower() == INTRODUCED_BY_FIELD.lower()), None)
+            lines, _, structured = rel.load_lines(t.get("description") or "", data_raw, intro_raw)
+            via = "field:Relationship data" if structured else "section+legacy"
+            links = [(via, ln["label"], ln["target_id"], ln.get("name") or "", ln.get("note") or "")
+                     for ln in lines if ln.get("target_id")]
+            # Other task-link fields (not Introduced by — already folded above).
             for cf in t["custom_fields"]:
-                if cf["type"] in LINK_TYPES:
-                    links += [(f"field:{cf['name']}", cf["name"], item["id"], item.get("name", ""), "")
-                              for item in cf["value"] if isinstance(item, dict) and item.get("id")]
+                if cf["type"] not in LINK_TYPES:
+                    continue
+                if (cf.get("name") or "").strip().lower() == INTRODUCED_BY_FIELD.lower():
+                    continue
+                links += [(f"field:{cf['name']}", cf["name"], item["id"], item.get("name", ""), "")
+                          for item in (cf.get("value") or []) if isinstance(item, dict) and item.get("id")]
             for via, label, to, name, note in links:
                 to_list, to_name = where.get(to, (None, name))
                 out.append({"from_id": t["id"], "from_name": t["name"], "from_list": key, "via": via,
@@ -192,6 +203,7 @@ class _Target:
         self.key, self.cu, self.src = key, cu, src
         info, fields, tasks = read_list(cu, log, f"target {LISTS[key]} list")
         self.name = info.get("name") or cu.list_id
+        self.target_fields = fields
         self.task_ids = {t["id"] for t in tasks}
         self.statuses = {s["status"].lower(): s["status"] for s in info.get("statuses", [])}
         by_name = {}
@@ -223,6 +235,9 @@ class _Target:
         src, tgt, opts, _ = m
         v, t = cf["value"], tgt["type"]
         if t in LINK_TYPES:
+            return None
+        # Rewritten in pass 2 with remapped task ids; description block rebuilt from data.
+        if (src.get("name") or "").strip().lower() in ("relationship data", "relationship display"):
             return None
         if t in TEXT_TYPES:
             return str(v)
@@ -335,6 +350,10 @@ def import_lists(data, targets, *, reporter=None, id_map=None, on_mapped=None):
         log.log("CREATE", x["name"], f"{LISTS[key]} · {len(body['custom_fields'])} field values", task_id=new_id)
 
     # Pass 2: now that every task exists, rewrite links between them, then archive what was archived.
+    from . import relations as rel
+    name_by_old = {task["id"]: task["name"] for lst in data["lists"].values() for task in lst["tasks"]}
+    kind_by_old = {task["id"]: lk for lk, lst in data["lists"].items() for task in lst["tasks"]}
+    new_to_old = {new: old for old, new in id_map.items()}
     outside = 0
     for i, (key, x) in enumerate(ordered, 1):
         log.tick("Linking tasks", i, len(ordered))
@@ -350,16 +369,58 @@ def import_lists(data, targets, *, reporter=None, id_map=None, on_mapped=None):
                 log.log("LINK", x["name"], f"description: {mapped} link(s) to imported tasks", task_id=new_id)
             for cf in x["custom_fields"]:
                 m = t.fields.get(cf["field_id"])
-                if not m or m[1]["type"] not in LINK_TYPES:
+                if not m:
                     continue
-                items = [it["id"] for it in cf["value"] if isinstance(it, dict) and it.get("id")]
+                tgt_f = m[1]
+                fname = (tgt_f.get("name") or "").strip().lower()
+                if fname == "relationship display":
+                    continue  # unused; relationships live in Relationship data + description block
+                if fname == "relationship data":
+                    lines = rel.decode_data(cf.get("value"))
+                    rewritten, skipped = [], 0
+                    for ln in lines:
+                        if ln["target_id"] in id_map:
+                            rewritten.append({**ln, "target_id": id_map[ln["target_id"]]})
+                        else:
+                            skipped += 1
+                    outside += skipped
+                    new_raw = rel.encode_data(rewritten)
+                    if rewritten or (cf.get("value") or ""):
+                        _send(t.cu, "link", "POST", f"/task/{new_id}/field/{tgt_f['id']}",
+                              {"value": new_raw}, task_id=new_id, task_name=x["name"],
+                              field=tgt_f["name"], after=f"{len(rewritten)} edge(s)")
+                        log.log("LINK", x["name"], f"Relationship data: {len(rewritten)} edge(s)", task_id=new_id)
+                    disp_lines = []
+                    for ln in rewritten:
+                        old_tid = new_to_old.get(ln["target_id"])
+                        tkind = kind_by_old.get(old_tid)
+                        section = rel.section_for(key, tkind) if tkind else None
+                        if tkind and not section:
+                            continue
+                        disp_lines.append({
+                            "label": ln["label"], "target_id": ln["target_id"],
+                            "note": ln.get("note") or "",
+                            "name": name_by_old.get(old_tid) or ln.get("name") or ln["target_id"],
+                            "section": section or "Relationships",
+                        })
+                    desc = rel.compose_description(disp_lines, "")
+                    if desc:
+                        _send(t.cu, "describe", "PUT", f"/task/{new_id}",
+                              {"markdown_content": desc}, task_id=new_id, task_name=x["name"],
+                              field="Description", after=f"{len(disp_lines)} edge(s)")
+                        log.log("LINK", x["name"], f"description relationships: {len(disp_lines)} edge(s)",
+                                task_id=new_id)
+                    continue
+                if tgt_f["type"] not in LINK_TYPES:
+                    continue
+                items = [it["id"] for it in (cf.get("value") or []) if isinstance(it, dict) and it.get("id")]
                 ids = [id_map[it] for it in items if it in id_map]
                 outside += len(items) - len(ids)
                 if ids:
-                    _send(t.cu, "link", "POST", f"/task/{new_id}/field/{m[1]['id']}",
+                    _send(t.cu, "link", "POST", f"/task/{new_id}/field/{tgt_f['id']}",
                           {"value": {"add": ids, "rem": []}}, task_id=new_id, task_name=x["name"],
-                          field=m[1]["name"], after=ids)
-                    log.log("LINK", x["name"], f"{m[1]['name']}: {len(ids)} task(s)", task_id=new_id)
+                          field=tgt_f["name"], after=ids)
+                    log.log("LINK", x["name"], f"{tgt_f['name']}: {len(ids)} task(s)", task_id=new_id)
             if x["archived"]:
                 _send(t.cu, "archive", "PUT", f"/task/{new_id}", {"archived": True},
                       task_id=new_id, task_name=x["name"], after={"archived": True})

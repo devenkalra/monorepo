@@ -14,6 +14,16 @@ class GoogleAccount(models.Model):
     def can_write(self):
         return 'https://www.googleapis.com/auth/contacts' in self.scopes.split()
 
+    @property
+    def can_mail(self):
+        """True when the token can create Gmail drafts and/or send mail."""
+        scopes = set(self.scopes.split())
+        return (
+            'https://www.googleapis.com/auth/gmail.compose' in scopes
+            or 'https://www.googleapis.com/auth/gmail.send' in scopes
+            or 'https://www.googleapis.com/auth/gmail.modify' in scopes
+        )
+
     def __str__(self):
         return self.email or f'Google account #{self.pk}'
 
@@ -152,6 +162,22 @@ class EntityCache(models.Model):
         return f'{self.list_key}: {self.row.get("name", self.task_id)}'
 
 
+class EntityDetailCache(models.Model):
+    """Full People & Orgs detail payload for one task, so reopening it skips a live ClickUp read.
+
+    Cleared when that entity is updated (editor save, create, live sync write) or when the list is
+    refreshed from ClickUp.
+    """
+    task_id = models.CharField(max_length=64, unique=True)
+    payload = models.JSONField(default=dict)
+    date_updated = models.CharField(max_length=32, blank=True, default='',
+                                    help_text='ClickUp date_updated when the payload was stored')
+    cached_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'detail {self.payload.get("name", self.task_id)}'
+
+
 class EntityEdit(models.Model):
     """One save from the People & Orgs editor, with every ClickUp write it made."""
     task_id = models.CharField(max_length=64, db_index=True)
@@ -216,3 +242,109 @@ class ReviewItem(models.Model):
 
     def __str__(self):
         return f'{self.source}: {self.name} ({self.decision})'
+
+
+class Lookup(models.Model):
+    """One saved comparison of typed or uploaded contacts against ClickUp People and Google Contacts.
+
+    rows: [{index, line, input: {name, emails, phones}, choice: {clickup, google}, done, result}].
+    """
+    name = models.CharField(max_length=255, blank=True, default='')
+    columns = models.JSONField(default=dict, blank=True)
+    rows = models.JSONField(default=list, blank=True)
+    summary = models.JSONField(default=dict, blank=True)
+    clickup_as_of = models.CharField(max_length=40, blank=True, default='')
+    google_as_of = models.CharField(max_length=40, blank=True, default='')
+    checked_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.name or f'Lookup #{self.pk}'
+
+
+class MailCampaign(models.Model):
+    """Throttled, restartable mail merge over People contacts (Gmail drafts or send)."""
+
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        READY = 'ready', 'Ready'
+        RUNNING = 'running', 'Running'
+        PAUSED = 'paused', 'Paused'
+        WAITING_QUOTA = 'waiting_quota', 'Waiting for daily quota'
+        COMPLETED = 'completed', 'Completed'
+        CANCELLED = 'cancelled', 'Cancelled'
+        FAILED = 'failed', 'Failed'
+
+    class Delivery(models.TextChoices):
+        DRAFT = 'draft', 'Gmail drafts'
+        SEND = 'send', 'Send'
+
+    name = models.CharField(max_length=255, blank=True, default='')
+    subject_template = models.CharField(max_length=500)
+    body_template = models.TextField(blank=True, default='',
+                                     help_text='Plain-text body (fallback / preview)')
+    body_html_template = models.TextField(blank=True, default='',
+                                          help_text='HTML body from a Gmail draft template')
+    source_draft_id = models.CharField(max_length=64, blank=True, default='',
+                                       help_text='Gmail draft id used as the template source')
+    attachments = models.JSONField(
+        default=list, blank=True,
+        help_text='Frozen draft attachments: [{filename, mime_type, content_id, inline, data_b64}]',
+    )
+    from_email = models.EmailField(blank=True, default='',
+                                   help_text='Verified Gmail send-as address used as From')
+    from_name = models.CharField(max_length=255, blank=True, default='',
+                                 help_text='Display name for the From header')
+    delivery = models.CharField(max_length=8, choices=Delivery.choices, default=Delivery.DRAFT)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.DRAFT, db_index=True)
+    daily_limit = models.PositiveIntegerField(default=1200,
+                                              help_text='Max successful deliveries per calendar day (UTC)')
+    per_minute = models.PositiveIntegerField(default=20, help_text='Max deliveries claimed per worker tick')
+    created_by = models.CharField(max_length=255, blank=True, default='')
+    error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    last_tick_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-id']
+
+    def __str__(self):
+        return self.name or f'Campaign #{self.pk}'
+
+
+class MailCampaignRecipient(models.Model):
+    """One frozen recipient row; progress survives deploys and day-boundary pauses."""
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        SENDING = 'sending', 'Sending'
+        SENT = 'sent', 'Sent'
+        DRAFTED = 'drafted', 'Drafted'
+        SKIPPED = 'skipped', 'Skipped'
+        FAILED = 'failed', 'Failed'
+
+    campaign = models.ForeignKey(MailCampaign, on_delete=models.CASCADE, related_name='recipients')
+    task_id = models.CharField(max_length=32, db_index=True)
+    email = models.EmailField()
+    name = models.CharField(max_length=500, blank=True, default='')
+    merge_data = models.JSONField(default=dict, blank=True)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.PENDING, db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+    last_error = models.TextField(blank=True, default='')
+    provider_message_id = models.CharField(max_length=128, blank=True, default='')
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['id']
+        constraints = [
+            models.UniqueConstraint(fields=['campaign', 'email'], name='contacts_mail_campaign_email'),
+        ]
+
+    def __str__(self):
+        return f'{self.email} ({self.status})'

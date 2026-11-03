@@ -88,11 +88,14 @@ def google_contact(p, group_names):
     addrs = p.get("addresses", [])
     addr = next((a for a in addrs if a.get("metadata", {}).get("primary")), addrs[0] if addrs else {})
     address = " ".join((addr.get("formattedValue") or "").split()) or None
+    city = " ".join((addr.get("city") or "").split()) or None
+    country = (" ".join((addr.get("country") or "").split())
+               or " ".join((addr.get("countryCode") or "").split()) or None)
     urls = p.get("urls", [])
     website = next((u.get("value") for u in urls if "linkedin.com" not in (u.get("value") or "")), None)
     if website and not re.match(r"https?://", website):
         website = "https://" + website
-    c["extra"] = {"birthday": bday, "address": address, "website": website}
+    c["extra"] = {"birthday": bday, "address": address, "city": city, "country": country, "website": website}
     photo = next((ph for ph in p.get("photos", []) if not ph.get("default") and ph.get("metadata", {}).get("primary")),
                  next((ph for ph in p.get("photos", []) if not ph.get("default")), None))
     c["photo_url"] = re.sub(r"=s\d+(-c)?$", "=s512", photo["url"]) if photo and photo.get("url") else None
@@ -122,6 +125,84 @@ def sync_photo(ctx, rec, c):
         return
     ctx.cu.upload(rec["id"], fname, r.content, mime, task_name=rec["name"])
     ctx.log("PHOTO", rec["name"], fname, task_id=rec["id"])
+
+
+def name_parts(*, given_name="", family_name="", name=""):
+    """People API names entry. Prefer explicit given/family; else split a single name string."""
+    given = " ".join(str(given_name or "").split())
+    family = " ".join(str(family_name or "").split())
+    if given or family:
+        out = {}
+        if given:
+            out["givenName"] = given
+        if family:
+            out["familyName"] = family
+        return out
+    parts = (name or "").split(None, 1)
+    if not parts:
+        return {}
+    out = {"givenName": parts[0]}
+    if len(parts) > 1:
+        out["familyName"] = parts[1]
+    return out
+
+
+def display_name(given_name="", family_name="", name=""):
+    nm = name_parts(given_name=given_name, family_name=family_name, name=name)
+    return " ".join(filter(None, [nm.get("givenName"), nm.get("familyName")]))
+
+
+def _address_parts(*, address=None, city=None, state=None, country=None):
+    """Build a People API address dict from freeform and/or structured parts."""
+    parts = {}
+    if address:
+        parts["formattedValue"] = address
+    if city:
+        parts["city"] = city
+    if state:
+        parts["region"] = state
+    if country:
+        parts["country"] = country
+    return parts or None
+
+
+def person_body(*, given_name="", family_name="", name="", emails=(), phones=(), company=None, title=None,
+                birthday=None, address=None, city=None, state=None, country=None, website=None, memberships=()):
+    """Build a People API person resource for createContact from editor fields."""
+    body = {}
+    nm = name_parts(given_name=given_name, family_name=family_name, name=name)
+    if nm:
+        body["names"] = [nm]
+    if emails:
+        body["emailAddresses"] = [{"value": e} for e in emails]
+    if phones:
+        body["phoneNumbers"] = [{"value": p} for p in phones]
+    if company or title:
+        org = {}
+        if company:
+            org["name"] = company
+        if title:
+            org["title"] = title
+        body["organizations"] = [org]
+    if birthday and birthday[1] and birthday[2]:
+        d = {"month": int(birthday[1]), "day": int(birthday[2])}
+        if birthday[0]:
+            d["year"] = int(birthday[0])
+        body["birthdays"] = [{"date": d}]
+    addr = _address_parts(address=address, city=city, state=state, country=country)
+    if addr:
+        body["addresses"] = [addr]
+    if website:
+        url = website if re.match(r"https?://", website) else "https://" + website
+        body["urls"] = [{"value": url}]
+    if memberships:
+        body["memberships"] = list(memberships)
+    return body
+
+
+def create_contact(svc, body):
+    """Create a Google contact; returns the created person (with resourceName / etag)."""
+    return svc.people().createContact(body=body, personFields=PERSON_FIELDS).execute()
 
 
 def writeback(ctx, svc, person, rec):

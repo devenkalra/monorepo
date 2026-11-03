@@ -67,10 +67,27 @@ class FakeClickUp:
             return Resp({"err": "Value is not a valid string", "ECODE": "FIELD_018"}, status=400)
         if method == "GET" and path.endswith("/field"):
             return Resp({"fields": self.fields})
+        if method == "GET" and path.startswith("/list/") and path.count("/") == 2:
+            # GET /list/{id}
+            return Resp({"id": path.split("/")[2], "name": "People", "statuses": [{"status": "to do"}]})
         if method == "GET" and path.startswith("/list/") and path.endswith("/task"):
             return Resp({"tasks": list(self.tasks.values()), "last_page": True})
-        if method == "GET" and path.startswith("/task/"):
+        if method == "GET" and "/attachment" in path:
             return Resp({"attachments": []})
+        if method == "GET" and path.startswith("/task/"):
+            tid = path.split("/")[2]
+            t = self.tasks.get(tid)
+            if not t:
+                return Resp({"err": "not found"}, status=404)
+            return Resp({
+                **t,
+                "list": {"id": "P1"},
+                "status": t.get("status") if isinstance(t.get("status"), dict) else {"status": "to do"},
+                "date_updated": str(t.get("date_updated") or "1"),
+                "url": t.get("url") or f"https://app.clickup.com/t/{tid}",
+                "archived": bool(t.get("archived")),
+                "markdown_description": t.get("markdown_description") or t.get("description") or "",
+            })
         if method == "POST" and path.startswith("/list/"):
             tid = f"new{next(self._ids)}"
             self.tasks[tid] = {"id": tid, "name": json["name"], "custom_fields": json["custom_fields"]}
@@ -97,15 +114,21 @@ class _Exec:
 
 
 class FakePeople:
-    """Minimal People API: contactGroups().list(), people().connections().list() and people().getBatchGet()."""
+    """Minimal People API: list, getBatchGet, createContact, updateContact, search, groups."""
 
     def __init__(self, people, groups=(), others=()):
         self._people, self._groups = people, list(groups)
         self._all = {p["resourceName"]: p for p in [*people, *others]}
         self.updates = []
+        self.creates = []
         self.batch_gets = []
+        self.member_mods = []
+        self._ids = itertools.count(1)
 
     def contactGroups(self):
+        return self
+
+    def members(self):
         return self
 
     def people(self):
@@ -116,13 +139,103 @@ class FakePeople:
 
     def list(self, **kw):
         if "resourceName" in kw:
-            return _Exec({"connections": self._people, "nextSyncToken": "tok-2"})
+            page = kw.get("pageSize") or 1000
+            token = kw.get("pageToken")
+            start = int(token) if token and str(token).isdigit() else 0
+            chunk = self._people[start:start + page]
+            nxt = str(start + page) if start + page < len(self._people) else None
+            out = {"connections": chunk, "nextSyncToken": "tok-2"}
+            if nxt:
+                out["nextPageToken"] = nxt
+            return _Exec(out)
         return _Exec({"contactGroups": self._groups})
+
+    def create(self, body=None, **kw):
+        name = body["contactGroup"]["name"]
+        group = {"resourceName": f"contactGroups/{name.lower()}", "groupType": "USER_CONTACT_GROUP",
+                 "name": f"contactGroups/{name.lower()}", "formattedName": name}
+        self._groups.append(group)
+        return _Exec(group)
+
+    def get(self, resourceName, **kw):
+        members = []
+        for p in self._all.values():
+            for m in p.get("memberships") or []:
+                rn = (m.get("contactGroupMembership") or {}).get("contactGroupResourceName")
+                if rn == resourceName:
+                    members.append(p["resourceName"])
+                    break
+        return _Exec({"resourceName": resourceName, "memberResourceNames": members[: kw.get("maxMembers", 2000)]})
+
+    def modify(self, resourceName=None, body=None, **kw):
+        body = body or {}
+        self.member_mods.append({"resourceName": resourceName, **body})
+        for rid in body.get("resourceNamesToAdd") or []:
+            person = self._all.get(rid)
+            if not person:
+                continue
+            mems = list(person.get("memberships") or [])
+            if not any((m.get("contactGroupMembership") or {}).get("contactGroupResourceName") == resourceName
+                       for m in mems):
+                mems.append({"contactGroupMembership": {"contactGroupResourceName": resourceName}})
+                person["memberships"] = mems
+        for rid in body.get("resourceNamesToRemove") or []:
+            person = self._all.get(rid)
+            if not person:
+                continue
+            person["memberships"] = [
+                m for m in person.get("memberships") or []
+                if (m.get("contactGroupMembership") or {}).get("contactGroupResourceName") != resourceName
+            ]
+        return _Exec({})
+
+    def searchContacts(self, query="", readMask=None, pageSize=50, **kw):
+        q = (query or "").lower()
+        hits = []
+        for p in self._people:
+            blob = " ".join([
+                ((p.get("names") or [{}])[0]).get("displayName") or "",
+                " ".join(e.get("value") or "" for e in p.get("emailAddresses") or []),
+            ]).lower()
+            if q in blob:
+                hits.append({"person": p})
+        return _Exec({"results": hits[:pageSize]})
 
     def getBatchGet(self, resourceNames, **kw):
         self.batch_gets.append(list(resourceNames))
         return _Exec({"responses": [{"requestedResourceName": r, "person": self._all.get(r)} for r in resourceNames]})
 
+    def createContact(self, body=None, personFields=None, **kw):
+        body = body or {}
+        self.creates.append(body)
+        rid = f"people/new{next(self._ids)}"
+        names = list(body.get("names") or [])
+        if names and not names[0].get("displayName"):
+            n = names[0]
+            names = [{**n, "displayName": " ".join(filter(None, [n.get("givenName"), n.get("familyName")]))}]
+        person = {
+            "resourceName": rid, "etag": f"etag-{rid}",
+            "names": names,
+            "emailAddresses": list(body.get("emailAddresses") or []),
+            "phoneNumbers": list(body.get("phoneNumbers") or []),
+            "organizations": list(body.get("organizations") or []),
+            "birthdays": list(body.get("birthdays") or []),
+            "addresses": list(body.get("addresses") or []),
+            "urls": list(body.get("urls") or []),
+            "memberships": list(body.get("memberships") or []),
+            "externalIds": [], "photos": [], "metadata": {},
+        }
+        self._all[rid] = person
+        self._people.append(person)
+        return _Exec(person)
+
     def updateContact(self, **kw):
         self.updates.append(kw)
-        return _Exec({})
+        person = self._all.get(kw.get("resourceName"))
+        if person and "body" in kw:
+            person["etag"] = person.get("etag", "") + "-u"
+            body = kw["body"]
+            for key in ("externalIds", "emailAddresses", "phoneNumbers", "addresses", "names", "memberships"):
+                if key in body:
+                    person[key] = body[key]
+        return _Exec(person or {})

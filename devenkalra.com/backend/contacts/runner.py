@@ -240,6 +240,12 @@ def execute_run(run, echo=False, token_file=None):
             extra.update(warnings=ctx.warnings, unknown_groups=dict(ctx.unknown_groups),
                          unknown_sources=sorted(ctx.unknown_sources))
         reporter.flush(**extra)
+        if live:
+            # Drop cached People & Orgs details for every task this live run wrote (partial runs too).
+            from . import entities as entities_mod
+            tids = list(ChangeLog.objects.filter(run=run).values_list('task_id', flat=True).distinct())
+            if tids:
+                entities_mod.invalidate_details(tids)
     run.refresh_from_db()
     return run
 

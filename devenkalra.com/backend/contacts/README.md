@@ -48,6 +48,13 @@ Runs tab and share its single-run lock.
 ```
 python manage.py contacts_sync check
 python manage.py contacts_sync google [--full] [--photos] [--writeback] [--rename-tasks] [--ignore-label PATTERN]
+python manage.py contacts_migrate_relationships              # dry-run: description + Introduced by -> Relationship data
+python manage.py contacts_migrate_relationships --apply --max-writes 20000
+python manage.py contacts_sync_relationship_display          # dry-run: wipe description, rebuild ### managed block from Relationship data
+python manage.py contacts_sync_relationship_display --apply --max-writes 20000
+python manage.py contacts_entity_action --list
+python manage.py contacts_entity_action fill_psalutation [--ids a,b] [--overwrite]
+python manage.py contacts_entity_action fill_psalutation --apply --max-writes 500
 python manage.py contacts_sync linkedin Connections.csv [--messages messages.csv]
 python manage.py contacts_sync whatsapp export.json [--no-create] [--only-saved] [--trust-exact-names]
 python manage.py contacts_sync merge SURVIVOR_TASK_ID LOSER_TASK_ID
@@ -68,8 +75,11 @@ contacts/
     sync.py          matching and upsert/create/update/merge
     sources/         google.py, linkedin.py, whatsapp.py
     transfer.py      export/import of People + Orgs and their relationships
-    relations.py     relationship sections in task descriptions; inverse labels
-  entities.py        People & Orgs editor: list cache, detail, field locks, save
+    relations.py     Relationship data JSON + description ### block + legacy description/Introduced by
+  entities.py        People & Orgs editor: list + detail cache, create (Google first), field locks, save
+  google_manager.py  Google Contacts mini-manager: search, bulk update, bulk create (Google-only writes)
+  entity_actions.py  Named People & Orgs actions (fill_psalutation, …); dry-run then apply
+  mail_merge.py      Throttled Gmail draft/send campaigns (restartable recipient queue)
   runner.py          executes SyncRuns: progress, change journal, snapshots, review items, apply rules
   worker.py          background thread that claims queued runs
   views.py           DRF API under /api/contacts/ (IsSuperuserRole)
@@ -115,18 +125,26 @@ resumable.
 
 ### People & Orgs editor
 
-`entities.py` backs `/api/contacts/entities/` (list from the `EntityCache` copy; POST re-reads both lists) and
-`/api/contacts/entities/<task_id>/` (GET reads the task live; PUT saves). `engine/relations.py` parses and
-renders the managed description sections and holds the inverse labels (`Parent of` ↔ `Child of`,
-`Works at` → `Employs`).
+`entities.py` backs `/api/contacts/entities/` (list from the `EntityCache` copy; POST re-reads both lists and
+clears detail caches), `/api/contacts/entities/create/` (POST creates a Google contact then a linked ClickUp
+People task), `/api/contacts/entities/bulk/` (POST applies `add_groups` or `add_relationship` to many ids,
+reusing single-entity save), and `/api/contacts/entities/<task_id>/` (GET returns `EntityDetailCache` or reads
+ClickUp and stores it; `?refresh=1` forces a live read; PUT saves). Detail caches are invalidated for the
+touched tasks on editor save and after live sync writes. `engine/relations.py` parses and renders the managed
+description sections and holds the inverse labels (`Parent of` ↔ `Child of`, `Works at` → `Employs`).
+
+Create needs Google write scope and live ClickUp writes. It calls People API `createContact`, then
+`ClickUp.create` with `google_id` / hash / link and Sources=Google so the next sync updates instead of
+duplicating, and writes the ClickUp task id back onto the Google contact. Overlapping email/phone with a
+row already in the People cache is refused.
 
 A save is refused unless writes are enabled and no live run is active, and refused if the task's
 `date_updated` differs from the one the editor loaded. Fields in `entities.SYNC_OWNED` are always locked, and
 `FROM_SOURCE` fields are locked when the contact has that source's key; the server rejects changes to locked
 fields, not just the UI. Relationship changes are mirrored on the other task with the inverse label. A
 description whose managed sections contain text `relations.parse` doesn't understand is never rewritten.
-Writes go through a `WriteGuard` and are recorded in `EntityEdit`; any edit makes earlier previews
-unappliable (`runner.apply_refusal`).
+Writes go through a `WriteGuard` and are recorded in `EntityEdit`; any edit (or create) makes earlier
+previews unappliable (`runner.apply_refusal`).
 
 ## Tests
 

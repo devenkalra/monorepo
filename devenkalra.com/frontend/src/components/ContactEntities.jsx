@@ -5,17 +5,22 @@ import { api, formatWhen, taskUrl } from './contactsApi';
 const PAGE = 200;
 const KIND_LABEL = { people: 'Person', orgs: 'Org' };
 const NUMBER_TYPES = ['number', 'currency', 'emoji', 'rating'];
+const BULK_REL_LABELS = [
+  'Spouse of', 'Partner of', 'Parent of', 'Child of', 'Sibling of', 'Friend of',
+  'Introduced by', 'Works at', 'Studied at', 'Member of', 'Board of', 'Advisor to',
+  'Employs', 'Has alumnus', 'Has member',
+];
 const COLUMNS = [
   ['name', 'Name'],
   ['list', 'Type'],
   ['company', 'Company · Title'],
   ['groups', 'Groups'],
   ['sources', 'Sources'],
+  ['outreach', 'Outreach'],
   ['match', 'Match status'],
   ['relationships', 'Links'],
   ['updated', 'Updated'],
 ];
-
 function sortValue(row, key) {
   const v = row[key];
   if (Array.isArray(v)) return v.join(', ').toLowerCase();
@@ -458,32 +463,52 @@ function MergePanel({ entity, entities, onStart, onCancel }) {
 }
 
 // ---- detail / editor -------------------------------------------------------------------
-function EntityDetail({ token, id, entities, known, canEdit, editBlocked, onOpen, onSaved, onDirtyChange,
-  onStartMerge }) {
-  const [entity, setEntity] = useState(null);
+function EntityDetail({ token, id, cached, listRow, entities, known, canEdit, editBlocked, onOpen, onSaved,
+  onDetail, onDirtyChange, onStartMerge }) {
+  const [entity, setEntity] = useState(() => (cached?.id === id ? cached : null));
   const [merging, setMerging] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [revalidating, setRevalidating] = useState(!cached || cached.id !== id);
 
-  const load = useCallback(async () => {
+  const applyEntity = useCallback((e) => {
+    setEntity(e);
+    onDetail?.(e);
+  }, [onDetail]);
+
+  const load = useCallback(async ({ refresh = false } = {}) => {
     setLoadError('');
+    setRevalidating(true);
     try {
-      setEntity(await api(`entities/${id}/`, { token }));
+      const path = refresh ? `entities/${id}/?refresh=1` : `entities/${id}/`;
+      applyEntity(await api(path, { token }));
     } catch (err) {
       setLoadError(err.message);
+    } finally {
+      setRevalidating(false);
     }
-  }, [id, token]);
+  }, [id, token, applyEntity]);
 
   useEffect(() => {
     let cancelled = false;
+    setRevalidating(true);
     api(`entities/${id}/`, { token })
-      .then((e) => !cancelled && setEntity(e))
-      .catch((err) => !cancelled && setLoadError(err.message));
+      .then((e) => {
+        if (cancelled) return;
+        applyEntity(e);
+        setLoadError('');
+      })
+      .catch((err) => {
+        if (!cancelled) setLoadError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setRevalidating(false);
+      });
     return () => { cancelled = true; };
-  }, [id, token]);
+  }, [id, token, applyEntity]);
 
   const dirty = isDirty(entity, draft);
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
@@ -504,7 +529,7 @@ function EntityDetail({ token, id, entities, known, canEdit, editBlocked, onOpen
   const reload = async () => {
     setDraft(null);
     setSaveError(null);
-    await load();
+    await load({ refresh: true });
   };
 
   const save = async () => {
@@ -526,9 +551,9 @@ function EntityDetail({ token, id, entities, known, canEdit, editBlocked, onOpen
     setSaveError(null);
     try {
       const out = await api(`entities/${id}/`, { token, method: 'PUT', body });
-      setEntity(out.entity);
+      applyEntity(out.entity);
       setDraft(null);
-      onSaved(out.rows);
+      onSaved(out.rows, out.entity?.id);
       setNotice({ text: out.changed ? 'Saved to ClickUp.' : 'Nothing changed.', warnings: out.warnings || [] });
     } catch (err) {
       setSaveError({ message: err.message, conflict: err.status === 409 && /changed in ClickUp/.test(err.message) });
@@ -537,8 +562,19 @@ function EntityDetail({ token, id, entities, known, canEdit, editBlocked, onOpen
     }
   };
 
-  if (loadError) return <div className="error-message">{loadError}</div>;
-  if (!entity) return <p className="email-muted">Loading from ClickUp…</p>;
+  if (loadError && !entity) return <div className="error-message">{loadError}</div>;
+  if (!entity) {
+    return (
+      <div className="contacts-entity">
+        <div className="contacts-entity-head">
+          <div>
+            <h3>{listRow?.name || '…'}</h3>
+            <div className="email-muted">Loading details…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const editing = Boolean(draft);
   const editable = entity.fields.filter((f) => !f.locked);
@@ -562,6 +598,7 @@ function EntityDetail({ token, id, entities, known, canEdit, editBlocked, onOpen
               </select>
             ) : entity.status}
             {entity.archived && ' · archived'}
+            {revalidating && ' · updating…'}
             {' · '}
             <a href={entity.url} target="_blank" rel="noopener noreferrer">Open in ClickUp</a>
           </div>
@@ -619,6 +656,7 @@ function EntityDetail({ token, id, entities, known, canEdit, editBlocked, onOpen
           {notice.warnings.map((w) => <div key={w} className="contacts-banner contacts-banner--warn">{w}</div>)}
         </div>
       )}
+      {loadError && <div className="error-message">{loadError}</div>}
       {saveError && (
         <div className="error-message">
           {saveError.message}{' '}
@@ -723,8 +761,236 @@ function FieldList({ specs, lockedStyle }) {
   );
 }
 
+// ---- create (Google first) -------------------------------------------------------------
+const EMPTY_CREATE = {
+  first_name: '', last_name: '', emails: '', phones: '', company: '', title: '', birthday: '', address: '',
+  website: '', groups: [],
+};
+
+function createDirty(draft) {
+  return Object.entries(EMPTY_CREATE).some(([k, v]) => (
+    Array.isArray(v) ? (draft[k] || []).length > 0 : String(draft[k] || '').trim() !== ''
+  ));
+}
+
+function CreatePersonForm({ token, groupOptions, blocked, onCancel, onCreated, onDirtyChange }) {
+  const [draft, setDraft] = useState(EMPTY_CREATE);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const dirty = createDirty(draft);
+  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange]);
+
+  const set = (key, value) => setDraft((d) => ({ ...d, [key]: value }));
+
+  const toggleGroup = (name) => {
+    setDraft((d) => ({
+      ...d,
+      groups: d.groups.includes(name) ? d.groups.filter((g) => g !== name) : [...d.groups, name],
+    }));
+  };
+
+  const cancel = () => {
+    if (dirty && !window.confirm('Discard the new contact?')) return;
+    onCancel();
+  };
+
+  const save = async () => {
+    const first_name = draft.first_name.trim();
+    const last_name = draft.last_name.trim();
+    const emails = draft.emails.trim();
+    const phones = draft.phones.trim();
+    if (!first_name && !last_name && !emails && !phones) {
+      setError('Need a first or last name, email or phone.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const body = {
+        first_name,
+        last_name,
+        emails,
+        phones,
+        company: draft.company.trim(),
+        title: draft.title.trim(),
+        birthday: draft.birthday || '',
+        address: draft.address.trim(),
+        website: draft.website.trim(),
+        groups: draft.groups,
+      };
+      const out = await api('entities/create/', { token, method: 'POST', body });
+      onCreated(out);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const preview = [draft.first_name.trim(), draft.last_name.trim()].filter(Boolean).join(' ') || 'New person';
+
+  return (
+    <div className="contacts-entity">
+      <div className="contacts-entity-head">
+        <div>
+          <h3>{preview}</h3>
+          <div className="email-muted">New person · created in Google Contacts, then linked in ClickUp</div>
+        </div>
+        <div className="contacts-entity-actions">
+          <button type="button" className="editorial-button" disabled={!!blocked || saving || !dirty} onClick={save}
+            title={blocked || undefined}>
+            {saving ? 'Creating…' : 'Create'}
+          </button>
+          <button type="button" className="asset-btn-muted" disabled={saving} onClick={cancel}>Cancel</button>
+        </div>
+      </div>
+      {blocked && <div className="contacts-banner contacts-banner--warn">{blocked}</div>}
+      {error && <div className="error-message">{error}</div>}
+      <section>
+        <h4>Details</h4>
+        <div className="contacts-field-grid">
+          <label className="contacts-field">
+            <span className="contacts-field-name">First name</span>
+            <input type="text" className="contacts-input" value={draft.first_name}
+              onChange={(e) => set('first_name', e.target.value)} autoFocus />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Last name</span>
+            <input type="text" className="contacts-input" value={draft.last_name}
+              onChange={(e) => set('last_name', e.target.value)} />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Emails</span>
+            <input type="text" className="contacts-input" value={draft.emails}
+              onChange={(e) => set('emails', e.target.value)} placeholder="comma-separated" />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Phones</span>
+            <input type="text" className="contacts-input" value={draft.phones}
+              onChange={(e) => set('phones', e.target.value)} placeholder="comma-separated" />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Company</span>
+            <input type="text" className="contacts-input" value={draft.company}
+              onChange={(e) => set('company', e.target.value)} />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Title</span>
+            <input type="text" className="contacts-input" value={draft.title}
+              onChange={(e) => set('title', e.target.value)} />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Birthday</span>
+            <input type="date" className="contacts-input" value={draft.birthday}
+              onChange={(e) => set('birthday', e.target.value)} />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Address</span>
+            <input type="text" className="contacts-input" value={draft.address}
+              onChange={(e) => set('address', e.target.value)} />
+          </label>
+          <label className="contacts-field">
+            <span className="contacts-field-name">Website</span>
+            <input type="text" className="contacts-input" value={draft.website}
+              onChange={(e) => set('website', e.target.value)} placeholder="https://" />
+          </label>
+          {groupOptions.length > 0 && (
+            <div className="contacts-field">
+              <span className="contacts-field-name">Groups</span>
+              <div className="contacts-chips">
+                {groupOptions.map((g) => (
+                  <label key={g} className="contacts-check">
+                    <input type="checkbox" checked={draft.groups.includes(g)} onChange={() => toggleGroup(g)} />
+                    {g}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ---- bulk actions ----------------------------------------------------------------------
+function BulkAddGroups({ groupOptions, onApply, onCancel, busy }) {
+  const [picked, setPicked] = useState([]);
+  const toggle = (g) => setPicked((xs) => (xs.includes(g) ? xs.filter((x) => x !== g) : [...xs, g]));
+  return (
+    <div className="contacts-bulk-panel">
+      <strong>Add to group</strong>
+      <p className="email-muted">Adds the selected labels to each checked person (orgs are skipped).</p>
+      <div className="contacts-chips">
+        {groupOptions.map((g) => (
+          <label key={g} className="contacts-check">
+            <input type="checkbox" checked={picked.includes(g)} onChange={() => toggle(g)} disabled={busy} />
+            {g}
+          </label>
+        ))}
+      </div>
+      {groupOptions.length === 0 && <p className="email-muted">No groups in the current list.</p>}
+      <div className="contacts-rel-add-actions">
+        <button type="button" className="editorial-button" disabled={busy || picked.length === 0}
+          onClick={() => onApply(picked)}>
+          {busy ? 'Applying…' : 'Apply'}
+        </button>
+        <button type="button" className="asset-btn-muted" disabled={busy} onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function BulkAddRelationship({ entities, onApply, onCancel, busy }) {
+  const [label, setLabel] = useState('');
+  const [target, setTarget] = useState(null);
+  const [note, setNote] = useState('');
+  return (
+    <div className="contacts-bulk-panel">
+      <strong>Add relationship</strong>
+      <p className="email-muted">Appends the same edge to every checked person or organization.</p>
+      <label className="contacts-field">
+        <span className="contacts-field-name">Relationship type</span>
+        <input type="text" className="contacts-input" list="bulk-rel-labels" autoFocus
+          placeholder="Pick or type, e.g. Works at" value={label} disabled={busy}
+          onChange={(e) => setLabel(e.target.value)} />
+        <datalist id="bulk-rel-labels">{BULK_REL_LABELS.map((s) => <option key={s} value={s} />)}</datalist>
+      </label>
+      <label className="contacts-field">
+        <span className="contacts-field-name">Target</span>
+        <EntityPicker entities={entities} kinds={['people', 'orgs']}
+          value={target?.id} valueName={target?.name} disabled={busy}
+          onChange={(e) => setTarget(e)} />
+      </label>
+      <label className="contacts-field">
+        <span className="contacts-field-name">Note (optional)</span>
+        <input type="text" className="contacts-input" value={note} disabled={busy}
+          onChange={(e) => setNote(e.target.value)} placeholder="Same note on each" />
+      </label>
+      <div className="contacts-rel-add-actions">
+        <button type="button" className="editorial-button"
+          disabled={busy || !label.trim() || !target}
+          onClick={() => onApply({ label: label.trim(), target_id: target.id, note: note.trim() })}>
+          {busy ? 'Applying…' : 'Apply'}
+        </button>
+        <button type="button" className="asset-btn-muted" disabled={busy} onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+function formatBulkSummary(out) {
+  const parts = [];
+  if (out.ok) parts.push(`${out.ok} updated`);
+  if (out.skipped) parts.push(`${out.skipped} already had it`);
+  if (out.failed) parts.push(`${out.failed} failed`);
+  return parts.join(' · ') || 'Nothing changed.';
+}
+
 // ---- the tab ---------------------------------------------------------------------------
-export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange, onStartMerge }) {
+export function EntitiesTab({ token, writesEnabled, googleConnected, googleCanWrite, liveRunActive,
+  onDirtyChange, onStartMerge, onStartMailMerge }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -733,19 +999,37 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
   const [group, setGroup] = useState('');
   const [source, setSource] = useState('');
   const [match, setMatch] = useState('');
+  const [outreach, setOutreach] = useState('');
   const [linkedOnly, setLinkedOnly] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [sort, setSort] = useState({ key: 'name', dir: 1 });
   const [shown, setShown] = useState({ key: '', n: PAGE });
   const [selectedId, setSelectedId] = useState(null);
+  const [checkedIds, setCheckedIds] = useState(() => new Set());
+  const [bulkMode, setBulkMode] = useState(null); // 'groups' | 'relationship' | 'fill_psalutation' | 'email_list' | null
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkNotice, setBulkNotice] = useState(null);
+  const [psalOverwrite, setPsalOverwrite] = useState(false);
+  const [psalPreview, setPsalPreview] = useState(null);
+  const [emailListText, setEmailListText] = useState('');
+  const [emailListMeta, setEmailListMeta] = useState({ withEmail: 0, missing: 0 });
+  const [emailListCopied, setEmailListCopied] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createNotice, setCreateNotice] = useState(null);
+  const [detailById, setDetailById] = useState({});
   const dirtyRef = useRef(false);
   const query = useDeferredValue(q);
+  const rememberDetail = useCallback((entity) => {
+    if (!entity?.id) return;
+    setDetailById((m) => (m[entity.id] === entity ? m : { ...m, [entity.id]: entity }));
+  }, []);
 
   const refresh = useCallback(async () => {
     setRefreshing(true);
     setError('');
     try {
       setData(await api('entities/', { token, method: 'POST' }));
+      setDetailById({});
     } catch (err) {
       setError(err.message);
     } finally {
@@ -781,18 +1065,42 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
   }, []);
 
   const open = (id) => {
-    if (id === selectedId) return;
+    if (id === selectedId && !creating) return;
     if (dirtyRef.current && !window.confirm('Discard your unsaved changes?')) return;
+    setCreating(false);
+    setCreateNotice(null);
+    setBulkNotice(null);
     setSelectedId(id);
+  };
+
+  const startCreate = () => {
+    if (creating) return;
+    if (dirtyRef.current && !window.confirm('Discard your unsaved changes?')) return;
+    setSelectedId(null);
+    setCreateNotice(null);
+    setBulkNotice(null);
+    setCreating(true);
   };
 
   const entities = useMemo(() => data?.entities || [], [data]);
   const known = useMemo(() => new Set(entities.map((e) => e.id)), [entities]);
-  const options = useMemo(() => ({
-    groups: uniqueValues(entities, 'groups'),
-    sources: uniqueValues(entities, 'sources'),
-    matches: uniqueValues(entities, 'match'),
-  }), [entities]);
+  const options = useMemo(() => {
+    // Prefer schema options from the ClickUp Outreach field (available after Refresh list),
+    // and always merge in any values present on rows so renamed/legacy chips still filter.
+    const fromSchema = data?.outreach_options || [];
+    const fromRows = uniqueValues(entities, 'outreach');
+    const seen = new Set(fromSchema.map((x) => x.toLowerCase()));
+    const outreaches = [
+      ...fromSchema,
+      ...fromRows.filter((x) => !seen.has(x.toLowerCase())),
+    ];
+    return {
+      groups: uniqueValues(entities, 'groups'),
+      sources: uniqueValues(entities, 'sources'),
+      outreaches,
+      matches: uniqueValues(entities, 'match'),
+    };
+  }, [entities, data]);
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -800,6 +1108,7 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
       && (!kind || e.list === kind)
       && (!group || e.groups.includes(group))
       && (!source || e.sources.includes(source))
+      && (!outreach || (e.outreach || []).includes(outreach))
       && (!match || e.match === match)
       && (!linkedOnly || e.relationships > 0)
       && (!needle || [e.name, e.company, e.title, e.emails, e.phones].some((v) => v.toLowerCase().includes(needle))));
@@ -810,13 +1119,58 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
       return c * sort.dir || a.name.localeCompare(b.name);
     });
     return out;
-  }, [entities, query, kind, group, source, match, linkedOnly, showArchived, sort]);
+  }, [entities, query, kind, group, source, outreach, match, linkedOnly, showArchived, sort]);
 
-  const filterKey = JSON.stringify([query, kind, group, source, match, linkedOnly, showArchived, sort]);
+  const filterKey = JSON.stringify([query, kind, group, source, outreach, match, linkedOnly, showArchived, sort]);
   const limit = shown.key === filterKey ? shown.n : PAGE;
+  const visibleRows = rows.slice(0, limit);
   const showMore = () => setShown({ key: filterKey, n: limit + PAGE });
 
-  const onSaved = useCallback((updated) => {
+  const filteredIds = useMemo(() => rows.map((e) => e.id), [rows]);
+  // Actions always run on the intersection of the checkboxes and the current filter.
+  const selectedIds = useMemo(
+    () => filteredIds.filter((id) => checkedIds.has(id)),
+    [filteredIds, checkedIds],
+  );
+  const allFilteredChecked = filteredIds.length > 0 && selectedIds.length === filteredIds.length;
+  const someFilteredChecked = selectedIds.length > 0;
+
+  // Drop checkboxes that fall outside the active search/filters so Select all can't
+  // accumulate a >500 set from a previous broader view.
+  useEffect(() => {
+    setCheckedIds((prev) => {
+      if (!prev.size) return prev;
+      const allow = new Set(filteredIds);
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (allow.has(id)) next.add(id);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [filterKey, filteredIds]);
+
+  const toggleChecked = (id, on) => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleAllFiltered = (on) => {
+    // Replace selection with exactly the current filtered set (or clear those).
+    setCheckedIds(on ? new Set(filteredIds) : new Set());
+  };
+
+  const clearChecked = () => {
+    setCheckedIds(new Set());
+    setBulkMode(null);
+  };
+
+  const onSaved = useCallback((updated, keepDetailId) => {
     if (!updated?.length) return;
     setData((d) => {
       const byId = Object.fromEntries(updated.map((r) => [r.id, r]));
@@ -824,7 +1178,92 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
       const added = updated.filter((r) => !d.entities.some((e) => e.id === r.id));
       return { ...d, entities: [...kept, ...added] };
     });
+    // Relationship partners were rewritten; drop their client detail cache (keep the one we just saved).
+    setDetailById((m) => {
+      let next = m;
+      for (const r of updated) {
+        if (r.id === keepDetailId || !m[r.id]) continue;
+        if (next === m) next = { ...m };
+        delete next[r.id];
+      }
+      return next;
+    });
   }, []);
+
+  const runBulk = async (body) => {
+    setBulkBusy(true);
+    setError('');
+    setBulkNotice(null);
+    try {
+      const out = await api('entities/bulk/', { token, method: 'POST', body });
+      onSaved(out.rows || []);
+      const fails = (out.results || []).filter((r) => !r.ok);
+      setBulkNotice({
+        text: formatBulkSummary(out),
+        warnings: fails.map((r) => `${r.name || r.id}: ${r.error}`),
+      });
+      setBulkMode(null);
+      if (fails.length) setCheckedIds(new Set(fails.map((r) => r.id)));
+      else clearChecked();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const runFillPsalutation = async (dryRun) => {
+    setBulkBusy(true);
+    setError('');
+    setBulkNotice(null);
+    try {
+      const out = await api('entities/actions/', {
+        token,
+        method: 'POST',
+        body: {
+          action: 'fill_psalutation',
+          ids: selectedIds,
+          dry_run: dryRun,
+          overwrite: psalOverwrite,
+        },
+      });
+      if (dryRun) {
+        setPsalPreview(out);
+        setBulkNotice({
+          text: `Preview: ${out.summary?.would_change ?? 0} would change, ${out.summary?.skipped ?? 0} skipped.`,
+          warnings: (out.changes || [])
+            .filter((c) => c.would_change)
+            .slice(0, 40)
+            .map((c) => `${c.name}: ${c.before || '(empty)'} → ${c.after}`),
+        });
+      } else {
+        onSaved(out.rows || []);
+        setBulkNotice({
+          text: `Filled PSalutation on ${out.ok ?? 0}`
+            + (out.failed ? ` · ${out.failed} failed` : ''),
+          warnings: (out.results || []).filter((r) => !r.ok).map((r) => `${r.name}: ${r.error}`),
+        });
+        setPsalPreview(null);
+        setBulkMode(null);
+        clearChecked();
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const onCreated = (out) => {
+    onSaved(out.rows || []);
+    if (out.entity) rememberDetail(out.entity);
+    setCreating(false);
+    setSelectedId(out.entity?.id || null);
+    setCreateNotice({
+      text: 'Created in Google Contacts and ClickUp.',
+      warnings: out.warnings || [],
+    });
+  };
 
   const toggleSort = (key) => setSort((s) => (s.key === key ? { key, dir: -s.dir }
     : { key, dir: ['updated', 'relationships'].includes(key) ? -1 : 1 }));
@@ -832,6 +1271,12 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
   const editBlocked = !writesEnabled
     ? 'Editing needs live ClickUp writes, which are off on this server (CONTACTS_CLICKUP_WRITES_ENABLED).'
     : liveRunActive ? 'A sync is running. Edit when it has finished.' : '';
+  const createBlocked = !writesEnabled
+    ? 'Creating needs live ClickUp writes, which are off on this server (CONTACTS_CLICKUP_WRITES_ENABLED).'
+    : liveRunActive ? 'A sync is running. Create when it has finished.'
+      : !googleConnected ? 'Connect Google from the Overview tab first.'
+        : !googleCanWrite ? 'Grant write access to Google Contacts from the Overview tab first.'
+          : '';
 
   if (!data && !error) return <p className="email-muted">Loading…</p>;
 
@@ -852,12 +1297,20 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
           <option value="">Any source</option>
           {options.sources.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        <select value={outreach} onChange={(e) => setOutreach(e.target.value)}>
+          <option value="">Any outreach</option>
+          {options.outreaches.map((o) => <option key={o} value={o}>{o}</option>)}
+        </select>
         <select value={match} onChange={(e) => setMatch(e.target.value)}>
           <option value="">Any match status</option>
           {options.matches.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
         <label className="contacts-check"><input type="checkbox" checked={linkedOnly} onChange={(e) => setLinkedOnly(e.target.checked)} /> Has relationships</label>
         <label className="contacts-check"><input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} /> Archived</label>
+        <button type="button" className="editorial-button" disabled={!!createBlocked || creating}
+          title={createBlocked || 'Create in Google Contacts, then link in ClickUp'} onClick={startCreate}>
+          New contact
+        </button>
       </div>
       <div className="contacts-toolbar email-muted">
         <span>
@@ -878,12 +1331,203 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
       {refreshing && !data?.loaded && (
         <p className="email-muted">Reading the People and Orgs lists from ClickUp for the first time. This takes about a minute.</p>
       )}
+      {bulkNotice && (
+        <div className="asset-status" style={{ marginBottom: '0.75rem' }}>
+          {bulkNotice.text}
+          {bulkNotice.warnings.map((w) => (
+            <div key={w} className="contacts-banner contacts-banner--warn">{w}</div>
+          ))}
+        </div>
+      )}
+
+      {selectedIds.length > 0 && (
+        <div className="contacts-bulk-bar">
+          <span>
+            {selectedIds.length} selected
+            {selectedIds.length > 500 ? ' · actions limited to 500 — narrow the filter' : ''}
+          </span>
+          <button type="button" className="editorial-button" disabled={!!editBlocked || bulkBusy || selectedIds.length > 500}
+            title={editBlocked || (selectedIds.length > 500 ? 'Narrow the filter to 500 or fewer' : undefined)}
+            onClick={() => {
+              setPsalPreview(null);
+              setEmailListCopied(false);
+              setBulkMode((m) => (m === 'groups' ? null : 'groups'));
+            }}>
+            Add to group
+          </button>
+          <button type="button" className="editorial-button" disabled={!!editBlocked || bulkBusy || selectedIds.length > 500}
+            title={editBlocked || (selectedIds.length > 500 ? 'Narrow the filter to 500 or fewer' : undefined)}
+            onClick={() => {
+              setPsalPreview(null);
+              setEmailListCopied(false);
+              setBulkMode((m) => (m === 'relationship' ? null : 'relationship'));
+            }}>
+            Add relationship
+          </button>
+          <button type="button" className="editorial-button" disabled={!!editBlocked || bulkBusy || selectedIds.length > 500}
+            title={editBlocked || (selectedIds.length > 500 ? 'Narrow the filter to 500 or fewer' : 'Fill empty PSalutation from first name')}
+            onClick={() => {
+              setPsalPreview(null);
+              setEmailListCopied(false);
+              setBulkMode((m) => (m === 'fill_psalutation' ? null : 'fill_psalutation'));
+            }}>
+            Fill PSalutation
+          </button>
+          <button type="button" className="editorial-button" disabled={bulkBusy}
+            title="Build a comma-separated address list for Gmail To / Cc"
+            onClick={() => {
+              setPsalPreview(null);
+              setEmailListCopied(false);
+              const byId = Object.fromEntries(entities.map((e) => [e.id, e]));
+              const entries = [];
+              const seen = new Set();
+              let missing = 0;
+              for (const id of selectedIds) {
+                const e = byId[id];
+                if (!e || e.list !== 'people') {
+                  missing += 1;
+                  continue;
+                }
+                const raw = (e.emails || e.email || '').trim();
+                const first = raw.split(',')[0].trim();
+                if (!first || !first.includes('@')) {
+                  missing += 1;
+                  continue;
+                }
+                const key = first.toLowerCase();
+                if (seen.has(key)) continue;
+                seen.add(key);
+                const name = (e.name || '').trim().replace(/[\\"\r\n]+/g, ' ').replace(/\s+/g, ' ');
+                // RFC 5322 display name so Gmail To/Cc shows the person, not just the address.
+                entries.push(name ? `"${name.replace(/"/g, '')}" <${first}>` : first);
+              }
+              setEmailListText(entries.join(', '));
+              setEmailListMeta({ withEmail: entries.length, missing });
+              setBulkMode((m) => (m === 'email_list' ? null : 'email_list'));
+            }}>
+            Generate Email List
+          </button>
+          <button type="button" className="editorial-button" disabled={bulkBusy || selectedIds.length > 5000}
+            title={selectedIds.length > 5000 ? 'At most 5000 per campaign' : 'Open Mail merge with this selection'}
+            onClick={() => {
+              const byId = Object.fromEntries(entities.map((e) => [e.id, e]));
+              const audience = selectedIds.map((id) => {
+                const e = byId[id];
+                const email = (e?.emails || e?.email || '').split(',')[0].trim();
+                return { id, name: e?.name || id, email, company: e?.company || '' };
+              });
+              onStartMailMerge?.(audience);
+              clearChecked();
+              setPsalPreview(null);
+              setEmailListCopied(false);
+              setBulkMode(null);
+            }}>
+            Mail merge
+          </button>
+          <button type="button" className="asset-btn-muted" disabled={bulkBusy} onClick={() => {
+            clearChecked();
+            setPsalPreview(null);
+            setEmailListCopied(false);
+            setBulkMode(null);
+          }}>
+            Clear
+          </button>
+        </div>
+      )}
+      {bulkMode === 'groups' && (
+        <BulkAddGroups groupOptions={options.groups} busy={bulkBusy} onCancel={() => setBulkMode(null)}
+          onApply={(groups) => runBulk({ op: 'add_groups', ids: selectedIds, groups })} />
+      )}
+      {bulkMode === 'relationship' && (
+        <BulkAddRelationship entities={entities} busy={bulkBusy} onCancel={() => setBulkMode(null)}
+          onApply={(rel) => runBulk({ op: 'add_relationship', ids: selectedIds, ...rel })} />
+      )}
+      {bulkMode === 'fill_psalutation' && (
+        <div className="contacts-bulk-panel">
+          <strong>Fill PSalutation</strong>
+          <p className="email-muted">
+            Uses Google given name when linked; otherwise the first name parsed from the display name.
+            Empty PSalutation only, unless overwrite is on. Merged and archived are skipped.
+          </p>
+          <label className="contacts-check">
+            <input type="checkbox" checked={psalOverwrite} disabled={bulkBusy}
+              onChange={(e) => { setPsalOverwrite(e.target.checked); setPsalPreview(null); }} />
+            Overwrite existing PSalutation
+          </label>
+          <div className="contacts-rel-add-actions">
+            <button type="button" className="asset-btn-muted" disabled={bulkBusy || !!editBlocked}
+              onClick={() => runFillPsalutation(true)}>
+              {bulkBusy ? 'Working…' : 'Preview'}
+            </button>
+            <button type="button" className="editorial-button"
+              disabled={bulkBusy || !!editBlocked || !(psalPreview?.summary?.would_change > 0)}
+              title={psalPreview ? undefined : 'Run Preview first'}
+              onClick={() => runFillPsalutation(false)}>
+              Apply {psalPreview?.summary?.would_change ?? ''}
+            </button>
+            <button type="button" className="asset-btn-muted" disabled={bulkBusy}
+              onClick={() => { setBulkMode(null); setPsalPreview(null); }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+      {bulkMode === 'email_list' && (
+        <div className="contacts-bulk-panel">
+          <strong>Email list for Gmail</strong>
+          <p className="email-muted">
+            {emailListMeta.withEmail} address{emailListMeta.withEmail === 1 ? '' : 'es'}
+            {emailListMeta.missing > 0
+              ? ` · ${emailListMeta.missing} selected without a usable email (skipped)`
+              : ''}
+            . Paste into Gmail To or Cc.
+          </p>
+          <textarea
+            className="contacts-input contacts-email-list-box"
+            readOnly
+            value={emailListText}
+            onFocus={(e) => e.target.select()}
+            placeholder="No emails on the current selection."
+          />
+          <div className="contacts-rel-add-actions">
+            <button
+              type="button"
+              className="editorial-button"
+              disabled={!emailListText}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(emailListText);
+                  setEmailListCopied(true);
+                } catch {
+                  setEmailListCopied(false);
+                  setBulkNotice({
+                    text: 'Could not copy automatically — select the text and copy manually.',
+                    warnings: [],
+                  });
+                }
+              }}>
+              {emailListCopied ? 'Copied' : 'Copy'}
+            </button>
+            <button type="button" className="asset-btn-muted"
+              onClick={() => { setBulkMode(null); setEmailListCopied(false); }}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="contacts-entities-layout">
         <div className="contacts-scroll contacts-entity-list">
           <table className="contacts-table">
             <thead>
               <tr>
+                <th className="contacts-check-col">
+                  <input type="checkbox" checked={allFilteredChecked}
+                    ref={(el) => { if (el) el.indeterminate = !allFilteredChecked && someFilteredChecked; }}
+                    onChange={(e) => toggleAllFiltered(e.target.checked)}
+                    title={`Select all ${filteredIds.length} matching`}
+                    aria-label={`Select all ${filteredIds.length} matching`} />
+                </th>
                 {COLUMNS.map(([key, label]) => (
                   <th key={key}>
                     <button type="button" className="contacts-sort" onClick={() => toggleSort(key)}>
@@ -894,14 +1538,21 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
               </tr>
             </thead>
             <tbody>
-              {rows.slice(0, limit).map((e) => (
-                <tr key={e.id} className={`contacts-entity-row ${e.id === selectedId ? 'contacts-entity-row--active' : ''}`}
+              {visibleRows.map((e) => (
+                <tr key={e.id}
+                  className={`contacts-entity-row ${e.id === selectedId ? 'contacts-entity-row--active' : ''} ${checkedIds.has(e.id) ? 'contacts-entity-row--checked' : ''}`}
                   onClick={() => open(e.id)}>
+                  <td className="contacts-check-col" onClick={(ev) => ev.stopPropagation()}>
+                    <input type="checkbox" checked={checkedIds.has(e.id)}
+                      onChange={(ev) => toggleChecked(e.id, ev.target.checked)}
+                      aria-label={`Select ${e.name}`} />
+                  </td>
                   <td>{e.name}{e.archived && <span className="email-muted"> (archived)</span>}</td>
                   <td>{KIND_LABEL[e.list]}</td>
                   <td className="contacts-cell-wrap">{[e.company, e.title].filter(Boolean).join(' · ')}</td>
                   <td className="contacts-cell-wrap">{e.groups.join(', ')}</td>
                   <td>{e.sources.join(', ')}</td>
+                  <td className="contacts-cell-wrap">{(e.outreach || []).join(', ')}</td>
                   <td>{e.match}</td>
                   <td>{e.relationships || ''}</td>
                   <td>{e.updated ? new Date(e.updated).toLocaleDateString() : ''}</td>
@@ -917,12 +1568,26 @@ export function EntitiesTab({ token, writesEnabled, liveRunActive, onDirtyChange
           {data?.loaded && rows.length === 0 && <p className="email-muted">Nothing matches these filters.</p>}
         </div>
         <div className="contacts-entity-panel">
-          {selectedId ? (
-            <EntityDetail key={selectedId} token={token} id={selectedId} entities={entities} known={known}
-              canEdit={writesEnabled} editBlocked={editBlocked} onOpen={open} onSaved={onSaved}
-              onDirtyChange={setDirty} onStartMerge={onStartMerge} />
+          {creating ? (
+            <CreatePersonForm token={token} groupOptions={options.groups} blocked={createBlocked}
+              onCancel={() => setCreating(false)} onCreated={onCreated} onDirtyChange={setDirty} />
+          ) : selectedId ? (
+            <>
+              {createNotice && (
+                <div className="asset-status" style={{ marginBottom: '0.75rem' }}>
+                  {createNotice.text}
+                  {createNotice.warnings.map((w) => (
+                    <div key={w} className="contacts-banner contacts-banner--warn">{w}</div>
+                  ))}
+                </div>
+              )}
+              <EntityDetail key={selectedId} token={token} id={selectedId} cached={detailById[selectedId]}
+                listRow={entities.find((e) => e.id === selectedId)} entities={entities} known={known}
+                canEdit={writesEnabled} editBlocked={editBlocked} onOpen={open} onSaved={onSaved}
+                onDetail={rememberDetail} onDirtyChange={setDirty} onStartMerge={onStartMerge} />
+            </>
           ) : (
-            <p className="email-muted">Select a person or organization to see its details.</p>
+            <p className="email-muted">Select a person or organization to see its details, or create a new contact.</p>
           )}
         </div>
       </div>

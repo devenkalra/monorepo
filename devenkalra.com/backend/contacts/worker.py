@@ -1,4 +1,4 @@
-"""In-process background loop that executes queued sync runs, one at a time."""
+"""In-process background loop: queued sync runs + mail-merge campaign ticks."""
 import logging
 import sys
 import threading
@@ -25,8 +25,10 @@ def _loop():
     time.sleep(5)
     while True:
         try:
+            from . import mail_merge
             from .runner import claim, execute_run, recover_stale
             recover_stale()
+            mail_merge.tick_all()
             run = claim()
             if run:
                 execute_run(run)

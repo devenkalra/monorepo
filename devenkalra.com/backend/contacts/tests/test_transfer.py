@@ -38,6 +38,7 @@ def people_fields(prefix):
         field(f"{prefix}-grp", "Groups", "labels",
               [{"id": f"{prefix}-g1", "label": "Google"}, {"id": f"{prefix}-g2", "label": "Caltech"}]),
         field(f"{prefix}-intro", "Introduced by", "tasks"),
+        field(f"{prefix}-rdata", "Relationship data", "text"),
         field(f"{prefix}-seen", "Last synced", "short_text"),
     ]
 
@@ -143,7 +144,9 @@ def source_workspace():
          "custom_fields": [cf("p-intro", [{"id": "hakan", "name": "Hakan Ancin"}], "Introduced by", "tasks")]},
         {"id": "old", "name": "Merged Person", "archived": True, "markdown_description": "plain notes"},
     ])
-    ws.add_list("O1", "Orgs", [field("o-show", "Show After", "date")], statuses=("new organization", "engaged"), tasks=[
+    ws.add_list("O1", "Orgs", [field("o-show", "Show After", "date"),
+                               field("o-rdata", "Relationship data", "text")],
+                statuses=("new organization", "engaged"), tasks=[
         {"id": "google", "name": "Google", "status": {"status": "engaged"},
          "markdown_description": "**People**\n*   Employs\n    *   [Hakan Ancin](https://app.clickup.com/t/hakan) — Staff SWE",
          "custom_fields": [cf("o-show", "1700000000000", "Show After", "date")]},
@@ -162,7 +165,9 @@ def export(ws):
 
 def with_targets(ws):
     ws.add_list("P2", "PeopleCopy", people_fields("q"))
-    ws.add_list("O2", "OrgsCopy", [field("q-show", "Show After", "date")], statuses=("new organization", "engaged"))
+    ws.add_list("O2", "OrgsCopy", [field("q-show", "Show After", "date"),
+                                   field("q-rdata", "Relationship data", "text")],
+                statuses=("new organization", "engaged"))
     return ws
 
 
@@ -177,6 +182,7 @@ class ExportTests(SimpleTestCase):
 
     def test_export_lists_every_relationship(self):
         rels = {(r["from_id"], r["label"], r["to_id"], r["to_list"]) for r in export(source_workspace())["relationships"]}
+        # Description sections + Introduced by (folded into the relationship graph).
         self.assertEqual(rels, {
             ("hakan", "Spouse of", "reeta", "people"), ("hakan", "Works at", "google", "orgs"),
             ("reeta", "Spouse of", "hakan", "people"), ("reeta", "Introduced by", "hakan", "people"),

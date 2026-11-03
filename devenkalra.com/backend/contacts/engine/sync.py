@@ -213,7 +213,13 @@ def update(ctx, rec, c, how):
                 (c["phones"] and "phones" in ctx.cu.fields and not v.get("phones")) or
                 any(val is not None and v.get(k) in (None, "") for k, val in extra.items()) or
                 bool(new_groups) or bool(new_sources))
-    if how == "key" and v.get(hf) == c["hash"] and v.get("status") not in (DELETED, None) and not backfill:
+    # Rename is independent of field hash: a prior sync may have stored the new hash
+    # without renaming (rename_tasks was off). Don't treat that as UNCHANGED.
+    needs_rename = (
+        ctx.rename_tasks and src == "google" and bool(c["name"]) and c["name"] != rec["name"]
+    )
+    if (how == "key" and v.get(hf) == c["hash"] and v.get("status") not in (DELETED, None)
+            and not backfill and not needs_rename):
         ctx.log("UNCHANGED", rec["name"], task_id=rec["id"])
         return rec
 
@@ -256,7 +262,7 @@ def update(ctx, rec, c, how):
     if v.get("status") in (None, DELETED):
         ch["status"] = ACTIVE
 
-    rename = ctx.rename_tasks and src == "google" and c["name"] and c["name"] != rec["name"]
+    rename = needs_rename
     if rename:
         ctx.cu.update_task(rec["id"], task_name=rec["name"], before=rec["name"], name=c["name"])
     ctx.write_fields(rec, ch)

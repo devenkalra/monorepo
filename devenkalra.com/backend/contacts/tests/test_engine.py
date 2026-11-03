@@ -7,6 +7,7 @@ from contacts.engine import WriteGuard, open_list, run_sync
 from contacts.engine.errors import (DryRunViolation, ProtectionViolation, SafetyStop, WriteBudgetExceeded,
                                     WritesDisabled)
 from contacts.engine.guard import check_field_changes
+from contacts.engine.sources.google import google_contact
 
 from .fakes import FakeClickUp, FakePeople, make_task
 
@@ -163,6 +164,40 @@ class GoogleTests(SimpleTestCase):
     def google_tasks(self, n):
         return [make_task(f"g{i}", f"Person {i}", google_id=f"people/c{i}", status="st-0") for i in range(n)]
 
+    def test_google_contact_reads_city_and_country(self):
+        p = person("people/c1", "Ada", "ada@example.com")
+        p["addresses"] = [{
+            "formattedValue": "1 Main St, Seattle, WA, USA",
+            "city": "Seattle",
+            "country": "United States",
+            "countryCode": "US",
+            "metadata": {"primary": True},
+        }]
+        c = google_contact(p, {})
+        self.assertEqual(c["extra"]["address"], "1 Main St, Seattle, WA, USA")
+        self.assertEqual(c["extra"]["city"], "Seattle")
+        self.assertEqual(c["extra"]["country"], "United States")
+
+    def test_google_contact_falls_back_to_country_code(self):
+        p = person("people/c1", "Ada")
+        p["addresses"] = [{"city": "Berlin", "countryCode": "DE"}]
+        c = google_contact(p, {})
+        self.assertEqual(c["extra"]["city"], "Berlin")
+        self.assertEqual(c["extra"]["country"], "DE")
+        self.assertIsNone(c["extra"]["address"])
+
+    def test_sync_fills_city_and_country_on_clickup(self):
+        p = person("people/c0", "Person 0")
+        p["addresses"] = [{"city": "Seattle", "country": "United States", "metadata": {"primary": True}}]
+        svc = FakePeople([p])
+        tasks = self.google_tasks(1)
+        _, plan, _, _ = run("google", tasks=tasks, google_service=svc)
+        fake, _, _, _ = run("google", dry=False, writes_enabled=True, max_ops=plan.ops, tasks=tasks,
+                            google_service=svc)
+        vals = {cf["id"]: cf["value"] for cf in fake.tasks["g0"]["custom_fields"]}
+        self.assertEqual(vals.get("f-city"), "Seattle")
+        self.assertEqual(vals.get("f-country"), "United States")
+
     def test_full_sync_refuses_a_mass_deletion(self):
         svc = FakePeople([person("people/c0", "Person 0")])
         _, _, ctx, _ = run("google", tasks=self.google_tasks(30), google_service=svc, options={"full": True})
@@ -182,6 +217,31 @@ class GoogleTests(SimpleTestCase):
                             google_service=svc)
         self.assertEqual(fake.tasks["g0"]["name"], "Person 0")
         self.assertFalse(any(m == "PUT" for m, _, _ in fake.writes))
+
+    def test_tasks_are_renamed_when_asked(self):
+        svc = FakePeople([person("people/c0", "Renamed In Google")])
+        tasks = self.google_tasks(1)
+        opts = {"rename_tasks": True}
+        _, plan, _, _ = run("google", tasks=tasks, google_service=svc, options=opts)
+        fake, _, ctx, _ = run("google", dry=False, writes_enabled=True, max_ops=plan.ops, tasks=tasks,
+                              google_service=svc, options=opts)
+        self.assertEqual(fake.tasks["g0"]["name"], "Renamed In Google")
+        self.assertTrue(any(m == "PUT" and "/task/g0" in p for m, p, _ in fake.writes))
+        self.assertTrue(any("renamed from" in (a.get("detail") or "") for a in ctx.actions))
+
+    def test_rename_still_runs_when_hash_already_matches(self):
+        """Prior sync may have stored the new hash with rename_tasks off; rename later."""
+        p = person("people/c0", "Country Lover", "cntry@example.com")
+        c = google_contact(p, {})
+        tasks = [make_task("g0", "Mail Merge1", google_id="people/c0", google_hash=c["hash"],
+                           emails="mailmerge1@example.com, cntry@example.com", status="st-0")]
+        svc = FakePeople([p])
+        opts = {"rename_tasks": True}
+        _, plan, _, _ = run("google", tasks=tasks, google_service=svc, options=opts)
+        fake, _, ctx, _ = run("google", dry=False, writes_enabled=True, max_ops=max(plan.ops, 2),
+                              tasks=tasks, google_service=svc, options=opts)
+        self.assertEqual(fake.tasks["g0"]["name"], "Country Lover")
+        self.assertNotIn("UNCHANGED", ctx.stats)
 
     def test_lookalike_waits_for_review_instead_of_creating(self):
         svc = FakePeople([person("people/c9", "Smith Alicia")])

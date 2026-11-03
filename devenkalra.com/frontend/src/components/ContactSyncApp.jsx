@@ -3,6 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { MarkdownBody } from './MarkdownBody';
 import helpText from './contactSyncHelp.md?raw';
 import { EntitiesTab } from './ContactEntities';
+import { GoogleTab } from './ContactGoogle';
+import { LookupTab } from './ContactLookup';
+import { MailMergeTab } from './ContactMailMerge';
 import { api, formatWhen, taskUrl } from './contactsApi';
 
 const SOURCES = { google: 'Google', linkedin: 'LinkedIn', whatsapp: 'WhatsApp' };
@@ -121,7 +124,7 @@ function FilePicker({ label, kind, file, onUploaded, token, required, setError }
 
 const HELP_SECTIONS = {
   overview: 'tab-overview', sync: 'tab-sync', runs: 'tab-runs', review: 'tab-review', transfer: 'tab-transfer',
-  entities: 'tab-people-orgs',
+  entities: 'tab-people-orgs', google: 'tab-google', lookup: 'tab-check-add', mail: 'tab-mail-merge',
 };
 
 function scrollToAnchor(root, id) {
@@ -168,8 +171,12 @@ function OverviewTab({ status, token, busy, run, onRefresh }) {
   const doCheck = () => run('check', async () => {
     setCheck(await api('check/', { token, method: 'POST' }));
   });
-  const connect = (write) => run('connect', async () => {
-    const data = await api(`oauth/start/${write ? '?write=1' : ''}`, { token });
+  const connect = ({ write = false, mail = false } = {}) => run('connect', async () => {
+    const q = new URLSearchParams();
+    if (write) q.set('write', '1');
+    if (mail) q.set('mail', '1');
+    const qs = q.toString();
+    const data = await api(`oauth/start/${qs ? `?${qs}` : ''}`, { token });
     window.location.href = data.authorize_url;
   });
   const disconnect = () => {
@@ -230,7 +237,15 @@ function OverviewTab({ status, token, busy, run, onRefresh }) {
           {google.connected ? (
             <dl className="email-meta">
               <div><dt>Account</dt><dd>{google.email || 'connected'}</dd></div>
-              <div><dt>Access</dt><dd>{google.can_write ? 'read + write (writeback)' : 'read-only'}</dd></div>
+              <div><dt>Access</dt><dd>{google.can_write ? 'read + write (create & writeback)' : 'read-only'}</dd></div>
+              <div>
+                <dt>Gmail</dt>
+                <dd>
+                  {google.can_mail
+                    ? (google.can_send ? 'drafts + send' : 'drafts')
+                    : 'not granted'}
+                </dd>
+              </div>
               <div><dt>Next sync</dt><dd>{google.has_sync_token ? 'incremental' : 'full (no sync token yet)'}</dd></div>
               {google.last_error ? <div><dt>Last error</dt><dd className="error-message">{google.last_error}</dd></div> : null}
             </dl>
@@ -239,13 +254,28 @@ function OverviewTab({ status, token, busy, run, onRefresh }) {
           )}
           <div className="email-review-actions">
             {!google.connected && (
-              <button type="button" className="editorial-button asset-btn" onClick={() => connect(false)} disabled={!!busy}>
+              <button type="button" className="editorial-button asset-btn" onClick={() => connect()} disabled={!!busy}>
                 Connect Google (read-only)
               </button>
             )}
             {google.connected && !google.can_write && (
-              <button type="button" className="asset-btn-muted" onClick={() => connect(true)} disabled={!!busy}>
+              <button type="button" className="asset-btn-muted" onClick={() => connect({ write: true })} disabled={!!busy}
+                title="Needed to create contacts from People & Orgs and to write ClickUp task ids back to Google">
                 Grant write access
+              </button>
+            )}
+            {google.connected && !google.can_mail && (
+              <button type="button" className="asset-btn-muted"
+                onClick={() => connect({ write: !!google.can_write, mail: true })} disabled={!!busy}
+                title="Needed to read Gmail draft templates and create/send merge mail">
+                Grant Gmail access
+              </button>
+            )}
+            {google.connected && google.can_mail && (
+              <button type="button" className="asset-btn-muted"
+                onClick={() => connect({ write: !!google.can_write, mail: true })} disabled={!!busy}
+                title="Reconnect if draft templates fail to load (adds readonly if missing)">
+                Refresh Gmail access
               </button>
             )}
             {google.connected && (
@@ -334,6 +364,11 @@ function SyncTab({ status, token, busy, run, startPreview, setError }) {
             checked={g.overwrite_values} onChange={(v) => setG({ ...g, overwrite_values: v })} />
           <Checkbox label="Rename ClickUp tasks when the Google name changes"
             checked={g.rename_tasks} onChange={(v) => setG({ ...g, rename_tasks: v })} />
+          {g.rename_tasks && !g.full && (
+            <p className="email-muted" style={{ marginTop: '-0.35rem' }}>
+              If a name change was already synced without this checked, run a <strong>Full sync</strong> once so ClickUp picks up the rename.
+            </p>
+          )}
           <Checkbox label="Write the ClickUp task id back to Google" hint={google.can_write ? '' : 'needs write access'}
             disabled={!google.can_write} checked={g.writeback} onChange={(v) => setG({ ...g, writeback: v })} />
           <label className="contacts-label">
@@ -813,6 +848,7 @@ function initialNotice() {
 export function ContactSyncApp() {
   const { token, isAuthenticated, user, openSocialLoginModal } = useAuth();
   const [tab, setTab] = useState('overview');
+  const [mailSeedAudience, setMailSeedAudience] = useState([]);
   const [status, setStatus] = useState(null);
   const [runs, setRuns] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -905,8 +941,22 @@ export function ContactSyncApp() {
     ['runs', `Runs${status?.active_run ? ' •' : ''}`],
     ['review', `Review${pendingCount ? ` (${pendingCount})` : ''}`],
     ['entities', 'People & Orgs'],
+    ['mail', 'Mail merge'],
+    ['google', 'Google'],
+    ['lookup', 'Check & add'],
     ['transfer', 'Export / Import'],
   ];
+
+  const connectMail = () => {
+    const g = status?.google || {};
+    const q = new URLSearchParams();
+    if (g.can_write) q.set('write', '1');
+    q.set('mail', '1');
+    run('connect', async () => {
+      const data = await api(`oauth/start/?${q}`, { token });
+      window.location.href = data.authorize_url;
+    });
+  };
   const switchTab = (key) => {
     if (key === tab) return;
     if (editorDirty.current && !window.confirm('Discard your unsaved changes?')) return;
@@ -972,8 +1022,29 @@ export function ContactSyncApp() {
           {tab === 'review' && <ReviewTab token={token} busy={busy} run={run} reviews={reviews} onChanged={refresh} />}
           {tab === 'entities' && (
             <EntitiesTab token={token} writesEnabled={status.clickup.writes_enabled}
+              googleConnected={status.google.connected} googleCanWrite={status.google.can_write}
               liveRunActive={status.active_run?.mode === 'live'} onDirtyChange={setEditorDirty}
-              onStartMerge={(survivor, loser) => startPreview('merge', { survivor, loser }, {})} />
+              onStartMerge={(survivor, loser) => startPreview('merge', { survivor, loser }, {})}
+              onStartMailMerge={(audience) => { setMailSeedAudience(audience || []); switchTab('mail'); }} />
+          )}
+          {tab === 'mail' && (
+            <MailMergeTab token={token}
+              googleConnected={status.google.connected}
+              googleCanMail={!!status.google.can_mail}
+              googleCanSend={!!status.google.can_send}
+              seedAudience={mailSeedAudience}
+              onClearSeed={() => setMailSeedAudience([])}
+              onGoPeople={() => switchTab('entities')}
+              onConnectMail={connectMail} />
+          )}
+          {tab === 'google' && (
+            <GoogleTab token={token} googleConnected={status.google.connected}
+              googleCanWrite={status.google.can_write} />
+          )}
+          {tab === 'lookup' && (
+            <LookupTab token={token} writesEnabled={status.clickup.writes_enabled}
+              googleConnected={status.google.connected} googleCanWrite={status.google.can_write}
+              liveRunActive={status.active_run?.mode === 'live'} />
           )}
           {tab === 'transfer' && (
             <TransferTab status={status} token={token} busy={busy} run={run} startPreview={startPreview} setError={setError} />

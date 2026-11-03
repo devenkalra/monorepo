@@ -14,7 +14,9 @@ FIELDS = {
     "company":       "Company",        # Short text
     "title":         "Title",          # Short text
     "birthday":      "Birthday",       # Text ("03-14 (1985)") or Date - from Google
-    "address":       "Address",        # Text        - from Google
+    "address":       "Address",        # Text        - from Google (formatted address)
+    "city":          "City",           # Text        - from Google address.city
+    "country":       "Country",        # Text        - from Google address.country (or countryCode)
     "website":       "Website",        # URL         - from Google
     "groups":        "Groups",         # Labels      - Google contact labels are ADDED, never removed
     "connected_on":  "Connected on",   # Date        - from LinkedIn
@@ -26,8 +28,12 @@ FIELDS = {
     "status":        "Match status",   # Dropdown: active / possible duplicate / deleted in google / merged
     "dup_of":        "Duplicate of",   # URL or short text - suspected duplicate task link
     "last_synced":   "Last synced",    # Date (optional)
+    # JSON array of {type, id, note}; People & Orgs. Replaces description sections + Introduced by.
+    "relationship_data": "Relationship data",
 }
-EXTRA = ("birthday", "address", "website", "connected_on")  # single-valued, source-owned
+# Legacy task-link field folded into relationship_data (label "Introduced by").
+INTRODUCED_BY_FIELD = "Introduced by"
+EXTRA = ("birthday", "address", "city", "country", "website", "connected_on")  # single-valued, source-owned
 SOURCE_LABEL = {"google": "Google", "linkedin": "LinkedIn", "whatsapp": "WhatsApp"}
 REQUIRED = ["google_id", "google_hash", "linkedin_url", "linkedin_hash", "emails", "status", "dup_of"]
 

@@ -42,13 +42,25 @@ def service_for(mailbox):
     return gmail_api.build_gmail_service(mailbox.refresh_token)
 
 
-def renew_watch(mailbox=None):
+def pubsub_topic():
+    return (getattr(settings, 'EMAIL_PUBSUB_TOPIC', '') or '').strip()
+
+
+def renew_watch(mailbox=None, *, require_topic=True):
+    """Register/renew the Gmail push watch.
+
+    When EMAIL_PUBSUB_TOPIC is unset (typical local Docker), returns None instead of failing
+    unless require_topic=True (explicit API / management command).
+    """
     mailbox = mailbox or get_active_mailbox()
     if not mailbox:
         raise RuntimeError('No active mailbox connected')
-    topic = getattr(settings, 'EMAIL_PUBSUB_TOPIC', '') or ''
+    topic = pubsub_topic()
     if not topic:
-        raise RuntimeError('EMAIL_PUBSUB_TOPIC is not configured')
+        if require_topic:
+            raise RuntimeError('EMAIL_PUBSUB_TOPIC is not configured')
+        logger.info('Skipping Gmail watch renew: EMAIL_PUBSUB_TOPIC is not configured')
+        return None
     service = service_for(mailbox)
     gmail_api.ensure_label(service, gmail_api.LABEL_PROCESSED)
     gmail_api.ensure_label(service, gmail_api.LABEL_NEEDS_REVIEW)
@@ -251,7 +263,7 @@ def process_job(job: EmailJob):
         if job.job_type == EmailJob.JobType.RECONCILE:
             reconcile_mailbox(job.mailbox or get_active_mailbox())
         elif job.job_type == EmailJob.JobType.RENEW_WATCH:
-            renew_watch(job.mailbox or get_active_mailbox())
+            renew_watch(job.mailbox or get_active_mailbox(), require_topic=False)
         elif job.job_type == EmailJob.JobType.FETCH_MESSAGE:
             mailbox = job.mailbox or get_active_mailbox()
             gmail_id = (job.payload or {}).get('gmail_id')
@@ -331,7 +343,8 @@ def schedule_maintenance():
     if not mailbox:
         return
     now = timezone.now()
-    if (
+    # Gmail push watches need a Pub/Sub topic; skip renew jobs when it isn't configured.
+    if pubsub_topic() and (
         not mailbox.watch_expiration
         or mailbox.watch_expiration <= now + timedelta(days=1)
     ):
