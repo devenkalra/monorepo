@@ -78,6 +78,12 @@ def serve_spa_or_asset(request, path=""):
         if str(candidate).startswith(str(dist_root.resolve())) and candidate.is_file():
             return FileResponse(candidate.open('rb'))
 
+        # Root short links (e.g. /rsvp → Google Form) before the SPA shell.
+        from link_redirects.views import try_root_redirect
+        redirected = try_root_redirect(path)
+        if redirected is not None:
+            return redirected
+
     index_file = dist_root / 'index.html'
     if not index_file.exists():
         raise Http404('Frontend build output not found')
@@ -103,10 +109,12 @@ urlpatterns = [
     path('api/audio/', include('audio_library.urls')),
     path('api/images/', include('image_search.urls')),
     path('api/link-media/', include('link_media.urls')),
+    path('api/link-redirects/', include('link_redirects.urls')),
     # Short public media links for email (must be before SPA catch-all).
     path('f/<slug:slug>', serve_link_media),
     path('f/<slug:slug>/', serve_link_media),
     re_path(r'^static/(?P<path>.*)$', serve, {'document_root': settings.STATIC_ROOT}),
+    # Root redirects are resolved inside serve_spa_or_asset (after real assets).
     re_path(r'^(?P<path>.*)$', serve_spa_or_asset),
 ]
 

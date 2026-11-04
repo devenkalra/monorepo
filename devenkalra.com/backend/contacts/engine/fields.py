@@ -18,7 +18,7 @@ FIELDS = {
     "city":          "City",           # Text        - from Google address.city
     "country":       "Country",        # Text        - from Google address.country (or countryCode)
     "website":       "Website",        # URL         - from Google
-    "groups":        "Groups",         # Labels      - Google contact labels are ADDED, never removed
+    "groups":        "Groups",         # Labels      - Google sync mirrors labels; other sources only add
     "connected_on":  "Connected on",   # Date        - from LinkedIn
     "sources":       "Sources",        # Labels      - Google / LinkedIn / WhatsApp, never removed
     "last_li_msg":   "Last LinkedIn message",  # Date - latest message, from messages.csv

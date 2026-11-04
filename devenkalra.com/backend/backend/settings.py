@@ -117,6 +117,7 @@ INSTALLED_APPS = [
     'audio_library.apps.AudioLibraryConfig',
     'image_search.apps.ImageSearchConfig',
     'link_media.apps.LinkMediaConfig',
+    'link_redirects.apps.LinkRedirectsConfig',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',

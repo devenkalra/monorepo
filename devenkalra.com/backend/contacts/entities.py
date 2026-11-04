@@ -39,7 +39,10 @@ SYNC_OWNED = {'google_id', 'google_link', 'google_hash', 'linkedin_url', 'linked
 # People fields a sync overwrites when the contact is linked to one of these sources.
 FROM_SOURCE = {'company': ('google_id', 'linkedin_url'), 'title': ('google_id', 'linkedin_url'),
                'birthday': ('google_id',), 'address': ('google_id',), 'city': ('google_id',),
-               'country': ('google_id',), 'website': ('google_id',)}
+               'country': ('google_id',), 'website': ('google_id',),
+               # Google is master for these; LinkedIn/WhatsApp syncs only add when no Google link.
+               'emails': ('google_id',), 'email': ('google_id',), 'phones': ('google_id',),
+               'groups': ('google_id',)}
 SOURCE_NAME = {'google_id': 'Google', 'linkedin_url': 'LinkedIn'}
 ADD_ONLY = {'emails', 'phones', 'groups'}
 # Edited only via the Relationships UI (structured field + legacy Introduced by).

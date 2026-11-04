@@ -68,8 +68,9 @@ class SyncContext:
         self.reporter.progress(phase, done, total)
         self.reporter.check_cancel()
 
-    def write_fields(self, rec, changes, allow_clear=()):
-        self.cu.set_fields(rec["id"], changes, before=rec["v"], task_name=rec["name"], allow_clear=allow_clear)
+    def write_fields(self, rec, changes, allow_clear=(), allow_drop=()):
+        self.cu.set_fields(rec["id"], changes, before=rec["v"], task_name=rec["name"],
+                           allow_clear=allow_clear, allow_drop=allow_drop)
 
 
 def find_existing(ix, c):
@@ -201,18 +202,35 @@ def create(ctx, c, status, dup=None):
     return rec
 
 
+def _norm_label_set(vals):
+    return {str(x).strip().lower() for x in (vals or []) if str(x).strip()}
+
+
 def update(ctx, rec, c, how):
     v, src = rec["v"], c["source"]
     kf, hf = KEY[src], HASH[src]
     extra = {k: ctx.cu.prep(k, c.get("extra", {}).get(k)) for k in EXTRA}
     new_sources = [x for x in source_label(ctx, c)
                    if x.lower() not in {y.lower() for y in (v.get("sources") or [])}]
-    new_groups = [g for g in wanted_groups(ctx, c)
-                  if g.lower() not in {x.lower() for x in (v.get("groups") or [])}]
+    google_groups = wanted_groups(ctx, c) if src == "google" else None
+    new_groups = ([] if src == "google" else
+                  [g for g in wanted_groups(ctx, c)
+                   if g.lower() not in {x.lower() for x in (v.get("groups") or [])}])
+    # Google is master for emails/phones/groups: rewrite ClickUp to match even when the
+    # stored hash is already current (e.g. extras left from the old add-only behaviour).
+    google_mirror_drift = False
+    if src == "google":
+        google_mirror_drift = (
+            ", ".join(c["emails"]) != (v.get("emails") or "")
+            or ", ".join(c["phones"]) != (v.get("phones") or "")
+            or _norm_label_set(google_groups) != _norm_label_set(v.get("groups"))
+            or (("email" in ctx.cu.fields) and
+                (c["emails"][0] if c["emails"] else None) != (v.get("email") or None))
+        )
     backfill = ((c["emails"] and "emails" in ctx.cu.fields and not v.get("emails")) or
                 (c["phones"] and "phones" in ctx.cu.fields and not v.get("phones")) or
                 any(val is not None and v.get(k) in (None, "") for k, val in extra.items()) or
-                bool(new_groups) or bool(new_sources))
+                bool(new_groups) or bool(new_sources) or google_mirror_drift)
     # Rename is independent of field hash: a prior sync may have stored the new hash
     # without renaming (rename_tasks was off). Don't treat that as UNCHANGED.
     needs_rename = (
@@ -224,20 +242,38 @@ def update(ctx, rec, c, how):
         return rec
 
     ch = {}
+    allow_drop = ()
     if how != "key":
         ch[kf] = c["key"]
     if c.get("link") and v.get("google_link") != c["link"]:
         ch["google_link"] = c["link"]
 
-    # Entries that don't parse as emails are kept as typed rather than dropped.
-    emails = union([norm_email(e) or e for e in split_list(v.get("emails"))], c["emails"])
-    if ", ".join(emails) != (v.get("emails") or ""):
-        ch["emails"] = ", ".join(emails)
-    if "email" in ctx.cu.fields and not v.get("email") and emails:
-        ch["email"] = emails[0]
-    phones = union([phone_for_storage(p) for p in split_list(v.get("phones"))], c["phones"])
-    if ", ".join(phones) != (v.get("phones") or ""):
-        ch["phones"] = ", ".join(phones)
+    if src == "google":
+        # Mirror Google exactly so mail merge / Gmail autofill see the same addresses.
+        emails = list(c["emails"])
+        phones = list(c["phones"])
+        allow_drop = ("emails", "phones", "groups", "email")
+        if ", ".join(emails) != (v.get("emails") or ""):
+            ch["emails"] = ", ".join(emails) if emails else None
+        if "email" in ctx.cu.fields:
+            primary = emails[0] if emails else None
+            if (v.get("email") or None) != primary:
+                ch["email"] = primary
+        if ", ".join(phones) != (v.get("phones") or ""):
+            ch["phones"] = ", ".join(phones) if phones else None
+        if _norm_label_set(google_groups) != _norm_label_set(v.get("groups")):
+            ch["groups"] = list(google_groups)
+    else:
+        # LinkedIn / WhatsApp still only add — they must not erase Google-owned lists.
+        # Entries that don't parse as emails are kept as typed rather than dropped.
+        emails = union([norm_email(e) or e for e in split_list(v.get("emails"))], c["emails"])
+        if ", ".join(emails) != (v.get("emails") or ""):
+            ch["emails"] = ", ".join(emails)
+        if "email" in ctx.cu.fields and not v.get("email") and emails:
+            ch["email"] = emails[0]
+        phones = union([phone_for_storage(p) for p in split_list(v.get("phones"))], c["phones"])
+        if ", ".join(phones) != (v.get("phones") or ""):
+            ch["phones"] = ", ".join(phones)
 
     # Company/title: LinkedIn wins; Google only fills blanks once LinkedIn is linked.
     for f in ("company", "title"):
@@ -252,7 +288,7 @@ def update(ctx, rec, c, how):
         if v.get(k) not in (None, "") and not ctx.overwrite_values:
             continue
         ch[k] = val
-    if new_groups:
+    if src != "google" and new_groups:
         ch["groups"] = (v.get("groups") or []) + new_groups
     if new_sources:
         ch["sources"] = (v.get("sources") or []) + new_sources
@@ -265,7 +301,7 @@ def update(ctx, rec, c, how):
     rename = needs_rename
     if rename:
         ctx.cu.update_task(rec["id"], task_name=rec["name"], before=rec["name"], name=c["name"])
-    ctx.write_fields(rec, ch)
+    ctx.write_fields(rec, ch, allow_drop=allow_drop)
 
     old_name = rec["name"]
     if rename:

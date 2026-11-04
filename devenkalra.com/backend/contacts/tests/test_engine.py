@@ -101,12 +101,18 @@ class ProtectionTests(SimpleTestCase):
         with self.assertRaises(ProtectionViolation):
             check_field_changes({"emails": "a@x.com, b@x.com"}, {"emails": "a@x.com"})
 
+    def test_allow_drop_can_shrink_emails(self):
+        check_field_changes({"emails": "a@x.com, b@x.com"}, {"emails": "a@x.com"}, allow_drop=("emails",))
+
     def test_reformatting_emails_is_not_a_loss(self):
         check_field_changes({"emails": "A@X.com"}, {"emails": "a@x.com, c@x.com"})
 
     def test_refuses_dropping_a_label(self):
         with self.assertRaises(ProtectionViolation):
             check_field_changes({"groups": ["Family", "Work"]}, {"groups": ["Family"]})
+
+    def test_allow_drop_can_shrink_labels(self):
+        check_field_changes({"groups": ["Family", "Work"]}, {"groups": ["Family"]}, allow_drop=("groups",))
 
     def test_refuses_replacing_a_source_key(self):
         with self.assertRaises(ProtectionViolation):
@@ -241,6 +247,31 @@ class GoogleTests(SimpleTestCase):
         fake, _, ctx, _ = run("google", dry=False, writes_enabled=True, max_ops=max(plan.ops, 2),
                               tasks=tasks, google_service=svc, options=opts)
         self.assertEqual(fake.tasks["g0"]["name"], "Country Lover")
+        self.assertNotIn("UNCHANGED", ctx.stats)
+
+    def test_google_sync_replaces_emails_phones_and_groups(self):
+        """Google is master: extras left in ClickUp are dropped on the next sync."""
+        p = person("people/c0", "Sudhanshu Verma", "sudverma@yahoo.com")
+        p["phoneNumbers"] = [{"value": "+1 555 0100", "canonicalForm": "+15550100"}]
+        p["memberships"] = [{"contactGroupMembership": {"contactGroupResourceName": "contactGroups/family"}}]
+        group_names = {"contactGroups/family": "Family"}
+        c = google_contact(p, group_names)
+        tasks = [make_task(
+            "g0", "Sudhanshu Verma", google_id="people/c0", google_hash=c["hash"],
+            emails="sverma@infinera.com, sudverma@yahoo.com", phones="+15559999, +15550100",
+            groups=["grp-Family", "grp-Work"], status="st-0",
+        )]
+        svc = FakePeople([p], groups=[{
+            "resourceName": "contactGroups/family", "groupType": "USER_CONTACT_GROUP",
+            "name": "contactGroups/family", "formattedName": "Family",
+        }])
+        _, plan, _, _ = run("google", tasks=tasks, google_service=svc)
+        fake, _, ctx, _ = run("google", dry=False, writes_enabled=True, max_ops=max(plan.ops, 1),
+                              tasks=tasks, google_service=svc)
+        vals = {cf["id"]: cf["value"] for cf in fake.tasks["g0"]["custom_fields"]}
+        self.assertEqual(vals.get("f-emails"), "sudverma@yahoo.com")
+        self.assertEqual(vals.get("f-phones"), "+15550100")
+        self.assertEqual(vals.get("f-groups"), ["grp-Family"])
         self.assertNotIn("UNCHANGED", ctx.stats)
 
     def test_lookalike_waits_for_review_instead_of_creating(self):

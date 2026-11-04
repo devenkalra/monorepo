@@ -13,6 +13,7 @@ import { ContactSyncApp } from '../components/ContactSyncApp';
 import { MusicLibraryApp } from '../components/MusicLibraryApp';
 import { ImageSearchApp } from '../components/ImageSearchApp';
 import { LinkMediaApp } from '../components/LinkMediaApp';
+import { LinkRedirectsApp } from '../components/LinkRedirectsApp';
 import { MarkdownBody } from '../components/MarkdownBody';
 
 export const PageView = ({ menuItems }) => {
@@ -683,6 +684,10 @@ export const PageView = ({ menuItems }) => {
 
       {activeSlug === 'link-media' && (
         <LinkMediaApp />
+      )}
+
+      {activeSlug === 'link-redirects' && (
+        <LinkRedirectsApp />
       )}
 
       {activeSlug === 'creative-projects' && (

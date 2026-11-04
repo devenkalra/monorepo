@@ -4,8 +4,10 @@ Layers, in order:
   1. Dry runs count the write and stop there; nothing is sent.
   2. Live writes require the server-wide switch (CONTACTS_CLICKUP_WRITES_ENABLED).
   3. A live run may not exceed its write budget (derived from the dry-run plan it applies).
-  4. Field changes may only add information: no clearing values, no dropping emails/phones/labels,
-     no replacing an existing source key, no un-merging, no moving last-message dates backwards.
+  4. Field changes may only add information by default: no clearing values, no dropping
+     emails/phones/labels, no replacing an existing source key, no un-merging, no moving
+     last-message dates backwards. Google sync may pass allow_drop for emails/phones/groups
+     so ClickUp mirrors Google (Google is master for those fields).
   5. Every live write is journaled (before/after) before it is sent.
 """
 from .errors import DryRunViolation, ProtectionViolation, WriteBudgetExceeded, WritesDisabled
@@ -43,8 +45,13 @@ def _as_ms(v):
         return None
 
 
-def check_field_changes(before, changes, allow_clear=()):
-    """Raise ProtectionViolation if `changes` would remove or replace existing ClickUp data."""
+def check_field_changes(before, changes, allow_clear=(), allow_drop=()):
+    """Raise ProtectionViolation if `changes` would remove or replace existing ClickUp data.
+
+    `allow_drop` fields may shrink or clear (used when Google sync mirrors emails/phones/groups).
+    """
+    allow_clear = set(allow_clear) | set(allow_drop)
+    allow_drop = set(allow_drop)
     for key, new in changes.items():
         if key not in FIELDS:
             raise ProtectionViolation(f"Refusing to write unknown field {key!r}")
@@ -57,7 +64,7 @@ def check_field_changes(before, changes, allow_clear=()):
             continue
         if key in KEY_FIELDS and _norm_key(key, old) != _norm_key(key, new):
             raise ProtectionViolation(f"Refusing to replace {FIELDS[key]} {old!r} with {new!r}")
-        if key in LIST_FIELDS + LABEL_FIELDS:
+        if key in LIST_FIELDS + LABEL_FIELDS and key not in allow_drop:
             lost = _norm_items(key, old) - _norm_items(key, new)
             if lost:
                 raise ProtectionViolation(f"Refusing to drop {FIELDS[key]}: {', '.join(sorted(lost))}")

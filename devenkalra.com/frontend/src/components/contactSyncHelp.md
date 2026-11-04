@@ -25,9 +25,11 @@ If you decide anything in Review, run a **new preview** before applying, so the 
 ## How your data is protected [#safety]
 
 - **Previews never write.** Only applying a finished preview changes ClickUp.
-- **Nothing is cleared or removed.** Existing values are never blanked; emails, phones, Groups and Sources are
+- **Google mirrors emails, phones and Groups.** On a Google sync those ClickUp fields are rewritten to match
+  Google (so Gmail autofill and mail merge stay aligned). LinkedIn/WhatsApp syncs still only add. Sources are
   only ever added to; a contact's Google ID, LinkedIn URL or WhatsApp number is never replaced by a different
-  one; merged contacts stay merged; last-message dates only move forward.
+  one; company/title and other single-value fields follow the overwrite option; merged contacts stay merged;
+  last-message dates only move forward.
 - **Write budget.** A live run may make at most the preview's writes + 20% + 10. If it needs more, it stops
   immediately.
 - **Snapshot and change log.** Before a live sync writes, the whole list is saved as a snapshot. Every write is
@@ -60,7 +62,7 @@ Reads contacts changed since the last applied Google run (the first run reads ev
 | --- | --- |
 | Full sync | Re-reads every contact, and marks ClickUp contacts whose Google contact was deleted as *deleted in google*. If more than 2% (minimum 10) seem deleted, it marks none and warns instead. |
 | Check photos on every contact | Normally photos are checked only for contacts that changed. |
-| Update values already set in ClickUp | On: Google's company, title, birthday, address and website replace ClickUp's. Off: only empty fields are filled. |
+| Update values already set in ClickUp | On: Google's company, title, birthday, address and website replace ClickUp's. Off: only empty fields are filled. Emails, phones and Groups always mirror Google. |
 | Rename ClickUp tasks… | Renames the task when the name changes in Google. Off by default. |
 | Write the ClickUp task id back to Google | Stores the task link on the Google contact. Needs write access. |
 | Ignore Google labels | Labels (one per line, `*` wildcards allowed) that aren't copied into Groups. |

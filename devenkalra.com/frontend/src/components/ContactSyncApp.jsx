@@ -991,7 +991,7 @@ export function ContactSyncApp() {
       {status && status.clickup.configured && (
         <div className={`contacts-banner ${status.clickup.writes_enabled ? '' : 'contacts-banner--info'}`}>
           {status.clickup.writes_enabled
-            ? 'Live writes are enabled. Changes reach ClickUp only when you apply a finished preview; existing values are never cleared, and emails, phones and labels are only ever added.'
+            ? 'Live writes are enabled. Changes reach ClickUp only when you apply a finished preview. Google sync mirrors emails, phones and Groups; LinkedIn/WhatsApp still only add.'
             : 'Preview-only mode: this server can’t write to ClickUp (CONTACTS_CLICKUP_WRITES_ENABLED is off).'}
         </div>
       )}

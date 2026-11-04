@@ -175,9 +175,9 @@ class ClickUp:
         self.guard.done(handle)
         return task
 
-    def set_fields(self, task_id, changes, *, before, task_name="", allow_clear=()):
+    def set_fields(self, task_id, changes, *, before, task_name="", allow_clear=(), allow_drop=()):
         """Write field changes. `before` is the record's current values (from the index)."""
-        check_field_changes(before, changes, allow_clear)
+        check_field_changes(before, changes, allow_clear=allow_clear, allow_drop=allow_drop)
         for k, v in changes.items():
             if k not in self.fields:
                 continue
