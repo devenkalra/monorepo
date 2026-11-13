@@ -29,6 +29,9 @@ class Trip(models.Model):
         related_name='trips',
     )
     title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default='')
+    notes = models.TextField(blank=True, default='')
+    open_items = models.TextField(blank=True, default='')
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     packing_list = models.ForeignKey(
@@ -101,6 +104,10 @@ class TripDay(models.Model):
     trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='days')
     date = models.DateField()
     title = models.CharField(max_length=255, blank=True, default='')
+    notes = models.TextField(
+        blank=True, default='',
+        help_text='High-level planning notes for the day (distinct from the travelog journal).',
+    )
     journal = models.TextField(blank=True, default='')
     lodging = models.ForeignKey(
         TripLodging,
@@ -131,6 +138,22 @@ class TripStop(models.Model):
         (STATUS_BOOKED, 'Booked'),
         (STATUS_CONFIRMED, 'Confirmed'),
     )
+    KIND_ACTIVITY = 'activity'
+    KIND_TRAVEL = 'travel'
+    KIND_CHOICES = (
+        (KIND_ACTIVITY, 'Activity'),
+        (KIND_TRAVEL, 'Travel'),
+    )
+    TRAVEL_FLIGHT = 'flight'
+    TRAVEL_DRIVE = 'drive'
+    TRAVEL_WALK = 'walk'
+    TRAVEL_BOAT = 'boat'
+    TRAVEL_MODE_CHOICES = (
+        (TRAVEL_FLIGHT, 'Flight'),
+        (TRAVEL_DRIVE, 'Drive'),
+        (TRAVEL_WALK, 'Walk'),
+        (TRAVEL_BOAT, 'Boat'),
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     modified_on = models.DateTimeField(auto_now=True)
@@ -140,9 +163,12 @@ class TripStop(models.Model):
         related_name='trip_stops',
     )
     day = models.ForeignKey(TripDay, on_delete=models.CASCADE, related_name='stops')
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default=KIND_ACTIVITY)
+    travel_mode = models.CharField(max_length=20, choices=TRAVEL_MODE_CHOICES, blank=True, default='')
     text = models.TextField()
     description = models.TextField(blank=True, default='')
     loc = models.CharField(max_length=255, blank=True, default='')
+    arrive_loc = models.CharField(max_length=255, blank=True, default='')
     cat = models.CharField(max_length=64, blank=True, default='')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_CONFIRMED)
     done = models.BooleanField(default=False)

@@ -52,9 +52,12 @@ class TripDayAdmin(admin.ModelAdmin):
 
 @admin.register(TripStop)
 class TripStopAdmin(admin.ModelAdmin):
-    list_display = ('text', 'day', 'start_time', 'duration_minutes', 'loc', 'cat', 'status', 'done', 'user')
-    list_filter = ('user', 'status', 'done', 'cat')
-    search_fields = ('text', 'description', 'loc')
+    list_display = (
+        'text', 'kind', 'travel_mode', 'day', 'start_time', 'duration_minutes',
+        'loc', 'arrive_loc', 'cat', 'status', 'done', 'user',
+    )
+    list_filter = ('user', 'kind', 'travel_mode', 'status', 'done', 'cat')
+    search_fields = ('text', 'description', 'loc', 'arrive_loc')
     inlines = [TripStopAttachmentInline]
 
 

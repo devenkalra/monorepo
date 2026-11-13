@@ -123,7 +123,8 @@ class TripStopSerializer(serializers.ModelSerializer):
     class Meta:
         model = TripStop
         fields = [
-            'id', 'user', 'day', 'day_id', 'text', 'description', 'loc', 'cat',
+            'id', 'user', 'day', 'day_id', 'kind', 'travel_mode', 'text',
+            'description', 'loc', 'arrive_loc', 'cat',
             'status', 'done', 'start_time', 'duration_minutes',
             'extra', 'sort_order', 'attachments',
             'created_at', 'modified_on',
@@ -135,6 +136,17 @@ class TripStopSerializer(serializers.ModelSerializer):
         user = _request_user(self)
         days = TripDay.objects.filter(user=user) if user else TripDay.objects.none()
         _set_pk_queryset(self.fields['day_id'], days)
+
+    def validate(self, attrs):
+        kind = attrs.get('kind', getattr(self.instance, 'kind', TripStop.KIND_ACTIVITY))
+        mode = attrs.get('travel_mode', getattr(self.instance, 'travel_mode', ''))
+        if kind == TripStop.KIND_TRAVEL:
+            valid = {choice[0] for choice in TripStop.TRAVEL_MODE_CHOICES}
+            if mode not in valid:
+                raise serializers.ValidationError(
+                    {'travel_mode': 'Choose Flight, Drive, Walk, or Boat.'}
+                )
+        return attrs
 
 
 class TripMediaSerializer(serializers.ModelSerializer):
@@ -283,7 +295,7 @@ class TripDaySerializer(serializers.ModelSerializer):
     class Meta:
         model = TripDay
         fields = [
-            'id', 'user', 'trip', 'trip_id', 'date', 'title', 'journal',
+            'id', 'user', 'trip', 'trip_id', 'date', 'title', 'notes', 'journal',
             'lodging', 'lodging_id',
             'sort_order', 'stops', 'media', 'stop_count',
             'created_at', 'modified_on',
@@ -327,7 +339,7 @@ class TripSerializer(serializers.ModelSerializer):
     class Meta:
         model = Trip
         fields = [
-            'id', 'user', 'title', 'start_date', 'end_date',
+            'id', 'user', 'title', 'description', 'notes', 'open_items', 'start_date', 'end_date',
             'packing_list', 'packing_list_id',
             'gallery', 'gallery_id',
             'days', 'lodgings', 'day_count',

@@ -1,8 +1,13 @@
+from django.db import transaction
 from django.db.models import Prefetch
+from django.http import HttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser
 from rest_framework.response import Response
 
+from . import report as trip_report
+from . import transfer
 from .models import Trip, TripDay, TripLodging, TripStop, TripMedia, TripStopAttachment
 from .seed_death_valley import create_death_valley_trip
 from .serializers import (
@@ -87,6 +92,97 @@ class TripViewSet(UserScopedMixin, viewsets.ModelViewSet):
         data['created'] = created
         return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
+    @action(detail=True, methods=['get'])
+    def export(self, request, pk=None):
+        trip = self.get_object()
+        response = HttpResponse(transfer.export_zip([trip]), content_type='application/zip')
+        response['Content-Disposition'] = f'attachment; filename="{transfer.export_filename([trip])}"'
+        return response
+
+    @action(detail=False, methods=['post'], url_path='import', parser_classes=[MultiPartParser])
+    def import_trips(self, request):
+        upload = request.FILES.get('file')
+        if not upload:
+            return Response({'detail': 'Choose a trip export file.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            payload, load_file = transfer.read_bundle(upload)
+            trips, counts = transfer.import_payload(request.user, payload, load_file)
+        except transfer.TransferError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (KeyError, TypeError, ValueError) as exc:
+            return Response({'detail': f'Export file is malformed: {exc}'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {'trips': TripListSerializer(trips, many=True, context={'request': request}).data, 'counts': counts},
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=['get'])
+    def report(self, request, pk=None):
+        trip = self.get_object()
+        return Response({'markdown': trip_report.build(trip), 'filename': trip_report.filename(trip)})
+
+    @action(detail=True, methods=['post'], url_path='bulk-days')
+    def bulk_days(self, request, pk=None):
+        """Update/create day outlines (date, title, notes) for high-level planning.
+
+        Existing days omitted from the payload are left alone (use Delete day to remove).
+        """
+        trip = self.get_object()
+        items = request.data.get('items')
+        if not isinstance(items, list):
+            return Response({'items': 'Expected a list of rows.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not items:
+            return Response({'items': 'Add at least one day.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = {day.id: day for day in trip.days.all()}
+        seen_dates = set()
+        with transaction.atomic():
+            for index, raw in enumerate(items):
+                if not isinstance(raw, dict):
+                    return Response(
+                        {'items': f'Row {index + 1} must be an object.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                date = (raw.get('date') or '').strip()
+                if not date:
+                    return Response(
+                        {'items': f'Row {index + 1} needs a date.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                if date in seen_dates:
+                    return Response(
+                        {'items': f'Duplicate date {date} in the table.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                seen_dates.add(date)
+                payload = {
+                    'trip_id': trip.id,
+                    'date': date,
+                    'title': (raw.get('title') or '').strip(),
+                    'notes': raw.get('notes') if raw.get('notes') is not None else '',
+                }
+                day_id = raw.get('id')
+                instance = existing.get(day_id) if day_id else None
+                if instance is None:
+                    # Creating a day on a date that already exists should update that day.
+                    instance = next((d for d in existing.values() if str(d.date) == date), None)
+                if instance is None:
+                    serializer = TripDaySerializer(data=payload, context={'request': request})
+                else:
+                    serializer = TripDaySerializer(
+                        instance,
+                        data=payload,
+                        partial=True,
+                        context={'request': request},
+                    )
+                serializer.is_valid(raise_exception=True)
+                serializer.save(user=request.user, trip=trip)
+
+        _renumber_days(trip)
+        trip.sync_dates_from_days()
+        trip = self.get_queryset().filter(pk=trip.pk).first() or trip
+        return Response(TripSerializer(trip, context={'request': request}).data)
+
 
 class TripLodgingViewSet(UserScopedMixin, viewsets.ModelViewSet):
     queryset = TripLodging.objects.select_related('trip').prefetch_related('days', 'attachments__asset')
@@ -132,6 +228,57 @@ class TripDayViewSet(UserScopedMixin, viewsets.ModelViewSet):
         super().perform_destroy(instance)
         _renumber_days(trip)
         trip.sync_dates_from_days()
+
+    @action(detail=True, methods=['post'], url_path='bulk-stops')
+    def bulk_stops(self, request, pk=None):
+        day = self.get_object()
+        items = request.data.get('items')
+        if not isinstance(items, list):
+            return Response({'items': 'Expected a list of rows.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = {stop.id: stop for stop in day.stops.all()}
+        keep_ids = []
+        with transaction.atomic():
+            for index, raw in enumerate(items):
+                if not isinstance(raw, dict):
+                    return Response(
+                        {'items': f'Row {index + 1} must be an object.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                payload = {
+                    'day_id': day.id,
+                    'kind': raw.get('kind') or TripStop.KIND_ACTIVITY,
+                    'travel_mode': raw.get('travel_mode') or '',
+                    'text': raw.get('text') or '',
+                    'loc': raw.get('loc') or '',
+                    'arrive_loc': raw.get('arrive_loc') or '',
+                    'start_time': raw.get('start_time') or None,
+                    'duration_minutes': raw.get('duration_minutes'),
+                    'sort_order': index,
+                }
+                if payload['kind'] == TripStop.KIND_TRAVEL and not payload['travel_mode']:
+                    payload['travel_mode'] = TripStop.TRAVEL_DRIVE
+                stop_id = raw.get('id')
+                instance = existing.get(stop_id) if stop_id else None
+                if instance is None:
+                    payload['cat'] = 'Travel' if payload['kind'] == TripStop.KIND_TRAVEL else 'Sight'
+                    serializer = TripStopSerializer(data=payload, context={'request': request})
+                else:
+                    serializer = TripStopSerializer(
+                        instance,
+                        data=payload,
+                        partial=True,
+                        context={'request': request},
+                    )
+                serializer.is_valid(raise_exception=True)
+                stop = serializer.save(user=request.user, day=day, sort_order=index)
+                keep_ids.append(stop.id)
+            for stop_id, stop in existing.items():
+                if stop_id not in keep_ids:
+                    stop.delete()
+
+        day.refresh_from_db()
+        return Response(TripDaySerializer(day, context={'request': request}).data)
 
 
 def _next_stop_order(day, exclude_pk=None):
