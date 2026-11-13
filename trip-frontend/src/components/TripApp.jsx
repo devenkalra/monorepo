@@ -341,10 +341,55 @@ function attachmentHref(item, map = 'google') {
   return item.file_url || item.url;
 }
 
-function AttachmentIcons({ attachments, onAdd, onRemove, canEdit }) {
-  if (!attachments?.length && !canEdit) return null;
+function InlineRename({ value, onSave, onCancel }) {
+  const [draft, setDraft] = useState(value);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const commit = async () => {
+    const next = draft.trim();
+    if (!next || next === value) {
+      onCancel();
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await onSave(next);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+  usePopupHotkeys({ onClose: onCancel, onSave: commit, busy });
   return (
-    <div className="trip-attach-icons" onClick={(e) => e.stopPropagation()}>
+    <span className="trip-rename">
+      <input
+        autoFocus
+        value={draft}
+        disabled={busy}
+        onChange={(e) => setDraft(e.target.value)}
+        onFocus={(e) => e.target.select()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          }
+        }}
+        aria-label="New name"
+      />
+      <button type="button" onClick={commit} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+      <button type="button" onClick={onCancel} disabled={busy}>Cancel</button>
+      {error && <span className="trip-error">{error}</span>}
+    </span>
+  );
+}
+
+function AttachmentIcons({ attachments, onAdd, onRemove, onRename, canEdit }) {
+  const [renamingId, setRenamingId] = useState(null);
+  if (!attachments?.length && !canEdit) return null;
+  const named = canEdit && onRename;
+  return (
+    <div className={`trip-attach-icons${named ? ' is-named' : ''}`} onClick={(e) => e.stopPropagation()}>
       {(attachments || []).map((item) => {
         const href = attachmentHref(item);
         const label = item.title || ATTACH_KINDS.find((k) => k.id === item.kind)?.label || item.kind;
@@ -376,7 +421,31 @@ function AttachmentIcons({ attachments, onAdd, onRemove, canEdit }) {
                 <AttachmentGlyph kind="location" variant="osm" />
               </a>
             )}
-            {canEdit && onRemove && (
+            {named && renamingId === item.id && (
+              <InlineRename
+                value={item.title || ''}
+                onCancel={() => setRenamingId(null)}
+                onSave={async (title) => {
+                  await onRename(item, title);
+                  setRenamingId(null);
+                }}
+              />
+            )}
+            {named && renamingId !== item.id && (
+              <>
+                <span className="trip-attach-name">{label}</span>
+                <button
+                  type="button"
+                  className="trip-attach-rename"
+                  onClick={() => setRenamingId(item.id)}
+                  aria-label={`Rename ${label}`}
+                  title="Rename"
+                >
+                  ✎
+                </button>
+              </>
+            )}
+            {canEdit && onRemove && renamingId !== item.id && (
               <button
                 type="button"
                 className="trip-attach-remove"
@@ -588,7 +657,7 @@ function lodgingLabel(lodging) {
   return [lodging.name, lodging.confirmation && `conf ${lodging.confirmation}`].filter(Boolean).join(' · ');
 }
 
-function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved, onAddAttachment, onRemoveAttachment }) {
+function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved, onAddAttachment, onRemoveAttachment, onRenameAttachment }) {
   const [name, setName] = useState(initial?.name || '');
   const [address, setAddress] = useState(initial?.address || '');
   const [phone, setPhone] = useState(initial?.phone || '');
@@ -707,6 +776,7 @@ function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved, onA
               canEdit
               onAdd={() => onAddAttachment?.(initial)}
               onRemove={onRemoveAttachment}
+              onRename={onRenameAttachment}
             />
           </div>
         )}
@@ -813,6 +883,81 @@ function TripInfoForm({ trip, onClose, onSave }) {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function tripDocuments(trip) {
+  const docs = [];
+  for (const day of trip.days || []) {
+    for (const stop of day.stops || []) {
+      for (const item of stop.attachments || []) {
+        if (item.kind === 'document') docs.push({ item, where: `${formatDay(day)} · ${stop.text}` });
+      }
+    }
+  }
+  for (const lodging of trip.lodgings || []) {
+    for (const item of lodging.attachments || []) {
+      if (item.kind === 'document') docs.push({ item, where: `Lodging · ${lodging.name}` });
+    }
+  }
+  const label = (d) => (d.item.title || '').toLowerCase();
+  return docs.sort((a, b) => label(a).localeCompare(label(b)) || a.where.localeCompare(b.where));
+}
+
+function TripDocuments({ trip, onClose, onRename, onRemove }) {
+  const [renamingId, setRenamingId] = useState(null);
+  usePopupHotkeys({ onClose, busy: false });
+  const docs = tripDocuments(trip);
+  return (
+    <div className="trip-modal-backdrop" onClick={onClose} role="presentation">
+      <div className="trip-modal trip-modal-scroll trip-docs" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Documents">
+        <h3>Documents · {trip.title}</h3>
+        <div className="trip-modal-body">
+          {docs.length === 0 ? (
+            <p className="trip-muted">No documents yet. Add them from a stop or lodging.</p>
+          ) : (
+            <ul className="trip-docs-list">
+              {docs.map(({ item, where }) => {
+                const href = attachmentHref(item);
+                const label = item.title || 'Untitled document';
+                const renaming = renamingId === item.id;
+                return (
+                  <li key={item.id}>
+                    <AttachmentGlyph kind="document" />
+                    <div className="trip-docs-text">
+                      {renaming ? (
+                        <InlineRename
+                          value={item.title || ''}
+                          onCancel={() => setRenamingId(null)}
+                          onSave={async (title) => {
+                            await onRename(item, title);
+                            setRenamingId(null);
+                          }}
+                        />
+                      ) : href ? (
+                        <a href={href} target="_blank" rel="noreferrer">{label}</a>
+                      ) : (
+                        <span>{label}</span>
+                      )}
+                      <span className="trip-muted">{where}</span>
+                    </div>
+                    {!renaming && (
+                      <>
+                        <button type="button" onClick={() => setRenamingId(item.id)} title="Rename">Rename</button>
+                        <button type="button" className="trip-docs-delete" onClick={() => onRemove(item)} title="Delete">Delete</button>
+                      </>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+        <div className="trip-modal-actions">
+          <button type="button" className="trip-primary" onClick={onClose} title="Esc">Close</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -944,7 +1089,7 @@ function DayForm({ initial, onClose, onSave }) {
   );
 }
 
-function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClose, onSave, onAddAttachment, onRemoveAttachment }) {
+function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClose, onSave, onAddAttachment, onRemoveAttachment, onRenameAttachment }) {
   const kind = initial?.kind || defaultKind || 'activity';
   const isTravel = kind === 'travel';
   const [dayId, setDayId] = useState(initial?.day || initial?.day_id || defaultDayId || days[0]?.id || '');
@@ -1149,6 +1294,7 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
                   attachments={initial.attachments}
                   canEdit
                   onRemove={onRemoveAttachment}
+                  onRename={onRenameAttachment}
                 />
                 <AttachmentEditor
                   stop={initial}
@@ -1825,6 +1971,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
   const [editingInfo, setEditingInfo] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showDocs, setShowDocs] = useState(false);
   const [error, setError] = useState('');
   const [journalDrafts, setJournalDrafts] = useState({});
   const [collapsedDayIds, setCollapsedDayIds] = useState(() => new Set());
@@ -1923,6 +2070,14 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
       setAdding(null);
       setEditing(created);
     }
+    await onReload();
+  };
+
+  const renameAttachment = async (item, title) => {
+    await api.json(`/api/trips/attachments/${item.id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
+    });
     await onReload();
   };
 
@@ -2068,6 +2223,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
           <a href="/app/gallery/" className="trip-ext-link">Open gallery</a>
         )}
         <button type="button" onClick={() => setEditingInfo(true)}>Details</button>
+        <button type="button" onClick={() => setShowDocs(true)}>Documents</button>
         <button type="button" onClick={() => setShowReport(true)}>Report</button>
         <button type="button" onClick={exportTrip} disabled={exporting} title="Download this trip with its uploaded files, to import elsewhere">
           {exporting ? 'Exporting…' : 'Export'}
@@ -2390,6 +2546,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
           onSave={saveStop}
           onAddAttachment={onReload}
           onRemoveAttachment={removeAttachment}
+          onRenameAttachment={renameAttachment}
         />
       )}
       {bulkDay && (
@@ -2414,6 +2571,14 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
         />
       )}
       {showReport && <TripReport trip={trip} onClose={() => setShowReport(false)} />}
+      {showDocs && (
+        <TripDocuments
+          trip={trip}
+          onClose={() => setShowDocs(false)}
+          onRename={renameAttachment}
+          onRemove={removeAttachment}
+        />
+      )}
       {bulkTripDays && (
         <BulkTripDaysEditor
           trip={trip}
@@ -2438,6 +2603,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
           onClose={() => setLodgingForm(null)}
           onAddAttachment={(lodging) => setAttaching({ lodging })}
           onRemoveAttachment={removeAttachment}
+          onRenameAttachment={renameAttachment}
           onSaved={async () => {
             setLodgingForm(null);
             await onReload();

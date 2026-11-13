@@ -256,6 +256,62 @@ body {
   line-height: 1;
   color: var(--text-muted);
 }
+.trip-attach-icons.is-named { flex-direction: column; align-items: stretch; gap: 0.35rem; }
+.trip-attach-icons.is-named .trip-attach-item { display: flex; gap: 0.4rem; }
+.trip-attach-icons.is-named .trip-attach-add { align-self: flex-start; }
+.trip-attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.85rem; }
+.trip-attach-rename {
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.9rem;
+  padding: 0 0.2rem;
+}
+.trip-attach-rename:hover { color: var(--accent-color); }
+.trip-rename { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.35rem; min-width: 0; }
+.trip-rename input {
+  flex: 1;
+  min-width: 8rem;
+  border: 1px solid var(--accent-color);
+  border-radius: 0.3rem;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.85rem;
+}
+.trip-rename button {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #202426;
+}
+.trip-rename .trip-error { flex-basis: 100%; margin: 0; font-size: 0.8rem; }
+.trip-docs { width: min(44rem, 100%); }
+.trip-docs-list { list-style: none; margin: 0; padding: 0; }
+.trip-docs-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--accent-color);
+}
+.trip-docs-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.trip-docs-text a, .trip-docs-text > span:first-child { color: #202426; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-docs-text a:hover { text-decoration: underline; }
+.trip-docs-text .trip-muted { font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trip-docs-list button {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: #202426;
+}
+.trip-docs-list .trip-docs-delete { color: #b42318; border-color: #f1b8b2; }
 .trip-kind-tabs {
   display: flex;
   flex-wrap: wrap;
