@@ -739,6 +739,7 @@ function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved, onA
 }
 
 function TripInfoForm({ trip, onClose, onSave }) {
+  const [title, setTitle] = useState(trip.title || '');
   const [description, setDescription] = useState(trip.description || '');
   const [notes, setNotes] = useState(trip.notes || '');
   const [openItems, setOpenItems] = useState(trip.open_items || '');
@@ -753,10 +754,14 @@ function TripInfoForm({ trip, onClose, onSave }) {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!title.trim()) {
+      setError('Enter a trip name.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
-      await onSave({ description, notes, open_items: openItems });
+      await onSave({ title: title.trim(), description, notes, open_items: openItems });
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -766,8 +771,12 @@ function TripInfoForm({ trip, onClose, onSave }) {
   return (
     <div className="trip-modal-backdrop" onClick={onClose} role="presentation">
       <form ref={formRef} className="trip-modal trip-modal-scroll" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h3>Trip details · {trip.title}</h3>
+        <h3>Trip details</h3>
         <div className="trip-modal-body">
+          <label>
+            Name
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Thailand Family Trip" />
+          </label>
           <label>
             Description
             <textarea
@@ -1798,7 +1807,7 @@ function BulkDayEditor({ day, onClose, onSaved }) {
   );
 }
 
-function TripDetail({ trip, lists, galleries, onBack, onReload }) {
+function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
   const [mode, setMode] = useState('plan');
   const [query, setQuery] = useState('');
   const [loc, setLoc] = useState('all');
@@ -1954,6 +1963,17 @@ function TripDetail({ trip, lists, galleries, onBack, onReload }) {
     }
   };
 
+  const deleteTrip = async () => {
+    const message = `Delete "${trip.title}" with all its days, stops, lodging and attachments? This cannot be undone.`;
+    if (!window.confirm(message)) return;
+    try {
+      await api.json(`/api/trips/trips/${trip.id}/`, { method: 'DELETE' });
+      await onDeleted();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   const exportTrip = async () => {
     setExporting(true);
     setError('');
@@ -2052,6 +2072,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload }) {
         <button type="button" onClick={exportTrip} disabled={exporting} title="Download this trip with its uploaded files, to import elsewhere">
           {exporting ? 'Exporting…' : 'Export'}
         </button>
+        <button type="button" className="trip-danger" onClick={deleteTrip}>Delete trip</button>
       </div>
       <Markdown className="trip-description">{trip.description}</Markdown>
 
@@ -2545,6 +2566,10 @@ export default function TripApp() {
             galleries={galleries}
             onBack={() => setSelected(null)}
             onReload={() => loadSelected(selected.id)}
+            onDeleted={async () => {
+              setSelected(null);
+              await loadTrips();
+            }}
           />
         ) : (
           <div>

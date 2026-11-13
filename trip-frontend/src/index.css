@@ -50,6 +50,8 @@ body {
   cursor: pointer;
   font-size: 0.9rem;
 }
+.trip-links > button.trip-danger { margin-left: auto; color: #b42318; border-color: #f1b8b2; }
+.trip-links > button.trip-danger:hover { background: #fef3f2; }
 .trip-links > button:disabled, .trip-list-actions > button:disabled, .trip-import.is-disabled { opacity: 0.5; cursor: default; }
 .trip-create input, .trip-filters input, .trip-filters select, .trip-links select, .trip-modal input, .trip-modal select, .trip-modal textarea {
   border: 1px solid var(--border-color);
