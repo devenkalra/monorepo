@@ -4,6 +4,7 @@ Primary keys are remapped on import so existing rows on the target server are ne
 """
 import io
 import json
+import re
 import zipfile
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -16,9 +17,17 @@ from django.utils.dateparse import parse_date, parse_datetime, parse_time
 from gallery.models import Gallery, UserMedia
 from vacation_list.models import VacList
 
-from .models import Trip, TripDay, TripLodging, TripMedia, TripStop, TripStopAttachment
+from .models import Trip, TripDay, TripLodging, TripMedia, TripStop, TripStopAttachment, TripTodo
 
 FORMAT_VERSION = 1
+
+_LIST_MARKER = re.compile(r'^(?:[-*+]|\d+[.)])(?:\s+|$)(?:\[[ xX]\](?:\s+|$))?')
+
+
+def open_items_to_todos(text):
+    """One to-do per non-blank line of the retired markdown open-items field."""
+    lines = (_LIST_MARKER.sub('', line.strip()).strip() for line in text.splitlines())
+    return [line for line in lines if line]
 
 
 class TransferError(ValueError):
@@ -64,7 +73,6 @@ def export_trip(trip):
         'title': trip.title,
         'description': trip.description,
         'notes': trip.notes,
-        'open_items': trip.open_items,
         'start_date': _iso(trip.start_date),
         'end_date': _iso(trip.end_date),
         'packing_list_name': packing.name if packing else None,
@@ -74,6 +82,19 @@ def export_trip(trip):
         'lodgings': [_export_lodging(row) for row in trip.lodgings.all()],
         'days': [_export_day(day) for day in trip.days.all()],
         'media': [_export_media(row) for row in trip.media.select_related('asset').filter(day=None, stop=None)],
+        'todos': [_export_todo(row) for row in trip.todos.all()],
+    }
+
+
+def _export_todo(row):
+    return {
+        'text': row.text,
+        'done': row.done,
+        'sort_order': row.sort_order,
+        'day_pk': row.day_id,
+        'stop_pk': row.stop_id,
+        'created_at': _iso(row.created_at),
+        'modified_on': _iso(row.modified_on),
     }
 
 
@@ -252,7 +273,7 @@ def import_payload(user, payload, load_file=lambda name: None, replace=False):
     """Create the trips in payload for user. Returns (trips, counts)."""
     if not isinstance(payload, dict) or not isinstance(payload.get('trips'), list):
         raise TransferError('Export must contain a "trips" list.')
-    counts = {'trips': 0, 'lodgings': 0, 'days': 0, 'stops': 0, 'attachments': 0, 'media': 0, 'files': 0}
+    counts = {'trips': 0, 'lodgings': 0, 'days': 0, 'stops': 0, 'attachments': 0, 'media': 0, 'todos': 0, 'files': 0}
     with transaction.atomic():
         if replace:
             Trip.objects.filter(user=user).delete()
@@ -337,7 +358,6 @@ class _Importer:
             title=data['title'],
             description=data.get('description') or '',
             notes=data.get('notes') or '',
-            open_items=data.get('open_items') or '',
             start_date=_date(data.get('start_date')),
             end_date=_date(data.get('end_date')),
             packing_list=VacList.objects.filter(user=user, name=packing_name).first() if packing_name else None,
@@ -425,4 +445,24 @@ class _Importer:
             )
             self._stamp(TripMedia, obj.pk, row)
             self.counts['media'] += 1
+
+        for row in data.get('todos') or []:
+            stop = stop_map.get(row.get('stop_pk'))
+            obj = TripTodo.objects.create(
+                user=user,
+                trip=trip,
+                day=stop.day if stop else day_map.get(row.get('day_pk')),
+                stop=stop,
+                text=row.get('text') or '',
+                done=bool(row.get('done', False)),
+                sort_order=row.get('sort_order') or 0,
+            )
+            self._stamp(TripTodo, obj.pk, row)
+            self.counts['todos'] += 1
+
+        # Exports made before open items were folded into to-dos.
+        base = len(data.get('todos') or [])
+        for i, text in enumerate(open_items_to_todos(data.get('open_items') or '')):
+            TripTodo.objects.create(user=user, trip=trip, text=text, sort_order=base + i)
+            self.counts['todos'] += 1
         return trip

@@ -7,6 +7,7 @@ from .views import (
     TripMediaViewSet,
     TripStopAttachmentViewSet,
     TripStopViewSet,
+    TripTodoViewSet,
     TripViewSet,
 )
 
@@ -17,6 +18,7 @@ router.register(r'lodgings', TripLodgingViewSet, basename='trip-lodging')
 router.register(r'stops', TripStopViewSet, basename='trip-stop')
 router.register(r'media', TripMediaViewSet, basename='trip-media')
 router.register(r'attachments', TripStopAttachmentViewSet, basename='trip-attachment')
+router.register(r'todos', TripTodoViewSet, basename='trip-todo')
 
 urlpatterns = [
     path('', include(router.urls)),

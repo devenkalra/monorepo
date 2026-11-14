@@ -8,7 +8,7 @@ from rest_framework.response import Response
 
 from . import report as trip_report
 from . import transfer
-from .models import Trip, TripDay, TripLodging, TripStop, TripMedia, TripStopAttachment
+from .models import Trip, TripDay, TripLodging, TripStop, TripMedia, TripStopAttachment, TripTodo
 from .seed_death_valley import create_death_valley_trip
 from .serializers import (
     TripDaySerializer,
@@ -18,6 +18,7 @@ from .serializers import (
     TripSerializer,
     TripStopAttachmentSerializer,
     TripStopSerializer,
+    TripTodoSerializer,
 )
 
 
@@ -82,6 +83,7 @@ class TripViewSet(UserScopedMixin, viewsets.ModelViewSet):
                 ),
                 'days__media__asset',
                 'media__asset',
+                'todos',
             )
         return qs
 
@@ -119,7 +121,11 @@ class TripViewSet(UserScopedMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=['get'])
     def report(self, request, pk=None):
         trip = self.get_object()
-        return Response({'markdown': trip_report.build(trip), 'filename': trip_report.filename(trip)})
+        hide_done = request.query_params.get('hide_done') in ('1', 'true')
+        return Response({
+            'markdown': trip_report.build(trip, hide_done=hide_done),
+            'filename': trip_report.filename(trip),
+        })
 
     @action(detail=True, methods=['post'], url_path='bulk-days')
     def bulk_days(self, request, pk=None):
@@ -261,7 +267,9 @@ class TripDayViewSet(UserScopedMixin, viewsets.ModelViewSet):
                 stop_id = raw.get('id')
                 instance = existing.get(stop_id) if stop_id else None
                 if instance is None:
-                    payload['cat'] = 'Travel' if payload['kind'] == TripStop.KIND_TRAVEL else 'Sight'
+                    payload['cat'] = {TripStop.KIND_TRAVEL: 'Travel', TripStop.KIND_EVENT: 'Event'}.get(
+                        payload['kind'], 'Sight'
+                    )
                     serializer = TripStopSerializer(data=payload, context={'request': request})
                 else:
                     serializer = TripStopSerializer(
@@ -330,6 +338,17 @@ class TripStopViewSet(UserScopedMixin, viewsets.ModelViewSet):
                     row.sort_order = i
                     row.save(update_fields=['sort_order'])
         return Response(self.get_serializer(stop).data)
+
+
+class TripTodoViewSet(UserScopedMixin, viewsets.ModelViewSet):
+    queryset = TripTodo.objects.all()
+    serializer_class = TripTodoSerializer
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        trip_id = self.request.query_params.get('trip')
+        return qs.filter(trip_id=trip_id) if trip_id else qs
 
 
 class TripMediaViewSet(UserScopedMixin, viewsets.ModelViewSet):

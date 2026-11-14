@@ -47,6 +47,9 @@ const TRAVEL_MODES = [
   { id: 'boat', label: 'Boat' },
 ];
 
+const KIND_NOUN = { activity: 'stop', travel: 'travel', event: 'event' };
+const KIND_LABEL = { activity: 'Stop', travel: 'Travel', event: 'Event' };
+
 function travelModeLabel(mode) {
   return TRAVEL_MODES.find((m) => m.id === mode)?.label || 'Travel';
 }
@@ -808,11 +811,94 @@ function LodgingForm({ trip, days, initial, defaultDayIds, onClose, onSaved, onA
   );
 }
 
-function TripInfoForm({ trip, onClose, onSave }) {
+function TripTodoEditor({ trip, hideDone, onChanged }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const all = (trip.todos || []).filter((t) => !t.day_id && !t.stop_id);
+  const todos = hideDone ? all.filter((t) => !t.done) : all;
+
+  const run = async (fn) => {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+      await onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = () => {
+    if (!text.trim()) return;
+    run(async () => {
+      await api.json('/api/trips/todos/', {
+        method: 'POST',
+        body: JSON.stringify({ trip_id: trip.id, text: text.trim() }),
+      });
+      setText('');
+    });
+  };
+
+  return (
+    <section className="trip-todo-group trip-info-todos">
+      <h4>Trip to-dos</h4>
+      {todos.length > 0 && (
+        <ul>
+          {todos.map((t) => (
+            <li key={t.id} className={t.done ? 'is-done' : undefined}>
+              <input
+                type="checkbox"
+                checked={t.done}
+                disabled={busy}
+                onChange={() => run(() => api.json(`/api/trips/todos/${t.id}/`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ done: !t.done }),
+                }))}
+                aria-label={`Done: ${t.text}`}
+              />
+              <div className="trip-todo-text"><Markdown inline>{t.text}</Markdown></div>
+              <button
+                type="button"
+                className="trip-docs-delete"
+                disabled={busy}
+                onClick={() => run(() => api.json(`/api/trips/todos/${t.id}/`, { method: 'DELETE' }))}
+              >
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {!todos.length && (
+        <p className="trip-muted">{all.length ? 'All trip to-dos are done.' : 'No trip-level to-dos yet.'}</p>
+      )}
+      <div className="trip-todo-add">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder="New trip to-do…"
+          aria-label="New trip to-do"
+        />
+        <button type="button" className="trip-primary" onClick={add} disabled={busy || !text.trim()}>Add</button>
+      </div>
+      {error && <p className="trip-error">{error}</p>}
+    </section>
+  );
+}
+
+function TripInfoForm({ trip, hideDone, onTodosChanged, onClose, onSave }) {
   const [title, setTitle] = useState(trip.title || '');
   const [description, setDescription] = useState(trip.description || '');
   const [notes, setNotes] = useState(trip.notes || '');
-  const [openItems, setOpenItems] = useState(trip.open_items || '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const formRef = useRef(null);
@@ -831,7 +917,7 @@ function TripInfoForm({ trip, onClose, onSave }) {
     setBusy(true);
     setError('');
     try {
-      await onSave({ title: title.trim(), description, notes, open_items: openItems });
+      await onSave({ title: title.trim(), description, notes });
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -865,15 +951,7 @@ function TripInfoForm({ trip, onClose, onSave }) {
               placeholder="- Fill in the arrival card 3 days before landing"
             />
           </label>
-          <label>
-            Open items (markdown; decisions still to make)
-            <textarea
-              rows={5}
-              value={openItems}
-              onChange={(e) => setOpenItems(e.target.value)}
-              placeholder="- Phuket or Khao Lak for the last 4 nights?"
-            />
-          </label>
+          <TripTodoEditor trip={trip} hideDone={hideDone} onChanged={onTodosChanged} />
         </div>
         {error && <p className="trip-error">{error}</p>}
         <div className="trip-modal-actions">
@@ -962,7 +1040,188 @@ function TripDocuments({ trip, onClose, onRename, onRemove }) {
   );
 }
 
-function TripReport({ trip, onClose }) {
+function useStoredFlag(key) {
+  const [flag, setFlag] = useState(() => localStorage.getItem(key) === '1');
+  const update = useCallback((value) => {
+    setFlag(value);
+    localStorage.setItem(key, value ? '1' : '0');
+  }, [key]);
+  return [flag, update];
+}
+
+function todoScope(todo) {
+  if (todo.stop_id) return `stop:${todo.stop_id}`;
+  if (todo.day_id) return `day:${todo.day_id}`;
+  return 'trip';
+}
+
+function TodoChecklist({ todos, hideDone, onToggle }) {
+  const shown = hideDone ? todos.filter((t) => !t.done) : todos;
+  if (!shown.length) return null;
+  return (
+    <ul className="trip-todo-inline" onClick={(e) => e.stopPropagation()}>
+      {shown.map((t) => (
+        <li key={t.id} className={t.done ? 'is-done' : undefined}>
+          <label>
+            <input type="checkbox" checked={t.done} onChange={() => onToggle(t)} />
+            <Markdown inline>{t.text}</Markdown>
+          </label>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TripTodos({ trip, days, initialScope = 'trip', hideDone, setHideDone, onClose, onChanged }) {
+  const [scope, setScope] = useState(initialScope);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [editingId, setEditingId] = useState(null);
+  const inputRef = useRef(null);
+  usePopupHotkeys({ onClose, busy });
+
+  const todos = trip.todos || [];
+  const openCount = todos.filter((t) => !t.done).length;
+  const stopsById = new Map(days.flatMap((d) => d.stops.map((s) => [s.id, s])));
+  const groups = [
+    { key: 'trip', title: 'Whole trip', items: todos.filter((t) => !t.day_id) },
+    ...days.map((day) => {
+      const order = new Map(day.stops.map((s, i) => [s.id, i]));
+      const items = todos
+        .filter((t) => t.day_id === day.id)
+        .sort((a, b) => (a.stop_id ? 1 + (order.get(a.stop_id) ?? 0) : 0) - (b.stop_id ? 1 + (order.get(b.stop_id) ?? 0) : 0));
+      return { key: `day:${day.id}`, title: formatDay(day), items };
+    }),
+  ].map((g) => ({ ...g, items: hideDone ? g.items.filter((t) => !t.done) : g.items }))
+    .filter((g) => g.items.length);
+
+  const run = async (fn) => {
+    setBusy(true);
+    setError('');
+    try {
+      await fn();
+      await onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const add = (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    const [kind, id] = scope.split(':');
+    run(async () => {
+      await api.json('/api/trips/todos/', {
+        method: 'POST',
+        body: JSON.stringify({
+          trip_id: trip.id,
+          text: text.trim(),
+          ...(kind === 'day' ? { day_id: Number(id) } : {}),
+          ...(kind === 'stop' ? { stop_id: Number(id) } : {}),
+        }),
+      });
+      setText('');
+      inputRef.current?.focus();
+    });
+  };
+
+  const patch = (todo, body) => api.json(`/api/trips/todos/${todo.id}/`, { method: 'PATCH', body: JSON.stringify(body) });
+
+  return (
+    <div className="trip-modal-backdrop" onClick={onClose} role="presentation">
+      <div className="trip-modal trip-modal-scroll trip-todos" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="To-dos">
+        <div className="trip-todos-head">
+          <h3>To-dos · {trip.title}</h3>
+          <span className="trip-muted">{openCount} open · {todos.length - openCount} done</span>
+          <label className="trip-check">
+            <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
+            Hide done
+          </label>
+        </div>
+        <form className="trip-todo-add" onSubmit={add}>
+          <select value={scope} onChange={(e) => setScope(e.target.value)} aria-label="Attach to">
+            <option value="trip">Whole trip</option>
+            {days.map((day) => (
+              <optgroup key={day.id} label={formatDay(day)}>
+                <option value={`day:${day.id}`}>{formatDay(day)} (the day)</option>
+                {day.stops.map((s) => (
+                  <option key={s.id} value={`stop:${s.id}`}>{KIND_LABEL[s.kind] || 'Stop'}: {s.text}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <input ref={inputRef} autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder="New to-do…" />
+          <button type="submit" className="trip-primary" disabled={busy || !text.trim()}>Add</button>
+        </form>
+        {error && <p className="trip-error">{error}</p>}
+        <div className="trip-modal-body">
+          {!groups.length && (
+            <p className="trip-muted">{todos.length ? 'Everything is done.' : 'No to-dos yet.'}</p>
+          )}
+          {groups.map((g) => (
+            <section key={g.key} className="trip-todo-group">
+              <h4>{g.title}</h4>
+              <ul>
+                {g.items.map((t) => {
+                  const stop = t.stop_id ? stopsById.get(t.stop_id) : null;
+                  return (
+                    <li key={t.id} className={t.done ? 'is-done' : undefined}>
+                      <input
+                        type="checkbox"
+                        checked={t.done}
+                        disabled={busy}
+                        onChange={() => run(() => patch(t, { done: !t.done }))}
+                        aria-label={`Done: ${t.text}`}
+                      />
+                      <div className="trip-todo-text">
+                        {editingId === t.id ? (
+                          <InlineRename
+                            value={t.text}
+                            onCancel={() => setEditingId(null)}
+                            onSave={async (next) => {
+                              await patch(t, { text: next });
+                              await onChanged();
+                              setEditingId(null);
+                            }}
+                          />
+                        ) : (
+                          <Markdown inline>{t.text}</Markdown>
+                        )}
+                        {stop && <span className="trip-muted">{KIND_LABEL[stop.kind] || 'Stop'}: {stop.text}</span>}
+                      </div>
+                      {editingId !== t.id && (
+                        <>
+                          <button type="button" onClick={() => setEditingId(t.id)} title="Edit">Edit</button>
+                          <button
+                            type="button"
+                            className="trip-docs-delete"
+                            disabled={busy}
+                            onClick={() => run(() => api.json(`/api/trips/todos/${t.id}/`, { method: 'DELETE' }))}
+                            title="Delete"
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))}
+        </div>
+        <div className="trip-modal-actions">
+          <button type="button" className="trip-primary" onClick={onClose} title="Esc">Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TripReport({ trip, hideDone, onClose }) {
   const [report, setReport] = useState(null);
   const [error, setError] = useState('');
   const [raw, setRaw] = useState(false);
@@ -973,7 +1232,7 @@ function TripReport({ trip, onClose }) {
     let cancelled = false;
     (async () => {
       try {
-        const data = await api.json(`/api/trips/trips/${trip.id}/report/`);
+        const data = await api.json(`/api/trips/trips/${trip.id}/report/${hideDone ? '?hide_done=1' : ''}`);
         if (!cancelled) setReport(data);
       } catch (err) {
         if (!cancelled) setError(err.message);
@@ -982,7 +1241,7 @@ function TripReport({ trip, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [trip.id]);
+  }, [trip.id, hideDone]);
 
   const copy = async () => {
     try {
@@ -1092,13 +1351,15 @@ function DayForm({ initial, onClose, onSave }) {
 function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClose, onSave, onAddAttachment, onRemoveAttachment, onRenameAttachment }) {
   const kind = initial?.kind || defaultKind || 'activity';
   const isTravel = kind === 'travel';
+  const isEvent = kind === 'event';
+  const noun = KIND_NOUN[kind] || 'stop';
   const [dayId, setDayId] = useState(initial?.day || initial?.day_id || defaultDayId || days[0]?.id || '');
   const [text, setText] = useState(initial?.text || '');
   const [description, setDescription] = useState(initial?.description || '');
   const [travelMode, setTravelMode] = useState(initial?.travel_mode || 'drive');
   const [loc, setLoc] = useState(initial?.loc || '');
   const [arriveLoc, setArriveLoc] = useState(initial?.arrive_loc || '');
-  const [cat, setCat] = useState(initial?.cat || (isTravel ? 'Travel' : 'Sight'));
+  const [cat, setCat] = useState(initial?.cat || (isTravel ? 'Travel' : isEvent ? 'Event' : 'Sight'));
   const [status, setStatus] = useState(initial?.status || 'confirmed');
   const [startTime, setStartTime] = useState(initial?.start_time ? String(initial.start_time).slice(0, 5) : '');
   const [duration, setDuration] = useState(initial?.duration_minutes ?? '');
@@ -1146,7 +1407,7 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
     e.preventDefault();
     const title = text.trim() || (isTravel ? travelTitle(travelMode, loc.trim(), arriveLoc.trim()) : '');
     if (!title) {
-      setError(isTravel ? 'Enter a title or departure/arrival locations.' : 'Enter an activity.');
+      setError(isTravel ? 'Enter a title or departure/arrival locations.' : `Enter ${isEvent ? 'an event' : 'an activity'}.`);
       return;
     }
     setBusy(true);
@@ -1164,7 +1425,7 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
         cat: cat.trim() || (isTravel ? 'Travel' : ''),
         status,
         start_time: startTime || null,
-        duration_minutes: duration === '' ? null : Number(duration),
+        duration_minutes: isEvent || duration === '' ? null : Number(duration),
       });
     } catch (err) {
       setError(err.message);
@@ -1176,7 +1437,7 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
   return (
     <div className="trip-modal-backdrop" onClick={onClose} role="presentation">
       <form ref={formRef} className="trip-modal trip-modal-scroll" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h3>{initial?.id ? (isTravel ? 'Edit travel' : 'Edit stop') : (isTravel ? 'Add travel' : 'Add stop')}</h3>
+        <h3>{initial?.id ? 'Edit' : 'Add'} {noun}</h3>
         <div className="trip-modal-body">
           <label>
             Day
@@ -1200,7 +1461,7 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
             </label>
           )}
           <label>
-            {isTravel ? 'Title' : 'Activity'}
+            {isTravel ? 'Title' : isEvent ? 'Event' : 'Activity'}
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -1229,6 +1490,14 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
               </label>
             </div>
           )}
+          {isEvent ? (
+            <div className="trip-form-row">
+              <label>
+                Time
+                <TimeInput value={startTime} onChange={setStartTime} />
+              </label>
+            </div>
+          ) : (
           <div className="trip-form-row">
             <label>
               {isTravel ? 'Departure time' : 'Start time'}
@@ -1251,6 +1520,7 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
               />
             </label>
           </div>
+          )}
           {isTravel ? (
             <div className="trip-form-row-2">
               <label>
@@ -1274,7 +1544,7 @@ function StopForm({ days, initial, defaultDayId, defaultKind = 'activity', onClo
               </label>
               <label>
                 Category
-                <input value={cat} onChange={(e) => setCat(e.target.value)} placeholder="Sight" />
+                <input value={cat} onChange={(e) => setCat(e.target.value)} placeholder={isEvent ? 'Event' : 'Sight'} />
               </label>
               <label>
                 Status
@@ -1340,7 +1610,7 @@ function stopToBulkRow(stop) {
   return {
     key: `id-${stop.id}`,
     id: stop.id,
-    kind: stop.kind === 'travel' ? 'travel' : 'activity',
+    kind: KIND_NOUN[stop.kind] ? stop.kind : 'activity',
     text: stop.text || '',
     start_time: start,
     end_time: endFromStartAndDuration(start, stop.duration_minutes),
@@ -1369,6 +1639,7 @@ function isBulkTimeCol(col) {
 function bulkCellEnabled(row, col) {
   if (!row || col < 0 || col >= BULK_COL_COUNT) return false;
   if (col === 5 && row.kind !== 'travel') return false;
+  if (col === 3 && row.kind === 'event') return false;
   return true;
 }
 
@@ -1791,10 +2062,10 @@ function BulkDayEditor({ day, onClose, onSaved }) {
         const isTravel = row.kind === 'travel';
         const title = row.text.trim() || (isTravel ? travelTitle(row.travel_mode, row.loc.trim(), row.arrive_loc.trim()) : '');
         if (!title) throw new Error('Each row needs a title, or travel locations.');
-        const duration = durationFromStartAndEnd(row.start_time, row.end_time);
+        const duration = row.kind === 'event' ? '' : durationFromStartAndEnd(row.start_time, row.end_time);
         return {
           ...(row.id ? { id: row.id } : {}),
-          kind: isTravel ? 'travel' : 'activity',
+          kind: row.kind,
           travel_mode: isTravel ? (row.travel_mode || 'drive') : '',
           text: title,
           loc: row.loc.trim(),
@@ -1847,20 +2118,19 @@ function BulkDayEditor({ day, onClose, onSaved }) {
                 return (
                   <tr key={row.key}>
                     <td className={cellClass(0)}>
-                      <ClickEditCell {...cellProps(0)} display={isTravel ? 'Travel' : 'Stop'}>
+                      <ClickEditCell {...cellProps(0)} display={KIND_LABEL[row.kind]}>
                         <select
                           value={row.kind}
                           onChange={(e) => {
                             const kind = e.target.value;
-                            patchRow(row.key, { kind });
-                            if (kind !== 'travel' && active.row === index && active.col === 5) {
+                            patchRow(row.key, kind === 'event' ? { kind, end_time: '' } : { kind });
+                            if (active.row === index && !bulkCellEnabled({ ...row, kind }, active.col)) {
                               setActive((prev) => ({ ...prev, col: 4, sub: 0 }));
                             }
                           }}
                           aria-label="Type"
                         >
-                          <option value="activity">Stop</option>
-                          <option value="travel">Travel</option>
+                          {Object.entries(KIND_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                         </select>
                       </ClickEditCell>
                     </td>
@@ -1887,13 +2157,17 @@ function BulkDayEditor({ day, onClose, onSaved }) {
                       </ClickEditCell>
                     </td>
                     <td className={cellClass(3)}>
-                      <ClickEditCell
-                        {...cellProps(3)}
-                        display={formatStopTime(row.end_time)}
-                        placeholder="End"
-                      >
-                        <TimeInput value={row.end_time} onChange={(v) => patchRow(row.key, { end_time: v })} />
-                      </ClickEditCell>
+                      {row.kind === 'event' ? (
+                        <span className="trip-bulk-na">—</span>
+                      ) : (
+                        <ClickEditCell
+                          {...cellProps(3)}
+                          display={formatStopTime(row.end_time)}
+                          placeholder="End"
+                        >
+                          <TimeInput value={row.end_time} onChange={(v) => patchRow(row.key, { end_time: v })} />
+                        </ClickEditCell>
+                      )}
                     </td>
                     <td className={cellClass(4)}>
                       <ClickEditCell
@@ -1972,6 +2246,9 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
   const [showReport, setShowReport] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
+  const [todosScope, setTodosScope] = useState(null);
+  const [hideDone, setHideDone] = useStoredFlag('trips.hideDoneTodos');
+  const [hideTodos, setHideTodos] = useStoredFlag('trips.hideTodos');
   const [error, setError] = useState('');
   const [journalDrafts, setJournalDrafts] = useState({});
   const [collapsedDayIds, setCollapsedDayIds] = useState(() => new Set());
@@ -2020,8 +2297,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
     return days.map((day) => ({
       ...day,
       stops: [...day.stops].sort((a, b) => (a.sort_order - b.sort_order) || (a.id - b.id)).filter((item) => {
-        if (status === 'hide-done' && item.done) return false;
-        if (status !== 'all' && status !== 'hide-done' && item.status !== status) return false;
+        if (status !== 'all' && item.status !== status) return false;
         if (loc !== 'all' && item.loc !== loc && item.arrive_loc !== loc) return false;
         if (cat !== 'all' && item.cat !== cat) return false;
         if (query && !`${item.text} ${item.description || ''} ${item.loc} ${item.arrive_loc || ''} ${item.travel_mode || ''}`.toLowerCase().includes(query.toLowerCase())) return false;
@@ -2095,13 +2371,19 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
     await onReload();
   };
 
-  const toggleDone = async (stop) => {
-    await api.json(`/api/trips/stops/${stop.id}/`, {
-      method: 'PATCH',
-      body: JSON.stringify({ done: !stop.done }),
-    });
-    await onReload();
+  const toggleTodo = async (todo) => {
+    try {
+      await api.json(`/api/trips/todos/${todo.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ done: !todo.done }),
+      });
+      await onReload();
+    } catch (err) {
+      setError(err.message);
+    }
   };
+
+  const todosFor = (scope) => (trip.todos || []).filter((t) => todoScope(t) === scope);
 
   const deleteStop = async (stop) => {
     if (!window.confirm('Delete this stop?')) return;
@@ -2223,6 +2505,9 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
           <a href="/app/gallery/" className="trip-ext-link">Open gallery</a>
         )}
         <button type="button" onClick={() => setEditingInfo(true)}>Details</button>
+        <button type="button" onClick={() => setTodosScope('trip')}>
+          To-dos{(trip.todos || []).some((t) => !t.done) ? ` (${(trip.todos || []).filter((t) => !t.done).length})` : ''}
+        </button>
         <button type="button" onClick={() => setShowDocs(true)}>Documents</button>
         <button type="button" onClick={() => setShowReport(true)}>Report</button>
         <button type="button" onClick={exportTrip} disabled={exporting} title="Download this trip with its uploaded files, to import elsewhere">
@@ -2231,6 +2516,18 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
         <button type="button" className="trip-danger" onClick={deleteTrip}>Delete trip</button>
       </div>
       <Markdown className="trip-description">{trip.description}</Markdown>
+      {mode === 'plan' && !hideTodos && (
+        <section className="trip-trip-todos">
+          <div className="trip-trip-todos-head">
+            <h4>Trip to-dos</h4>
+            <button type="button" onClick={() => setTodosScope('trip')}>Add to-do</button>
+          </div>
+          <TodoChecklist todos={todosFor('trip')} hideDone={hideDone} onToggle={toggleTodo} />
+          {!todosFor('trip').some((t) => !(hideDone && t.done)) && (
+            <p className="trip-muted">No trip-level to-dos{hideDone && todosFor('trip').length ? ' left' : ''}.</p>
+          )}
+        </section>
+      )}
 
       {mode !== 'travelog' && (
         <div className="trip-filters">
@@ -2244,17 +2541,25 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
             {categories.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <div className="trip-status-tabs">
-            {['all', 'tobook', 'booked', 'confirmed', 'hide-done'].map((s) => (
+            {['all', 'tobook', 'booked', 'confirmed'].map((s) => (
               <button
                 key={s}
                 type="button"
                 className={status === s ? 'is-active' : ''}
                 onClick={() => setStatus(s)}
               >
-                {s === 'hide-done' ? 'Hide done' : s === 'all' ? 'All' : STATUS_LABEL[s]}
+                {s === 'all' ? 'All' : STATUS_LABEL[s]}
               </button>
             ))}
           </div>
+          <label className="trip-check" title="Hide completed to-dos everywhere">
+            <input type="checkbox" checked={hideDone} onChange={(e) => setHideDone(e.target.checked)} />
+            Hide done
+          </label>
+          <label className="trip-check" title="Don't show to-dos on the plan (the To-dos popup still lists them)">
+            <input type="checkbox" checked={hideTodos} onChange={(e) => setHideTodos(e.target.checked)} />
+            Hide to-dos
+          </label>
           <label>
             Current day
             <select
@@ -2277,6 +2582,9 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
               </button>
               <button type="button" onClick={() => setAdding('travel')} disabled={!currentDay}>
                 Add travel
+              </button>
+              <button type="button" onClick={() => setAdding('event')} disabled={!currentDay}>
+                Add event
               </button>
               <button type="button" onClick={() => setBulkDay(currentDay)} disabled={!currentDay}>
                 Bulk edit
@@ -2413,6 +2721,25 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
                   onClick={(e) => {
                     e.stopPropagation();
                     setCurrentDayId(day.id);
+                    setAdding('event');
+                  }}
+                >
+                  Add event
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTodosScope(`day:${day.id}`);
+                  }}
+                >
+                  To-do
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setCurrentDayId(day.id);
                     setBulkDay(days.find((d) => d.id === day.id) || day);
                   }}
                 >
@@ -2428,6 +2755,11 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
           </header>
           {!collapsed && mode === 'plan' && day.notes && (
             <Markdown className="trip-day-notes">{day.notes}</Markdown>
+          )}
+          {!collapsed && mode === 'plan' && !hideTodos && (
+            <div className="trip-day-todos">
+              <TodoChecklist todos={todosFor(`day:${day.id}`)} hideDone={hideDone} onToggle={toggleTodo} />
+            </div>
           )}
           {!collapsed && (mode === 'travelog' ? (
             <div className="trip-journal">
@@ -2457,13 +2789,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
           ) : (
             <ul>
               {day.stops.map((stop, index) => (
-                <li key={stop.id} className={`${stop.done ? 'is-done' : ''}${stop.kind === 'travel' ? ' is-travel' : ''}`.trim()}>
-                  <input
-                    type="checkbox"
-                    checked={!!stop.done}
-                    onChange={() => toggleDone(stop)}
-                    aria-label={`Done: ${stop.text}`}
-                  />
+                <li key={stop.id} className={`is-${stop.kind || 'activity'}`}>
                   <div>
                     <p>
                       {(stop.start_time || stop.duration_minutes != null) && (
@@ -2482,6 +2808,7 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
                       {stop.kind === 'travel' && (
                         <span className="tag travel">{travelModeLabel(stop.travel_mode)}</span>
                       )}
+                      {stop.kind === 'event' && <span className="tag event">Event</span>}
                       <span className={`tag ${stop.status}`}>{STATUS_LABEL[stop.status] || stop.status}</span>
                       {stop.kind === 'travel' && (stop.loc || stop.arrive_loc) ? (
                         <span className="tag">{[stop.loc, stop.arrive_loc].filter(Boolean).join(' → ')}</span>
@@ -2491,9 +2818,15 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
                       {stop.cat && <span className="tag">{stop.cat}</span>}
                     </div>
                     <AttachmentIcons attachments={stop.attachments} />
+                    {!hideTodos && (
+                      <TodoChecklist todos={todosFor(`stop:${stop.id}`)} hideDone={hideDone} onToggle={toggleTodo} />
+                    )}
                   </div>
                   {mode === 'plan' && (
                     <div className="trip-stop-actions">
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setTodosScope(`stop:${stop.id}`); }}>
+                        To-do
+                      </button>
                       <button
                         type="button"
                         disabled={index === 0}
@@ -2562,6 +2895,8 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
       {editingInfo && (
         <TripInfoForm
           trip={trip}
+          hideDone={hideDone}
+          onTodosChanged={onReload}
           onClose={() => setEditingInfo(false)}
           onSave={async (body) => {
             await api.json(`/api/trips/trips/${trip.id}/`, { method: 'PATCH', body: JSON.stringify(body) });
@@ -2570,7 +2905,18 @@ function TripDetail({ trip, lists, galleries, onBack, onReload, onDeleted }) {
           }}
         />
       )}
-      {showReport && <TripReport trip={trip} onClose={() => setShowReport(false)} />}
+      {showReport && <TripReport trip={trip} hideDone={hideDone} onClose={() => setShowReport(false)} />}
+      {todosScope && (
+        <TripTodos
+          trip={trip}
+          days={days}
+          initialScope={todosScope}
+          hideDone={hideDone}
+          setHideDone={setHideDone}
+          onClose={() => setTodosScope(null)}
+          onChanged={onReload}
+        />
+      )}
       {showDocs && (
         <TripDocuments
           trip={trip}

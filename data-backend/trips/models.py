@@ -31,7 +31,6 @@ class Trip(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, default='')
     notes = models.TextField(blank=True, default='')
-    open_items = models.TextField(blank=True, default='')
     start_date = models.DateField(null=True, blank=True)
     end_date = models.DateField(null=True, blank=True)
     packing_list = models.ForeignKey(
@@ -140,9 +139,11 @@ class TripStop(models.Model):
     )
     KIND_ACTIVITY = 'activity'
     KIND_TRAVEL = 'travel'
+    KIND_EVENT = 'event'
     KIND_CHOICES = (
         (KIND_ACTIVITY, 'Activity'),
         (KIND_TRAVEL, 'Travel'),
+        (KIND_EVENT, 'Event'),
     )
     TRAVEL_FLIGHT = 'flight'
     TRAVEL_DRIVE = 'drive'
@@ -180,6 +181,31 @@ class TripStop(models.Model):
     class Meta:
         ordering = ['sort_order', 'id']
         indexes = [models.Index(fields=['user', 'day'], name='tripstop_user_day_idx')]
+
+    def __str__(self):
+        return self.text[:80]
+
+
+class TripTodo(models.Model):
+    """A to-do on the trip itself, or on one of its days or stops."""
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    modified_on = models.DateTimeField(auto_now=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='trip_todos',
+    )
+    trip = models.ForeignKey(Trip, on_delete=models.CASCADE, related_name='todos')
+    day = models.ForeignKey(TripDay, null=True, blank=True, on_delete=models.CASCADE, related_name='todos')
+    stop = models.ForeignKey(TripStop, null=True, blank=True, on_delete=models.CASCADE, related_name='todos')
+    text = models.TextField()
+    done = models.BooleanField(default=False)
+    sort_order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['sort_order', 'id']
+        indexes = [models.Index(fields=['user', 'trip'], name='triptodo_user_trip_idx')]
 
     def __str__(self):
         return self.text[:80]

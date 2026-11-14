@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Trip, TripDay, TripLodging, TripMedia, TripStop, TripStopAttachment
+from .models import Trip, TripDay, TripLodging, TripMedia, TripStop, TripStopAttachment, TripTodo
 
 
 class TripStopInline(admin.TabularInline):
@@ -65,6 +65,13 @@ class TripStopAdmin(admin.ModelAdmin):
 class TripStopAttachmentAdmin(admin.ModelAdmin):
     list_display = ('kind', 'title', 'stop', 'lodging', 'user')
     list_filter = ('user', 'kind')
+
+
+@admin.register(TripTodo)
+class TripTodoAdmin(admin.ModelAdmin):
+    list_display = ('text', 'trip', 'day', 'stop', 'done', 'user')
+    list_filter = ('user', 'done')
+    search_fields = ('text',)
 
 
 @admin.register(TripMedia)

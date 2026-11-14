@@ -197,7 +197,68 @@ body {
   border-bottom: 1px solid #eee;
 }
 .trip-day li:last-child { border-bottom: 0; }
-.trip-day li.is-done p { text-decoration: line-through; color: var(--text-muted); }
+.tag.event { border-color: #7c3aed; color: #7c3aed; }
+.trip-filters label.trip-check, .trip-todos-head label.trip-check { flex-direction: row; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: inherit; }
+.trip-todo-inline { list-style: none; margin: 0.35rem 0 0; padding: 0; }
+.trip-day .trip-todo-inline li { display: block; padding: 0.1rem 0; border: 0; }
+.trip-todo-inline label { display: inline-flex; align-items: baseline; gap: 0.4rem; font-size: 0.85rem; cursor: pointer; }
+.trip-todo-inline li.is-done label { color: var(--text-muted); text-decoration: line-through; }
+.trip-day-todos { padding: 0 1rem; }
+.trip-trip-todos {
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 0.45rem;
+  padding: 0.6rem 1rem;
+  margin-bottom: 1rem;
+}
+.trip-trip-todos-head { display: flex; align-items: center; gap: 0.75rem; }
+.trip-trip-todos-head h4 { margin: 0; font-size: 0.9rem; }
+.trip-trip-todos-head button {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  padding: 0.2rem 0.6rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.trip-trip-todos .trip-muted { margin: 0.35rem 0 0; font-size: 0.85rem; }
+.trip-day-todos:empty { display: none; }
+.trip-todos { width: min(44rem, 100%); }
+.trip-todos-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.75rem; }
+.trip-todos-head h3 { margin-right: auto; }
+.trip-todo-add { display: flex; gap: 0.5rem; }
+.trip-todo-add select { max-width: 40%; }
+.trip-todo-add input { flex: 1; min-width: 0; }
+.trip-todo-add select, .trip-todo-add input {
+  border: 1px solid var(--border-color);
+  border-radius: 0.3rem;
+  padding: 0.4rem 0.55rem;
+  background: #fff;
+}
+.trip-info-todos { border-top: 1px solid var(--border-color); padding-top: 0.5rem; }
+.trip-info-todos .trip-muted { margin: 0.2rem 0 0.4rem; font-size: 0.85rem; }
+.trip-info-todos .trip-todo-add { margin-top: 0.4rem; }
+.trip-todo-group h4 { margin: 0.4rem 0 0.2rem; font-size: 0.85rem; color: var(--text-muted); }
+.trip-todo-group ul { list-style: none; margin: 0; padding: 0; }
+.trip-todo-group li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+.trip-todo-group li.is-done .trip-todo-text > :first-child { text-decoration: line-through; color: var(--text-muted); }
+.trip-todo-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.trip-todo-text .trip-muted { font-size: 0.8rem; }
+.trip-todo-group li > button {
+  border: 1px solid var(--border-color);
+  background: #fff;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.trip-todo-group li > button.trip-docs-delete { color: #b42318; border-color: #f1b8b2; }
 .trip-day li p { margin: 0 0 0.3rem; }
 .trip-stop-desc {
   font-size: 0.85rem;

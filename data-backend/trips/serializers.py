@@ -3,7 +3,7 @@ from rest_framework import serializers
 from gallery.models import Gallery, UserMedia
 from vacation_list.models import VacList
 
-from .models import Trip, TripDay, TripLodging, TripStop, TripMedia, TripStopAttachment
+from .models import Trip, TripDay, TripLodging, TripStop, TripMedia, TripStopAttachment, TripTodo
 
 
 def _request_user(serializer):
@@ -146,7 +146,50 @@ class TripStopSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError(
                     {'travel_mode': 'Choose Flight, Drive, Walk, or Boat.'}
                 )
+        if kind == TripStop.KIND_EVENT:
+            attrs['duration_minutes'] = None
         return attrs
+
+
+class TripTodoSerializer(serializers.ModelSerializer):
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+    trip_id = serializers.PrimaryKeyRelatedField(queryset=Trip.objects.none(), source='trip')
+    day_id = serializers.PrimaryKeyRelatedField(
+        queryset=TripDay.objects.none(), source='day', allow_null=True, required=False,
+    )
+    stop_id = serializers.PrimaryKeyRelatedField(
+        queryset=TripStop.objects.none(), source='stop', allow_null=True, required=False,
+    )
+
+    class Meta:
+        model = TripTodo
+        fields = ['id', 'user', 'trip_id', 'day_id', 'stop_id', 'text', 'done', 'sort_order', 'created_at', 'modified_on']
+        read_only_fields = ['sort_order']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        user = _request_user(self)
+        _set_pk_queryset(self.fields['trip_id'], Trip.objects.filter(user=user) if user else Trip.objects.none())
+        _set_pk_queryset(self.fields['day_id'], TripDay.objects.filter(user=user) if user else TripDay.objects.none())
+        _set_pk_queryset(self.fields['stop_id'], TripStop.objects.filter(user=user) if user else TripStop.objects.none())
+
+    def validate(self, attrs):
+        trip = attrs.get('trip') or getattr(self.instance, 'trip', None)
+        day = attrs.get('day', getattr(self.instance, 'day', None))
+        stop = attrs.get('stop', getattr(self.instance, 'stop', None))
+        if stop:
+            day = stop.day
+            attrs['day'] = day
+        if day and trip and day.trip_id != trip.id:
+            raise serializers.ValidationError('Day or stop must belong to this trip.')
+        if not (attrs.get('text', getattr(self.instance, 'text', '')) or '').strip():
+            raise serializers.ValidationError({'text': 'Enter a to-do.'})
+        return attrs
+
+    def create(self, validated_data):
+        last = TripTodo.objects.filter(trip=validated_data['trip']).order_by('-sort_order').first()
+        validated_data['sort_order'] = (last.sort_order + 1) if last else 0
+        return super().create(validated_data)
 
 
 class TripMediaSerializer(serializers.ModelSerializer):
@@ -334,15 +377,16 @@ class TripSerializer(serializers.ModelSerializer):
     )
     days = TripDaySerializer(many=True, read_only=True)
     lodgings = TripLodgingSerializer(many=True, read_only=True)
+    todos = TripTodoSerializer(many=True, read_only=True)
     day_count = serializers.IntegerField(source='days.count', read_only=True)
 
     class Meta:
         model = Trip
         fields = [
-            'id', 'user', 'title', 'description', 'notes', 'open_items', 'start_date', 'end_date',
+            'id', 'user', 'title', 'description', 'notes', 'start_date', 'end_date',
             'packing_list', 'packing_list_id',
             'gallery', 'gallery_id',
-            'days', 'lodgings', 'day_count',
+            'days', 'lodgings', 'todos', 'day_count',
             'created_at', 'modified_on',
         ]
         read_only_fields = ['packing_list', 'gallery']

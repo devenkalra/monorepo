@@ -77,7 +77,33 @@ def filename(trip):
     return f'{slug}-report.md'
 
 
-def build(trip, today=None):
+def _todos(trip, days, stops_by_day, hide_done):
+    """Trip to-dos in plan order: trip-level first, then each day's, then each stop's within the day."""
+    day_rank = {d.id: i for i, d in enumerate(days)}
+    stop_rank = {s.id: i for d in days for i, s in enumerate(stops_by_day[d.id])}
+    todos = [t for t in trip.todos.select_related('day', 'stop') if not (hide_done and t.done)]
+    return sorted(todos, key=lambda t: (
+        t.day_id is not None,
+        day_rank.get(t.day_id, 0),
+        t.stop_id is not None,
+        stop_rank.get(t.stop_id, 0),
+        t.sort_order,
+        t.id,
+    ))
+
+
+def _todo_line(todo):
+    context = []
+    if todo.day_id:
+        context.append(_day(todo.day.date))
+    if todo.stop_id:
+        context.append(' '.join(todo.stop.text.split()))
+    text = ' '.join(todo.text.split())
+    suffix = f' ({" · ".join(context)})' if context else ''
+    return f'- [{"x" if todo.done else " "}] {text}{suffix}'
+
+
+def build(trip, today=None, hide_done=False):
     today = today or date.today()
     days = list(trip.days.select_related('lodging').prefetch_related('stops').order_by('date', 'sort_order', 'id'))
     stops_by_day = {d.id: list(d.stops.order_by('sort_order', 'id')) for d in days}
@@ -100,15 +126,10 @@ def build(trip, today=None):
             rows.append(_row(_day(d.date) if i == 0 else '', _stop_time(stop), _stop_location(stop), activity))
     out += ['', '## Day by day', '', _table(['Date', 'Time', 'Location(s)', 'Note (Activity From Day)'], rows)]
 
-    todos = [f'- [ ] {" ".join(stop.text.split())} ({_day(d.date)})'
-             for d in days for stop in stops_by_day[d.id]
-             if stop.status == TripStop.STATUS_TOBOOK and not stop.done]
+    todos = [_todo_line(t) for t in _todos(trip, days, stops_by_day, hide_done)]
     if todos or trip.notes.strip():
         out += ['', '## To Dos', '']
-        out += todos or ['Nothing left to book.']
+        out += todos or ['Nothing to do.']
         if trip.notes.strip():
             out += ['', 'Notes:', '', trip.notes.strip()]
-
-    if trip.open_items.strip():
-        out += ['', '## Open Items', '', 'Add a comment on anything you\'d change.', '', trip.open_items.strip()]
     return '\n'.join(out) + '\n'

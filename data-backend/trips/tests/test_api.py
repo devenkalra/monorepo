@@ -6,7 +6,7 @@ from django.core.management import call_command
 from rest_framework.test import APITestCase
 
 from gallery.models import Gallery
-from trips.models import Trip, TripDay, TripLodging, TripStop, TripStopAttachment
+from trips.models import Trip, TripDay, TripLodging, TripStop, TripStopAttachment, TripTodo
 from vacation_list.models import VacList
 
 
@@ -184,27 +184,73 @@ class TripApiTests(APITestCase):
         )
         self.assertEqual(bad.status_code, 400)
 
-    def test_trip_description_notes_and_open_items_round_trip(self):
+    def test_event_has_no_duration(self):
+        trip = Trip.objects.create(title='Events', user=self.user)
+        day = TripDay.objects.create(user=self.user, trip=trip, date='2027-01-10')
+        res = self.client.post('/api/trips/stops/', {
+            'day_id': day.id, 'kind': 'event', 'text': 'Show', 'start_time': '20:00', 'duration_minutes': 90,
+        }, format='json')
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['kind'], 'event')
+        self.assertIsNone(res.data['duration_minutes'])
+
+    def test_todos_at_trip_day_and_stop_level(self):
+        trip = Trip.objects.create(title='Todos', user=self.user)
+        day = TripDay.objects.create(user=self.user, trip=trip, date='2027-01-10')
+        stop = TripStop.objects.create(user=self.user, day=day, text='Museum')
+        post = lambda body: self.client.post('/api/trips/todos/', {'trip_id': trip.id, **body}, format='json')
+        self.assertEqual(post({'text': 'Visa'}).status_code, 201)
+        self.assertEqual(post({'text': 'Pack', 'day_id': day.id}).status_code, 201)
+        res = post({'text': 'Tickets', 'stop_id': stop.id})
+        self.assertEqual(res.status_code, 201, res.data)
+        self.assertEqual(res.data['day_id'], day.id)
+        self.assertEqual(post({'text': '   '}).status_code, 400)
+
+        done = self.client.patch(f'/api/trips/todos/{res.data["id"]}/', {'done': True}, format='json')
+        self.assertTrue(done.data['done'])
+        todos = self.client.get(f'/api/trips/trips/{trip.id}/').data['todos']
+        self.assertEqual([(t['text'], t['done']) for t in todos], [('Visa', False), ('Pack', False), ('Tickets', True)])
+
+        other_trip = Trip.objects.create(title='Mine 2', user=self.user)
+        self.assertEqual(self.client.post('/api/trips/todos/', {
+            'trip_id': other_trip.id, 'text': 'Wrong', 'day_id': day.id,
+        }, format='json').status_code, 400)
+        theirs = Trip.objects.create(title='Theirs', user=self.other)
+        self.assertEqual(self.client.post('/api/trips/todos/', {
+            'trip_id': theirs.id, 'text': 'Nope',
+        }, format='json').status_code, 400)
+
+    def test_trip_description_and_notes_round_trip(self):
         trip = Trip.objects.create(title='Fields', user=self.user)
         res = self.client.patch(f'/api/trips/trips/{trip.id}/', {
-            'description': 'Two weeks.', 'notes': '- Visa', 'open_items': '- Beach?',
+            'description': 'Two weeks.', 'notes': '- Visa',
         }, format='json')
         self.assertEqual(res.status_code, 200, res.data)
-        self.assertEqual((res.data['description'], res.data['notes'], res.data['open_items']),
-                         ('Two weeks.', '- Visa', '- Beach?'))
+        self.assertEqual((res.data['description'], res.data['notes']), ('Two weeks.', '- Visa'))
+        self.assertNotIn('open_items', res.data)
+
+    def test_open_items_to_todos(self):
+        from trips.transfer import open_items_to_todos
+        self.assertEqual(
+            open_items_to_todos('- Phuket or Khao Lak?\n\n* [ ] Book ferry\n1. Rent car\nPlain line\n  -  '),
+            ['Phuket or Khao Lak?', 'Book ferry', 'Rent car', 'Plain line'],
+        )
 
     def test_report_markdown(self):
         trip = Trip.objects.create(title='Thailand', user=self.user, description='Two weeks in Thailand.',
-                                   notes='- Arrival card', open_items='- Phuket or Khao Lak?')
+                                   notes='- Arrival card')
         lodge = TripLodging.objects.create(user=self.user, trip=trip, name='Riverside Hotel')
         d1 = TripDay.objects.create(user=self.user, trip=trip, date='2027-01-08', title='Leave', notes='SFO | BKK\n\nnight')
         TripDay.objects.create(user=self.user, trip=trip, date='2027-01-10', title='**Rest**', lodging=lodge)
-        TripStop.objects.create(user=self.user, day=d1, kind='travel', travel_mode='flight', text='Fly to Bangkok',
-                                loc='SFO', arrive_loc='BKK', start_time='13:00', duration_minutes=72)
+        flight = TripStop.objects.create(user=self.user, day=d1, kind='travel', travel_mode='flight', text='Fly to Bangkok',
+                                         loc='SFO', arrive_loc='BKK', start_time='13:00', duration_minutes=72)
         TripStop.objects.create(user=self.user, day=d1, text='Book hotel', status='tobook', sort_order=1)
-        TripStop.objects.create(user=self.user, day=d1, text='Done booking', status='tobook', done=True, sort_order=2)
+        TripStop.objects.create(user=self.user, day=d1, kind='event', text='Dinner', start_time='19:30', sort_order=2)
         TripStop.objects.create(user=self.user, day=d1, text='**Pool**', loc='~Hotel', sort_order=3,
                                 description='- Bring [cash](https://x.test)\n- Towels')
+        TripTodo.objects.create(user=self.user, trip=trip, day=d1, stop=flight, text='Print boarding pass')
+        TripTodo.objects.create(user=self.user, trip=trip, day=d1, text='Pack', done=True, sort_order=1)
+        TripTodo.objects.create(user=self.user, trip=trip, text='Visa forms', sort_order=2)
 
         res = self.client.get(f'/api/trips/trips/{trip.id}/report/')
         self.assertEqual(res.status_code, 200)
@@ -218,9 +264,15 @@ class TripApiTests(APITestCase):
         self.assertIn('| Fri Jan 8 | 1:00 PM - 2:12 PM | SFO → BKK | Fly to Bangkok |', md)
         self.assertIn('|  |  |  | Book hotel |', md)
         self.assertIn('| Sun Jan 10 |  | Riverside Hotel | **Rest** |', md)
-        self.assertIn('## To Dos\n\n- [ ] Book hotel (Fri Jan 8)\n\nNotes:\n\n- Arrival card', md)
-        self.assertNotIn('Done booking (', md)
-        self.assertIn("## Open Items\n\nAdd a comment on anything you'd change.\n\n- Phuket or Khao Lak?", md)
+        self.assertIn('|  | 7:30 PM |  | Dinner |', md)
+        self.assertIn(
+            '## To Dos\n\n- [ ] Visa forms\n- [x] Pack (Fri Jan 8)\n'
+            '- [ ] Print boarding pass (Fri Jan 8 · Fly to Bangkok)\n\nNotes:\n\n- Arrival card', md,
+        )
+        self.assertNotIn('Open Items', md)
+        hidden = self.client.get(f'/api/trips/trips/{trip.id}/report/?hide_done=1').data['markdown']
+        self.assertNotIn('Pack', hidden)
+        self.assertIn('- [ ] Visa forms', hidden)
 
         other = Trip.objects.create(title='Theirs', user=self.other)
         self.assertEqual(self.client.get(f'/api/trips/trips/{other.id}/report/').status_code, 404)
@@ -456,6 +508,7 @@ class TripApiTests(APITestCase):
                 'kind': 'document', 'stop_id': stop.id, 'asset_id': up.data['user_media_id'], 'url': up.data['url'],
             }, format='json')
             TripMedia.objects.create(user=self.user, trip=trip, day=day, asset_id=up.data['user_media_id'])
+            TripTodo.objects.create(user=self.user, trip=trip, day=day, stop=stop, text='Confirm', done=True)
 
             res = self.client.get(f'/api/trips/trips/{trip.id}/export/')
             self.assertEqual(res.status_code, 200)
@@ -477,6 +530,8 @@ class TripApiTests(APITestCase):
             self.assertEqual(copy.user, self.other)
             self.assertEqual(copy.notes, '- visa')
             self.assertEqual(copy.days.get().notes, 'Arrive')
+            todo = copy.todos.get()
+            self.assertEqual((todo.text, todo.done, todo.stop.text, todo.day.notes), ('Confirm', True, 'Hotel', 'Arrive'))
             att = copy.days.get().stops.get().attachments.get()
             self.assertEqual(att.asset.owner, self.other)
             self.assertEqual(att.asset.filename, 'Booking.pdf')
