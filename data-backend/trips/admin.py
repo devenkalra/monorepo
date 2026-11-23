@@ -1,6 +1,17 @@
 from django.contrib import admin
 
-from .models import Trip, TripDay, TripLodging, TripMedia, TripStop, TripStopAttachment, TripTodo
+from .models import (
+    Trip,
+    TripComment,
+    TripDay,
+    TripLeg,
+    TripLodging,
+    TripMedia,
+    TripShare,
+    TripStop,
+    TripStopAttachment,
+    TripTodo,
+)
 
 
 class TripStopInline(admin.TabularInline):
@@ -34,6 +45,13 @@ class TripAdmin(admin.ModelAdmin):
     inlines = [TripDayInline]
 
 
+@admin.register(TripLeg)
+class TripLegAdmin(admin.ModelAdmin):
+    list_display = ('name', 'location', 'timezone', 'sort_order', 'trip', 'user')
+    list_filter = ('user',)
+    search_fields = ('name', 'location')
+
+
 @admin.register(TripLodging)
 class TripLodgingAdmin(admin.ModelAdmin):
     list_display = ('name', 'trip', 'confirmation', 'user')
@@ -54,10 +72,10 @@ class TripDayAdmin(admin.ModelAdmin):
 class TripStopAdmin(admin.ModelAdmin):
     list_display = (
         'text', 'kind', 'travel_mode', 'day', 'start_time', 'duration_minutes',
-        'loc', 'arrive_loc', 'cat', 'status', 'done', 'user',
+        'loc', 'arrive_loc', 'cat', 'price', 'currency', 'person', 'timezone', 'arrive_timezone', 'status', 'done', 'user',
     )
-    list_filter = ('user', 'kind', 'travel_mode', 'status', 'done', 'cat')
-    search_fields = ('text', 'description', 'loc', 'arrive_loc')
+    list_filter = ('user', 'kind', 'travel_mode', 'status', 'done', 'cat', 'currency')
+    search_fields = ('text', 'description', 'loc', 'arrive_loc', 'person')
     inlines = [TripStopAttachmentInline]
 
 
@@ -69,12 +87,26 @@ class TripStopAttachmentAdmin(admin.ModelAdmin):
 
 @admin.register(TripTodo)
 class TripTodoAdmin(admin.ModelAdmin):
-    list_display = ('text', 'trip', 'day', 'stop', 'done', 'user')
-    list_filter = ('user', 'done')
-    search_fields = ('text',)
+    list_display = ('text', 'category', 'trip', 'day', 'stop', 'done', 'user')
+    list_filter = ('user', 'done', 'category')
+    search_fields = ('text', 'category')
 
 
 @admin.register(TripMedia)
 class TripMediaAdmin(admin.ModelAdmin):
     list_display = ('asset', 'trip', 'day', 'stop', 'user')
     list_filter = ('user',)
+
+
+@admin.register(TripShare)
+class TripShareAdmin(admin.ModelAdmin):
+    list_display = ('trip', 'email', 'role', 'user', 'created_at')
+    list_filter = ('role',)
+    search_fields = ('email', 'trip__title')
+
+
+@admin.register(TripComment)
+class TripCommentAdmin(admin.ModelAdmin):
+    list_display = ('trip', 'author', 'target_type', 'resolved', 'created_at')
+    list_filter = ('resolved',)
+    search_fields = ('body', 'trip__title', 'author__email')

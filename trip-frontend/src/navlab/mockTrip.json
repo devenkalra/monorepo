@@ -1,0 +1,221 @@
+{
+  "id": "trip-italy-2027",
+  "title": "Northern Italy by Rail",
+  "startDate": "2027-05-14",
+  "endDate": "2027-05-18",
+  "travelers": ["Deven Kalra", "Anita Kalra", "Rohan Kalra"],
+  "budget": { "amount": 6800, "currency": "EUR" },
+  "notes": "Rail passes are in the shared folder. Keep one evening free in Venice for a long dinner. Rohan needs a vegetarian meal on every booking.",
+  "days": [
+    {
+      "id": "d1",
+      "date": "2027-05-14",
+      "city": "Milan",
+      "hotel": "Hotel Spadari al Duomo",
+      "summary": "Land at Malpensa, take the express into town, see the Duomo, Last Supper slot in the afternoon.",
+      "weather": "22°C, sunny; light breeze in the evening",
+      "transit": "Malpensa Express every 30 min. Metro M1 to Conciliazione for Santa Maria delle Grazie.",
+      "items": [
+        {
+          "id": "d1-i1", "kind": "travel", "mode": "flight",
+          "from": "SFO", "to": "MXP", "depart": "07:05", "arrive": "09:40",
+          "distanceKm": 9870, "carrier": "Lufthansa LH 459 / LH 1858 via FRA",
+          "confirmation": "LH7QK2", "notes": "Overnight departure on May 13. Seats 32A–C."
+        },
+        {
+          "id": "d1-i2", "kind": "travel", "mode": "train",
+          "from": "Malpensa T1", "to": "Milano Cadorna", "depart": "10:43", "arrive": "11:22",
+          "distanceKm": 48, "carrier": "Malpensa Express",
+          "confirmation": "", "notes": "Buy tickets in the Trenord app; validate before boarding."
+        },
+        {
+          "id": "d1-i3", "kind": "stop", "title": "Duomo di Milano & rooftop terraces",
+          "start": "12:30", "durationMin": 120,
+          "address": "Piazza del Duomo, 20122 Milano",
+          "notes": "Lift tickets bought on site. Shoulders covered for the cathedral."
+        },
+        {
+          "id": "d1-i4", "kind": "event", "title": "The Last Supper",
+          "time": "15:15", "venue": "Santa Maria delle Grazie",
+          "address": "Piazza di Santa Maria delle Grazie 2, 20123 Milano",
+          "confirmation": "CEN-48213-LS", "tickets": "3 × adult, timed 15 min",
+          "notes": "Arrive 20 minutes early at the ticket office to collect."
+        },
+        {
+          "id": "d1-i5", "kind": "stop", "title": "Aperitivo on the Navigli",
+          "start": "18:30", "durationMin": 150,
+          "address": "Alzaia Naviglio Grande, 20144 Milano",
+          "notes": "Try Mag Café; dinner nearby at Al Pont de Ferr if not too tired."
+        }
+      ]
+    },
+    {
+      "id": "d2",
+      "date": "2027-05-15",
+      "city": "Varenna",
+      "hotel": "Albergo Milano, Varenna",
+      "summary": "Train to Lake Como, afternoon in Varenna gardens, evening cooking class.",
+      "weather": "19°C, scattered clouds; 20% chance of showers after 4 PM",
+      "transit": "Regional train from Centrale (no reservation). Ferries Varenna–Bellagio every 30 min.",
+      "items": [
+        {
+          "id": "d2-i1", "kind": "travel", "mode": "train",
+          "from": "Milano Centrale", "to": "Varenna-Esino", "depart": "09:20", "arrive": "10:24",
+          "distanceKm": 72, "carrier": "Trenord R 2563",
+          "confirmation": "", "notes": "Sit on the left side for lake views."
+        },
+        {
+          "id": "d2-i2", "kind": "stop", "title": "Villa Monastero gardens",
+          "start": "11:30", "durationMin": 90,
+          "address": "Viale Giovanni Polvara 4, 23829 Varenna",
+          "notes": "Garden-only ticket is enough."
+        },
+        {
+          "id": "d2-i3", "kind": "travel", "mode": "ferry",
+          "from": "Varenna", "to": "Bellagio", "depart": "13:35", "arrive": "13:50",
+          "distanceKm": 4, "carrier": "Navigazione Laghi",
+          "confirmation": "", "notes": "Mid-lake day pass covers both directions."
+        },
+        {
+          "id": "d2-i4", "kind": "stop", "title": "Lunch and a walk around Bellagio",
+          "start": "14:00", "durationMin": 150,
+          "address": "Bellagio waterfront, 22021 Bellagio",
+          "notes": "Punta Spartivento at the tip of the promontory."
+        },
+        {
+          "id": "d2-i5", "kind": "event", "title": "Lake Como pasta-making class",
+          "time": "18:00", "venue": "Cucina di Lucia",
+          "address": "Via XX Settembre 18, 23829 Varenna",
+          "confirmation": "CDL-0515-KALRA", "tickets": "3 seats, dinner included",
+          "notes": "Vegetarian menu confirmed by email."
+        }
+      ]
+    },
+    {
+      "id": "d3",
+      "date": "2027-05-16",
+      "city": "Venice",
+      "hotel": "Ca' Bonfadini, Cannaregio",
+      "summary": "Long rail day to Venice, check in, Rialto and a sunset gondola.",
+      "weather": "21°C, clear; acqua alta not expected",
+      "transit": "Vaporetto line 1 from Ferrovia to Rialto. 72-hour ACTV pass starts today.",
+      "items": [
+        {
+          "id": "d3-i1", "kind": "travel", "mode": "train",
+          "from": "Varenna-Esino", "to": "Milano Centrale", "depart": "08:36", "arrive": "09:40",
+          "distanceKm": 72, "carrier": "Trenord R 2558",
+          "confirmation": "", "notes": ""
+        },
+        {
+          "id": "d3-i2", "kind": "travel", "mode": "train",
+          "from": "Milano Centrale", "to": "Venezia S. Lucia", "depart": "10:35", "arrive": "13:02",
+          "distanceKm": 267, "carrier": "Frecciarossa FR 9717",
+          "confirmation": "PNR XH3B7Q", "notes": "Coach 6, seats 9A, 9B, 10A."
+        },
+        {
+          "id": "d3-i3", "kind": "stop", "title": "Rialto Bridge and market",
+          "start": "15:00", "durationMin": 90,
+          "address": "Sestiere San Polo, 30125 Venezia",
+          "notes": "Market winds down after lunch; go for the bridge views."
+        },
+        {
+          "id": "d3-i4", "kind": "event", "title": "Sunset gondola ride",
+          "time": "19:10", "venue": "Gondola stand at San Moisè",
+          "address": "Calle Larga XXII Marzo, 30124 Venezia",
+          "confirmation": "GDL-7741", "tickets": "Private gondola, 30 min",
+          "notes": "Paid deposit; balance €60 in cash."
+        }
+      ]
+    },
+    {
+      "id": "d4",
+      "date": "2027-05-17",
+      "city": "Venice",
+      "hotel": "Ca' Bonfadini, Cannaregio",
+      "summary": "Doge's Palace secret tour in the morning, then the islands.",
+      "weather": "23°C, sunny; hot on the lagoon after noon",
+      "transit": "Vaporetto 4.1 from Fondamente Nove to Murano, then line 12 to Burano.",
+      "items": [
+        {
+          "id": "d4-i1", "kind": "event", "title": "Doge's Palace Secret Itineraries",
+          "time": "09:55", "venue": "Palazzo Ducale",
+          "address": "Piazza San Marco 1, 30124 Venezia",
+          "confirmation": "MUVE-22917-SI", "tickets": "3 × English tour, 75 min",
+          "notes": "Collect tickets at the group desk 15 minutes before."
+        },
+        {
+          "id": "d4-i2", "kind": "stop", "title": "St Mark's Basilica",
+          "start": "11:30", "durationMin": 60,
+          "address": "Piazza San Marco 328, 30100 Venezia",
+          "notes": "Skip-the-line booked as part of the palace bundle."
+        },
+        {
+          "id": "d4-i3", "kind": "travel", "mode": "ferry",
+          "from": "Fondamente Nove", "to": "Murano Faro", "depart": "13:20", "arrive": "13:35",
+          "distanceKm": 2, "carrier": "ACTV line 4.1",
+          "confirmation": "", "notes": ""
+        },
+        {
+          "id": "d4-i4", "kind": "stop", "title": "Murano glass studios",
+          "start": "13:40", "durationMin": 75,
+          "address": "Fondamenta dei Vetrai, 30141 Murano",
+          "notes": "Free demonstration at Vetreria Murano Arte."
+        },
+        {
+          "id": "d4-i5", "kind": "travel", "mode": "ferry",
+          "from": "Murano Faro", "to": "Burano", "depart": "15:05", "arrive": "15:40",
+          "distanceKm": 7, "carrier": "ACTV line 12",
+          "confirmation": "", "notes": ""
+        },
+        {
+          "id": "d4-i6", "kind": "stop", "title": "Burano colored houses",
+          "start": "15:45", "durationMin": 120,
+          "address": "Via Baldassarre Galuppi, 30142 Burano",
+          "notes": "Dinner at Trattoria al Gatto Nero (call ahead)."
+        }
+      ]
+    },
+    {
+      "id": "d5",
+      "date": "2027-05-18",
+      "city": "Florence",
+      "hotel": "Hotel Davanzati",
+      "summary": "Fast train to Florence, Uffizi timed entry, sunset at Piazzale Michelangelo.",
+      "weather": "25°C, hazy sun",
+      "transit": "Hotel is a 10-minute walk from S.M. Novella. Bus 12 up to Piazzale Michelangelo.",
+      "items": [
+        {
+          "id": "d5-i1", "kind": "travel", "mode": "train",
+          "from": "Venezia S. Lucia", "to": "Firenze S.M.N.", "depart": "08:26", "arrive": "10:39",
+          "distanceKm": 258, "carrier": "Frecciarossa FR 9411",
+          "confirmation": "PNR KM8R2D", "notes": "Coach 3, seats 4A–4C."
+        },
+        {
+          "id": "d5-i2", "kind": "event", "title": "Uffizi Gallery timed entry",
+          "time": "13:30", "venue": "Galleria degli Uffizi",
+          "address": "Piazzale degli Uffizi 6, 50122 Firenze",
+          "confirmation": "UFZ-391-0518", "tickets": "3 × timed entry",
+          "notes": "Botticelli rooms first, they get crowded later."
+        },
+        {
+          "id": "d5-i3", "kind": "stop", "title": "Ponte Vecchio and Oltrarno",
+          "start": "16:30", "durationMin": 90,
+          "address": "Ponte Vecchio, 50125 Firenze",
+          "notes": ""
+        },
+        {
+          "id": "d5-i4", "kind": "travel", "mode": "drive",
+          "from": "Hotel Davanzati", "to": "Piazzale Michelangelo", "depart": "19:15", "arrive": "19:30",
+          "distanceKm": 4, "carrier": "Taxi",
+          "confirmation": "", "notes": "Taxi rank at Piazza della Repubblica."
+        },
+        {
+          "id": "d5-i5", "kind": "stop", "title": "Sunset at Piazzale Michelangelo",
+          "start": "19:30", "durationMin": 75,
+          "address": "Piazzale Michelangelo, 50125 Firenze",
+          "notes": "Walk down through the rose garden afterwards."
+        }
+      ]
+    }
+  ]
+}

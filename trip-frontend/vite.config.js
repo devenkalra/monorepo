@@ -13,6 +13,8 @@ export default defineConfig({
     dedupe: ['react', 'react-dom'],
     alias: {
       '@bldrdojo/markdown-editor': path.resolve(root, '../shared-frontend/markdown-editor/src/index.js'),
+      '@bldrdojo/timezones': path.resolve(root, '../shared-frontend/timezones/src/index.js'),
+      'city-timezones': nm('city-timezones'),
       react: nm('react'),
       'react-dom': nm('react-dom'),
       'react/jsx-runtime': path.resolve(root, 'node_modules/react/jsx-runtime.js'),

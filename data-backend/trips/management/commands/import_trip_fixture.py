@@ -47,7 +47,8 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f'Imported for {user.email}: '
-            f'{counts["trips"]} trips, {counts["lodgings"]} lodgings, '
+            f'{counts["trips"]} trips, {counts["legs"]} legs, {counts["lodgings"]} lodgings, '
             f'{counts["days"]} days, {counts["stops"]} stops, '
+            f'{counts["todos"]} todos, {counts["shares"]} shares, {counts["comments"]} comments, '
             f'{counts["attachments"]} attachments, {counts["media"]} media, {counts["files"]} files'
         ))

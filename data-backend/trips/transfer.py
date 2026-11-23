@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils.dateparse import parse_date, parse_datetime, parse_time
@@ -17,11 +18,30 @@ from django.utils.dateparse import parse_date, parse_datetime, parse_time
 from gallery.models import Gallery, UserMedia
 from vacation_list.models import VacList
 
-from .models import Trip, TripDay, TripLodging, TripMedia, TripStop, TripStopAttachment, TripTodo
+from .models import (
+    Trip,
+    TripComment,
+    TripDay,
+    TripLeg,
+    TripLodging,
+    TripMedia,
+    TripShare,
+    TripStop,
+    TripStopAttachment,
+    TripTodo,
+)
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 _LIST_MARKER = re.compile(r'^(?:[-*+]|\d+[.)])(?:\s+|$)(?:\[[ xX]\](?:\s+|$))?')
+
+_VALID_STOP_STATUSES = {c[0] for c in TripStop.STATUS_CHOICES}
+_LEGACY_STOP_STATUSES = {
+    'planned': TripStop.STATUS_NO_BOOKING,
+    'tentative': TripStop.STATUS_OPTION,
+}
+_VALID_LODGING_STATUSES = {c[0] for c in TripLodging.STATUS_CHOICES}
+_VALID_SHARE_ROLES = {c[0] for c in TripShare.ROLE_CHOICES}
 
 
 def open_items_to_todos(text):
@@ -63,36 +83,104 @@ def _decimal(value):
         return None
 
 
+def _normalize_stop_status(value):
+    if value in _VALID_STOP_STATUSES:
+        return value
+    if value in _LEGACY_STOP_STATUSES:
+        return _LEGACY_STOP_STATUSES[value]
+    return TripStop.STATUS_NO_BOOKING
+
+
+def _normalize_lodging_status(value, confirmation=''):
+    if value in _VALID_LODGING_STATUSES:
+        return value
+    if value in _LEGACY_STOP_STATUSES:
+        return _LEGACY_STOP_STATUSES[value]
+    return TripLodging.STATUS_CONFIRMED if confirmation else TripLodging.STATUS_TOBOOK
+
+
 # ---------------------------------------------------------------- export
 
-def export_trip(trip):
+def export_trip(trip, *, include_sharing=True):
     packing = trip.packing_list
     gallery = trip.gallery
-    return {
+    out = {
         'pk': trip.pk,
         'title': trip.title,
         'description': trip.description,
         'notes': trip.notes,
+        'timezone': trip.timezone,
         'start_date': _iso(trip.start_date),
         'end_date': _iso(trip.end_date),
         'packing_list_name': packing.name if packing else None,
         'gallery_slug': gallery.slug if gallery else None,
+        'public_enabled': bool(trip.public_enabled) if include_sharing else False,
+        'share_token': (trip.share_token or '') if include_sharing else '',
         'created_at': _iso(trip.created_at),
         'modified_on': _iso(trip.modified_on),
+        'legs': [_export_leg(row) for row in trip.legs.all()],
         'lodgings': [_export_lodging(row) for row in trip.lodgings.all()],
         'days': [_export_day(day) for day in trip.days.all()],
+        'ideas': [_export_stop(stop) for stop in trip.stops.filter(day__isnull=True).order_by('sort_order', 'id')],
         'media': [_export_media(row) for row in trip.media.select_related('asset').filter(day=None, stop=None)],
         'todos': [_export_todo(row) for row in trip.todos.all()],
+        'shares': [_export_share(row) for row in trip.shares.all()] if include_sharing else [],
+        'comments': [
+            _export_comment(row)
+            for row in trip.comments.select_related('author', 'resolved_by').order_by('created_at', 'id')
+        ],
+    }
+    return out
+
+
+def _export_share(row):
+    return {
+        'email': row.email,
+        'role': row.role,
+        'created_at': _iso(row.created_at),
+        'modified_on': _iso(row.modified_on),
+    }
+
+
+def _export_comment(row):
+    return {
+        'pk': row.pk,
+        'parent_pk': row.parent_id,
+        'leg_pk': row.leg_id,
+        'day_pk': row.day_id,
+        'stop_pk': row.stop_id,
+        'lodging_pk': row.lodging_id,
+        'body': row.body,
+        'author_email': (getattr(row.author, 'email', '') or '').strip().lower() if row.author_id else '',
+        'resolved': bool(row.resolved),
+        'resolved_at': _iso(row.resolved_at),
+        'resolved_by_email': (getattr(row.resolved_by, 'email', '') or '').strip().lower() if row.resolved_by_id else '',
+        'created_at': _iso(row.created_at),
+        'modified_on': _iso(row.modified_on),
     }
 
 
 def _export_todo(row):
     return {
         'text': row.text,
+        'category': row.category,
         'done': row.done,
         'sort_order': row.sort_order,
         'day_pk': row.day_id,
         'stop_pk': row.stop_id,
+        'created_at': _iso(row.created_at),
+        'modified_on': _iso(row.modified_on),
+    }
+
+
+def _export_leg(row):
+    return {
+        'pk': row.pk,
+        'name': row.name,
+        'location': row.location,
+        'timezone': row.timezone,
+        'notes': row.notes,
+        'sort_order': row.sort_order,
         'created_at': _iso(row.created_at),
         'modified_on': _iso(row.modified_on),
     }
@@ -106,6 +194,10 @@ def _export_lodging(row):
         'phone': row.phone,
         'url': row.url,
         'confirmation': row.confirmation,
+        'status': row.status,
+        'price': str(row.price) if row.price is not None else None,
+        'currency': row.currency,
+        'person': row.person,
         'notes': row.notes,
         'check_in_time': _iso(row.check_in_time),
         'check_out_time': _iso(row.check_out_time),
@@ -122,7 +214,9 @@ def _export_day(day):
         'title': day.title,
         'notes': day.notes,
         'journal': day.journal,
+        'timezone': day.timezone,
         'lodging_pk': day.lodging_id,
+        'leg_pk': day.leg_id,
         'sort_order': day.sort_order,
         'created_at': _iso(day.created_at),
         'modified_on': _iso(day.modified_on),
@@ -134,6 +228,7 @@ def _export_day(day):
 def _export_stop(stop):
     return {
         'pk': stop.pk,
+        'leg_pk': stop.leg_id,
         'text': stop.text,
         'kind': stop.kind,
         'travel_mode': stop.travel_mode,
@@ -141,10 +236,16 @@ def _export_stop(stop):
         'loc': stop.loc,
         'arrive_loc': stop.arrive_loc,
         'cat': stop.cat,
+        'price': str(stop.price) if stop.price is not None else None,
+        'currency': stop.currency,
+        'person': stop.person,
+        'confirmation': stop.confirmation,
         'status': stop.status,
         'done': stop.done,
         'start_time': _iso(stop.start_time),
         'duration_minutes': stop.duration_minutes,
+        'timezone': stop.timezone,
+        'arrive_timezone': stop.arrive_timezone,
         'extra': stop.extra or {},
         'sort_order': stop.sort_order,
         'created_at': _iso(stop.created_at),
@@ -205,14 +306,17 @@ def _file_refs(trips):
             refs[url] = filename or refs.get(url) or Path(url).name
 
     def rows(trip):
-        yield from trip['media']
-        for lodging in trip['lodgings']:
-            yield from lodging['attachments']
-        for day in trip['days']:
-            yield from day['media']
-            for stop in day['stops']:
-                yield from stop['attachments']
-                yield from stop['media']
+        yield from trip.get('media') or []
+        for lodging in trip.get('lodgings') or []:
+            yield from lodging.get('attachments') or []
+        for day in trip.get('days') or []:
+            yield from day.get('media') or []
+            for stop in day.get('stops') or []:
+                yield from stop.get('attachments') or []
+                yield from stop.get('media') or []
+        for idea in trip.get('ideas') or []:
+            yield from idea.get('attachments') or []
+            yield from idea.get('media') or []
 
     for trip in trips:
         for row in rows(trip):
@@ -221,9 +325,9 @@ def _file_refs(trips):
     return refs
 
 
-def export_zip(trips):
+def export_zip(trips, *, include_sharing=True):
     """Zip of trip.json plus every referenced uploaded file under files/."""
-    data = [export_trip(t) for t in trips]
+    data = [export_trip(t, include_sharing=include_sharing) for t in trips]
     files = {}
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
@@ -273,7 +377,19 @@ def import_payload(user, payload, load_file=lambda name: None, replace=False):
     """Create the trips in payload for user. Returns (trips, counts)."""
     if not isinstance(payload, dict) or not isinstance(payload.get('trips'), list):
         raise TransferError('Export must contain a "trips" list.')
-    counts = {'trips': 0, 'lodgings': 0, 'days': 0, 'stops': 0, 'attachments': 0, 'media': 0, 'todos': 0, 'files': 0}
+    counts = {
+        'trips': 0,
+        'legs': 0,
+        'lodgings': 0,
+        'days': 0,
+        'stops': 0,
+        'attachments': 0,
+        'media': 0,
+        'todos': 0,
+        'shares': 0,
+        'comments': 0,
+        'files': 0,
+    }
     with transaction.atomic():
         if replace:
             Trip.objects.filter(user=user).delete()
@@ -311,6 +427,7 @@ class _Importer:
         self.user = user
         self.urls = urls
         self.counts = counts
+        self._user_cache = {}
 
     def _url(self, url):
         return self.urls.get(url, url or '')
@@ -319,6 +436,15 @@ class _Importer:
         if not url:
             return None
         return UserMedia.objects.filter(owner=self.user, url=self._url(url)).first()
+
+    def _user_by_email(self, email):
+        cleaned = (email or '').strip().lower()
+        if not cleaned:
+            return None
+        if cleaned not in self._user_cache:
+            User = get_user_model()
+            self._user_cache[cleaned] = User.objects.filter(email__iexact=cleaned).first()
+        return self._user_cache[cleaned]
 
     @staticmethod
     def _stamp(model, pk, data):
@@ -349,25 +475,85 @@ class _Importer:
         self._stamp(TripStopAttachment, obj.pk, att)
         self.counts['attachments'] += 1
 
+    def _stop(self, stop_data, *, trip, day, leg):
+        stop = TripStop.objects.create(
+            user=self.user,
+            trip=trip,
+            day=day,
+            leg=leg,
+            text=stop_data['text'],
+            kind=stop_data.get('kind') or TripStop.KIND_ACTIVITY,
+            travel_mode=stop_data.get('travel_mode') or '',
+            description=stop_data.get('description') or '',
+            loc=stop_data.get('loc') or '',
+            arrive_loc=stop_data.get('arrive_loc') or '',
+            cat=stop_data.get('cat') or '',
+            price=_decimal(stop_data.get('price')),
+            currency=stop_data.get('currency') or '',
+            person=stop_data.get('person') or '',
+            confirmation=stop_data.get('confirmation') or '',
+            status=_normalize_stop_status(stop_data.get('status')),
+            done=bool(stop_data.get('done', False)),
+            start_time=_time(stop_data.get('start_time')),
+            duration_minutes=stop_data.get('duration_minutes'),
+            timezone=stop_data.get('timezone') or '',
+            arrive_timezone=stop_data.get('arrive_timezone') or '',
+            extra=stop_data.get('extra') or {},
+            sort_order=stop_data.get('sort_order') or 0,
+        )
+        self._stamp(TripStop, stop.pk, stop_data)
+        self.counts['stops'] += 1
+        for att in stop_data.get('attachments') or []:
+            self._attachment(att, stop=stop)
+        return stop
+
     def trip(self, data):
         user = self.user
         packing_name = data.get('packing_list_name')
         gallery_slug = data.get('gallery_slug')
+        public_enabled = bool(data.get('public_enabled', False))
+        raw_token = (data.get('share_token') or '').strip()
+        share_token = None
+        if raw_token and not Trip.objects.filter(share_token=raw_token).exists():
+            share_token = raw_token
+
         trip = Trip.objects.create(
             user=user,
             title=data['title'],
             description=data.get('description') or '',
             notes=data.get('notes') or '',
+            timezone=data.get('timezone') or '',
             start_date=_date(data.get('start_date')),
             end_date=_date(data.get('end_date')),
             packing_list=VacList.objects.filter(user=user, name=packing_name).first() if packing_name else None,
             gallery=Gallery.objects.filter(owner=user, slug=gallery_slug).first() if gallery_slug else None,
+            public_enabled=public_enabled,
+            share_token=share_token,
         )
+        if public_enabled and not trip.share_token:
+            trip.ensure_share_token()
+            trip.save(update_fields=['share_token'])
         self._stamp(Trip, trip.pk, data)
         self.counts['trips'] += 1
 
+        leg_map = {}
+        for row in data.get('legs') or []:
+            leg = TripLeg.objects.create(
+                user=user,
+                trip=trip,
+                name=row['name'],
+                location=row.get('location') or '',
+                timezone=row.get('timezone') or '',
+                notes=row.get('notes') or '',
+                sort_order=row.get('sort_order') or 0,
+            )
+            self._stamp(TripLeg, leg.pk, row)
+            leg_map[row['pk']] = leg
+            self.counts['legs'] += 1
+
         lodging_map = {}
         for row in data.get('lodgings') or []:
+            confirmation = row.get('confirmation') or ''
             lodging = TripLodging.objects.create(
                 user=user,
                 trip=trip,
@@ -375,7 +561,11 @@ class _Importer:
                 address=row.get('address') or '',
                 phone=row.get('phone') or '',
                 url=row.get('url') or '',
-                confirmation=row.get('confirmation') or '',
+                confirmation=confirmation,
+                status=_normalize_lodging_status(row.get('status'), confirmation),
+                price=_decimal(row.get('price')),
+                currency=row.get('currency') or '',
+                person=row.get('person') or '',
                 notes=row.get('notes') or '',
                 check_in_time=_time(row.get('check_in_time')),
                 check_out_time=_time(row.get('check_out_time')),
@@ -397,7 +587,9 @@ class _Importer:
                 title=day_data.get('title') or '',
                 notes=day_data.get('notes') or '',
                 journal=day_data.get('journal') or '',
+                timezone=day_data.get('timezone') or '',
                 lodging=lodging_map.get(day_data.get('lodging_pk')),
+                leg=leg_map.get(day_data.get('leg_pk')),
                 sort_order=day_data.get('sort_order') or 0,
             )
             self._stamp(TripDay, day.pk, day_data)
@@ -406,29 +598,14 @@ class _Importer:
             pending_media.extend(day_data.get('media') or [])
 
             for stop_data in day_data.get('stops') or []:
-                stop = TripStop.objects.create(
-                    user=user,
-                    day=day,
-                    text=stop_data['text'],
-                    kind=stop_data.get('kind') or TripStop.KIND_ACTIVITY,
-                    travel_mode=stop_data.get('travel_mode') or '',
-                    description=stop_data.get('description') or '',
-                    loc=stop_data.get('loc') or '',
-                    arrive_loc=stop_data.get('arrive_loc') or '',
-                    cat=stop_data.get('cat') or '',
-                    status=stop_data.get('status') or TripStop.STATUS_CONFIRMED,
-                    done=bool(stop_data.get('done', False)),
-                    start_time=_time(stop_data.get('start_time')),
-                    duration_minutes=stop_data.get('duration_minutes'),
-                    extra=stop_data.get('extra') or {},
-                    sort_order=stop_data.get('sort_order') or 0,
-                )
-                self._stamp(TripStop, stop.pk, stop_data)
+                stop = self._stop(stop_data, trip=trip, day=day, leg=leg_map.get(stop_data.get('leg_pk')))
                 stop_map[stop_data['pk']] = stop
-                self.counts['stops'] += 1
                 pending_media.extend(stop_data.get('media') or [])
-                for att in stop_data.get('attachments') or []:
-                    self._attachment(att, stop=stop)
+
+        for stop_data in data.get('ideas') or []:
+            stop = self._stop(stop_data, trip=trip, day=None, leg=leg_map.get(stop_data.get('leg_pk')))
+            stop_map[stop_data['pk']] = stop
+            pending_media.extend(stop_data.get('media') or [])
 
         for row in pending_media:
             asset = self._asset(row.get('asset_url'))
@@ -454,6 +631,7 @@ class _Importer:
                 day=stop.day if stop else day_map.get(row.get('day_pk')),
                 stop=stop,
                 text=row.get('text') or '',
+                category=(row.get('category') or '')[:60],
                 done=bool(row.get('done', False)),
                 sort_order=row.get('sort_order') or 0,
             )
@@ -465,4 +643,62 @@ class _Importer:
         for i, text in enumerate(open_items_to_todos(data.get('open_items') or '')):
             TripTodo.objects.create(user=user, trip=trip, text=text, sort_order=base + i)
             self.counts['todos'] += 1
+
+        owner_email = (getattr(user, 'email', '') or '').strip().lower()
+        for row in data.get('shares') or []:
+            email = (row.get('email') or '').strip().lower()
+            if not email or (owner_email and email == owner_email):
+                continue
+            role = row.get('role') if row.get('role') in _VALID_SHARE_ROLES else TripShare.ROLE_VIEWER
+            share, created = TripShare.objects.get_or_create(
+                trip=trip,
+                email=email,
+                defaults={
+                    'user': self._user_by_email(email),
+                    'role': role,
+                    'invited_by': user,
+                },
+            )
+            if created:
+                self._stamp(TripShare, share.pk, row)
+                self.counts['shares'] += 1
+
+        raw_comments = list(data.get('comments') or [])
+        roots = [c for c in raw_comments if not c.get('parent_pk')]
+        replies = [c for c in raw_comments if c.get('parent_pk')]
+        comment_map = {}
+        for row in roots + replies:
+            body = (row.get('body') or '').strip()
+            if not body:
+                continue
+            parent = comment_map.get(row.get('parent_pk'))
+            author = self._user_by_email(row.get('author_email')) or user
+            resolved = bool(row.get('resolved', False))
+            resolved_at = _dt(row.get('resolved_at')) if resolved else None
+            resolved_by = (self._user_by_email(row.get('resolved_by_email')) or user) if resolved else None
+            if parent is not None:
+                leg, day, stop, lodging = parent.leg, parent.day, parent.stop, parent.lodging
+            else:
+                leg = leg_map.get(row.get('leg_pk'))
+                day = day_map.get(row.get('day_pk'))
+                stop = stop_map.get(row.get('stop_pk'))
+                lodging = lodging_map.get(row.get('lodging_pk'))
+            comment = TripComment.objects.create(
+                trip=trip,
+                author=author,
+                parent=parent,
+                leg=leg,
+                day=day,
+                stop=stop,
+                lodging=lodging,
+                body=body,
+                resolved=resolved,
+                resolved_at=resolved_at,
+                resolved_by=resolved_by,
+            )
+            self._stamp(TripComment, comment.pk, row)
+            if row.get('pk') is not None:
+                comment_map[row['pk']] = comment
+            self.counts['comments'] += 1
+
         return trip
