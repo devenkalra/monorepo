@@ -128,14 +128,32 @@ export function ShareTripModal({ trip, onClose, onChanged }) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('viewer');
   const [busy, setBusy] = useState(false);
+  const [resendingId, setResendingId] = useState(null);
   const [linkBusy, setLinkBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [noticeKind, setNoticeKind] = useState('ok');
 
   const shares = trip.shares || [];
   const publicUrl = trip.public_enabled && trip.public_path
     ? `${window.location.origin}${trip.public_path}`
     : '';
+
+  const showEmailStatus = (targetEmail, emailStatus, verb = 'Invited') => {
+    if (!emailStatus) return;
+    if (emailStatus.sent && !emailStatus.console_only) {
+      setNoticeKind('ok');
+      setNotice(`Invitation email sent to ${targetEmail}.`);
+    } else if (emailStatus.sent && emailStatus.console_only) {
+      setNoticeKind('warn');
+      setNotice(`${verb} ${targetEmail}, but SMTP is not configured on this server (email logged to server console only).`);
+    } else {
+      setNoticeKind('warn');
+      const reason = emailStatus.error ? ` (${emailStatus.error})` : '';
+      setNotice(`${verb} ${targetEmail}, but the email failed to send${reason}.`);
+    }
+  };
 
   const togglePublic = async (enabled) => {
     setLinkBusy(true);
@@ -187,17 +205,36 @@ export function ShareTripModal({ trip, onClose, onChanged }) {
     if (!cleaned) return;
     setBusy(true);
     setError('');
+    setNotice('');
     try {
-      await api.json('/api/trips/shares/', {
+      const created = await api.json('/api/trips/shares/', {
         method: 'POST',
         body: JSON.stringify({ trip_id: trip.id, email: cleaned, role }),
       });
       setEmail('');
       await onChanged();
+      showEmailStatus(cleaned, created?.email_status, 'Added');
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const resendInvite = async (share) => {
+    setResendingId(share.id);
+    setError('');
+    setNotice('');
+    try {
+      const res = await api.json(`/api/trips/shares/${share.id}/resend/`, {
+        method: 'POST',
+        body: '{}',
+      });
+      showEmailStatus(share.email, res?.email_status, 'Checked');
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -233,6 +270,18 @@ export function ShareTripModal({ trip, onClose, onChanged }) {
         </div>
 
         {error && <p className="trip-error">{error}</p>}
+        {notice && (
+          <div
+            className={`mb-3 flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+              noticeKind === 'ok'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+                : 'border-amber-200 bg-amber-50 text-amber-900'
+            }`}
+          >
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice('')} aria-label="Dismiss">×</button>
+          </div>
+        )}
 
         <section className="trip-share-card">
           <div className="trip-share-card-head">
@@ -321,6 +370,14 @@ export function ShareTripModal({ trip, onClose, onChanged }) {
                   <option value="viewer">Viewer</option>
                   <option value="editor">Editor</option>
                 </select>
+                <button
+                  type="button"
+                  onClick={() => resendInvite(s)}
+                  disabled={resendingId === s.id}
+                  title={`Send invitation email to ${s.email} again`}
+                >
+                  {resendingId === s.id ? 'Sending…' : 'Resend'}
+                </button>
                 <button type="button" className="trip-danger-link" onClick={() => removeShare(s)}>
                   Remove
                 </button>

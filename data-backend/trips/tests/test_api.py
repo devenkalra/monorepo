@@ -1478,6 +1478,69 @@ class TripApiTests(APITestCase):
         self.assertEqual(imp.data['counts']['trips'], 2)
         self.assertEqual(Trip.objects.filter(user=self.other).count(), 2)
 
+    def test_trip_share_sends_and_resends_invitation_email(self):
+        from unittest.mock import patch
+        from django.core import mail
+        from django.test import override_settings
+
+        from trips.models import TripShare
+
+        trip = Trip.objects.create(
+            title='Patagonia Trek',
+            user=self.user,
+            start_date='2027-02-10',
+            end_date='2027-02-18',
+        )
+
+        with override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            mail.outbox.clear()
+            res = self.client.post('/api/trips/shares/', {
+                'trip_id': trip.id,
+                'email': 'newfriend@example.com',
+                'role': TripShare.ROLE_EDITOR,
+            }, format='json')
+            self.assertEqual(res.status_code, 201, res.data)
+            self.assertTrue(res.data['email_status']['sent'])
+            self.assertFalse(res.data['email_status']['console_only'])
+            self.assertEqual(res.data['email_status']['error'], '')
+
+            self.assertEqual(len(mail.outbox), 1)
+            msg = mail.outbox[0]
+            self.assertEqual(msg.to, ['newfriend@example.com'])
+            self.assertEqual(msg.reply_to, [self.user.email])
+            self.assertIn('Patagonia Trek', msg.subject)
+            self.assertIn('Editor', msg.body)
+            self.assertIn(f'/app/trips/?trip={trip.id}', msg.body)
+            self.assertIn('newfriend@example.com', msg.body)  # pending signup hint
+            self.assertEqual(len(msg.alternatives), 1)
+            self.assertEqual(msg.alternatives[0][1], 'text/html')
+
+            # Owner can resend invite
+            share_id = res.data['id']
+            resend = self.client.post(f'/api/trips/shares/{share_id}/resend/', {}, format='json')
+            self.assertEqual(resend.status_code, 200, resend.data)
+            self.assertTrue(resend.data['email_status']['sent'])
+            self.assertEqual(len(mail.outbox), 2)
+
+            # Non-owner cannot resend
+            self.client.force_authenticate(self.other)
+            denied = self.client.post(f'/api/trips/shares/{share_id}/resend/', {}, format='json')
+            self.assertEqual(denied.status_code, 404)
+
+            # SMTP failure does not block creating the share and surfaces the error cleanly
+            self.client.force_authenticate(self.user)
+            with patch('django.core.mail.EmailMultiAlternatives.send', side_effect=OSError('SMTP refused')):
+                res2 = self.client.post('/api/trips/shares/', {
+                    'trip_id': trip.id,
+                    'email': self.other.email,
+                    'role': TripShare.ROLE_VIEWER,
+                }, format='json')
+            self.assertEqual(res2.status_code, 201, res2.data)
+            self.assertFalse(res2.data['email_status']['sent'])
+            self.assertIn('SMTP refused', res2.data['email_status']['error'])
+            self.assertTrue(TripShare.objects.filter(trip=trip, email=self.other.email).exists())
+
+
 
 
 

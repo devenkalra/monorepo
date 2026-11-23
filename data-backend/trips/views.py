@@ -986,11 +986,32 @@ class TripShareViewSet(viewsets.ModelViewSet):
             qs = qs.filter(trip_id=trip_id)
         return qs
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
+        from .emails import send_trip_invite_email
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         trip = serializer.validated_data.get('trip')
-        if not trip or not is_trip_owner(trip, self.request.user):
+        if not trip or not is_trip_owner(trip, request.user):
             raise PermissionDenied('Only the trip owner can invite collaborators.')
-        serializer.save(invited_by=self.request.user)
+        share = serializer.save(invited_by=request.user)
+        email_status = send_trip_invite_email(share, request=request)
+        data = dict(self.get_serializer(share).data)
+        data['email_status'] = email_status
+        headers = self.get_success_headers(serializer.data)
+        return Response(data, status=status.HTTP_201_CREATED, headers=headers)
+
+    @action(detail=True, methods=['post'], url_path='resend')
+    def resend(self, request, pk=None):
+        from .emails import send_trip_invite_email
+
+        share = self.get_object()
+        if not is_trip_owner(share.trip, request.user):
+            raise PermissionDenied('Only the trip owner can resend invitations.')
+        email_status = send_trip_invite_email(share, request=request)
+        data = dict(self.get_serializer(share).data)
+        data['email_status'] = email_status
+        return Response(data, status=status.HTTP_200_OK)
 
     def perform_update(self, serializer):
         if not is_trip_owner(serializer.instance.trip, self.request.user):

@@ -5287,12 +5287,25 @@ export default function TripApp() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    const requestedTripId = new URLSearchParams(window.location.search).get('trip');
     Promise.all([
       loadTrips(),
       api.json('/api/vacation/lists/').then((d) => setLists(asList(d))).catch(() => setLists([])),
       api.json('/api/gallery/galleries/').then((d) => setGalleries(asList(d))).catch(() => setGalleries([])),
-    ]).catch((err) => setError(err.message));
-  }, [isAuthenticated, loadTrips]);
+    ])
+      .then(() => {
+        if (requestedTripId && /^\d+$/.test(requestedTripId)) {
+          loadSelected(Number(requestedTripId))
+            .then(() => {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('trip');
+              window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+            })
+            .catch(() => {});
+        }
+      })
+      .catch((err) => setError(err.message));
+  }, [isAuthenticated, loadTrips, loadSelected]);
 
   if (loading) return <div className="p-8 text-center text-stone-500">Loading…</div>;
   if (!user) {
