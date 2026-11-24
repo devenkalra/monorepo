@@ -58,6 +58,7 @@ class Trip(models.Model):
     )
     share_token = models.CharField(max_length=64, unique=True, null=True, blank=True)
     public_enabled = models.BooleanField(default=False)
+    notify_on_comments = models.BooleanField(default=False)
 
     class Meta:
         ordering = ['-start_date', '-modified_on']

@@ -130,6 +130,7 @@ export function ShareTripModal({ trip, onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [resendingId, setResendingId] = useState(null);
   const [linkBusy, setLinkBusy] = useState(false);
+  const [notifyBusy, setNotifyBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -168,6 +169,22 @@ export function ShareTripModal({ trip, onClose, onChanged }) {
       setError(err.message);
     } finally {
       setLinkBusy(false);
+    }
+  };
+
+  const toggleNotifyOnComments = async (enabled) => {
+    setNotifyBusy(true);
+    setError('');
+    try {
+      await api.json(`/api/trips/trips/${trip.id}/`, {
+        method: 'PATCH',
+        body: JSON.stringify({ notify_on_comments: enabled }),
+      });
+      await onChanged();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setNotifyBusy(false);
     }
   };
 
@@ -316,6 +333,26 @@ export function ShareTripModal({ trip, onClose, onChanged }) {
               </button>
             </div>
           )}
+        </section>
+
+        <section className="trip-share-card">
+          <div className="trip-share-card-head">
+            <div>
+              <strong>Email notifications on comments</strong>
+              <p className="trip-hint">
+                Email the trip owner and collaborators whenever someone posts a new comment or replies to a thread.
+              </p>
+            </div>
+            <label className="trip-switch">
+              <input
+                type="checkbox"
+                checked={Boolean(trip.notify_on_comments)}
+                disabled={notifyBusy}
+                onChange={(e) => toggleNotifyOnComments(e.target.checked)}
+              />
+              <span>{trip.notify_on_comments ? 'On' : 'Off'}</span>
+            </label>
+          </div>
         </section>
 
         <section className="trip-share-card">

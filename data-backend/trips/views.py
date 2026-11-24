@@ -1083,10 +1083,14 @@ class TripCommentViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
+        from .emails import send_trip_comment_emails
+
         trip = serializer.validated_data.get('trip')
         if not trip or not can_view_trip(trip, self.request.user):
             raise PermissionDenied('You do not have access to comment on this trip.')
-        serializer.save(author=self.request.user)
+        comment = serializer.save(author=self.request.user)
+        if trip.notify_on_comments:
+            send_trip_comment_emails(comment, request=self.request)
 
     def _can_toggle_resolved(self, comment, user):
         return can_edit_trip(comment.trip, user) or comment.author_id == user.id

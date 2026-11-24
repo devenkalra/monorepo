@@ -844,7 +844,7 @@ class TripSerializer(PreserveOwnerMixin, serializers.ModelSerializer):
             'packing_list', 'packing_list_id',
             'gallery', 'gallery_id',
             'my_role', 'owner_label', 'share_count', 'open_comment_count',
-            'public_enabled', 'share_token', 'public_path', 'shares',
+            'public_enabled', 'share_token', 'public_path', 'notify_on_comments', 'shares',
             'days', 'legs', 'ideas', 'lodgings', 'todos', 'comments', 'day_count', 'generate_days',
             'created_at', 'modified_on',
         ]
@@ -905,6 +905,11 @@ class TripSerializer(PreserveOwnerMixin, serializers.ModelSerializer):
             raise serializers.ValidationError({'end_date': 'End date must be on or after start date.'})
         if attrs.get('generate_days') and start and end and (end - start).days >= 90:
             raise serializers.ValidationError({'end_date': 'Date range cannot exceed 90 days when generating days.'})
+        if self.instance is not None and 'notify_on_comments' in attrs:
+            if attrs['notify_on_comments'] != self.instance.notify_on_comments and not self._is_owner(self.instance):
+                raise serializers.ValidationError(
+                    {'notify_on_comments': 'Only the trip owner can change comment email notifications.'}
+                )
         return attrs
 
     def create(self, validated_data):

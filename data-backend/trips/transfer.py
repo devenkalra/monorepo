@@ -116,6 +116,7 @@ def export_trip(trip, *, include_sharing=True):
         'gallery_slug': gallery.slug if gallery else None,
         'public_enabled': bool(trip.public_enabled) if include_sharing else False,
         'share_token': (trip.share_token or '') if include_sharing else '',
+        'notify_on_comments': bool(trip.notify_on_comments) if include_sharing else False,
         'created_at': _iso(trip.created_at),
         'modified_on': _iso(trip.modified_on),
         'legs': [_export_leg(row) for row in trip.legs.all()],
@@ -512,6 +513,7 @@ class _Importer:
         packing_name = data.get('packing_list_name')
         gallery_slug = data.get('gallery_slug')
         public_enabled = bool(data.get('public_enabled', False))
+        notify_on_comments = bool(data.get('notify_on_comments', False))
         raw_token = (data.get('share_token') or '').strip()
         share_token = None
         if raw_token and not Trip.objects.filter(share_token=raw_token).exists():
@@ -528,6 +530,7 @@ class _Importer:
             packing_list=VacList.objects.filter(user=user, name=packing_name).first() if packing_name else None,
             gallery=Gallery.objects.filter(owner=user, slug=gallery_slug).first() if gallery_slug else None,
             public_enabled=public_enabled,
+            notify_on_comments=notify_on_comments,
             share_token=share_token,
         )
         if public_enabled and not trip.share_token:

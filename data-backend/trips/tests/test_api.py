@@ -1569,6 +1569,75 @@ class TripApiTests(APITestCase):
             self.assertIn('SMTP refused', res2.data['email_status']['error'])
             self.assertTrue(TripShare.objects.filter(trip=trip, email=self.other.email).exists())
 
+    def test_comment_notification_emails_for_new_comment_and_reply(self):
+        from django.core import mail
+        from django.test import override_settings
+
+        from trips.models import TripShare
+
+        editor = User.objects.create_user(username='cm_ed', email='cm-editor@example.com', password='pw')
+        viewer = User.objects.create_user(username='cm_vw', email='cm-viewer@example.com', password='pw')
+        trip = Trip.objects.create(title='Dolomites 2027', user=self.user)
+        day = TripDay.objects.create(user=self.user, trip=trip, date='2027-07-04', title='Cortina')
+        stop = TripStop.objects.create(user=self.user, trip=trip, day=day, text='Lagazuoi Cable Car')
+        ed_share = TripShare.objects.create(trip=trip, user=editor, email=editor.email, role=TripShare.ROLE_EDITOR)
+        vw_share = TripShare.objects.create(trip=trip, user=viewer, email=viewer.email, role=TripShare.ROLE_VIEWER)
+
+        editor_client = APIClient()
+        editor_client.force_authenticate(user=editor)
+
+        with override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            # 1) Disabled by default -> no emails sent
+            mail.outbox.clear()
+            c0 = self.client.post('/api/trips/comments/', {
+                'trip_id': trip.id, 'stop_id': stop.id, 'body': 'Quiet comment',
+            }, format='json')
+            self.assertEqual(c0.status_code, 201, c0.data)
+            self.assertEqual(len(mail.outbox), 0)
+
+            # 2) Non-owner editor cannot enable notify_on_comments
+            bad_toggle = editor_client.patch(f'/api/trips/trips/{trip.id}/', {'notify_on_comments': True}, format='json')
+            self.assertEqual(bad_toggle.status_code, 400)
+
+            # 3) Owner enables notify_on_comments
+            ok_toggle = self.client.patch(f'/api/trips/trips/{trip.id}/', {'notify_on_comments': True}, format='json')
+            self.assertEqual(ok_toggle.status_code, 200, ok_toggle.data)
+            self.assertTrue(ok_toggle.data['notify_on_comments'])
+
+            # 4) Owner posts a NEW comment -> emails go to editor & viewer (not owner), marked as New comment
+            mail.outbox.clear()
+            c1 = self.client.post('/api/trips/comments/', {
+                'trip_id': trip.id, 'stop_id': stop.id, 'body': 'Should we book morning tickets?',
+            }, format='json')
+            self.assertEqual(c1.status_code, 201, c1.data)
+            self.assertEqual(len(mail.outbox), 2)
+            by_to = {m.to[0]: m for m in mail.outbox}
+            self.assertEqual(set(by_to.keys()), {editor.email, viewer.email})
+            self.assertIn('New comment on "Dolomites 2027"', by_to[editor.email].subject)
+            self.assertIn('Lagazuoi Cable Car', by_to[editor.email].subject)
+            self.assertIn('posted a new comment', by_to[editor.email].body)
+            self.assertIn('Should we book morning tickets?', by_to[editor.email].body)
+            self.assertIn(f'/app/trips/?invite={ed_share.invite_token}', by_to[editor.email].body)
+            self.assertIn(f'/app/trips/?invite={vw_share.invite_token}', by_to[viewer.email].body)
+            self.assertNotIn(f'?trip={trip.id}', by_to[editor.email].body)
+
+            # 5) Editor posts a REPLY -> emails go to owner & viewer (not editor), marked as New reply with parent quote
+            mail.outbox.clear()
+            reply = editor_client.post('/api/trips/comments/', {
+                'trip_id': trip.id, 'parent_id': c1.data['id'], 'body': 'Yes, 9am slot is best!',
+            }, format='json')
+            self.assertEqual(reply.status_code, 201, reply.data)
+            self.assertEqual(len(mail.outbox), 2)
+            by_to = {m.to[0]: m for m in mail.outbox}
+            self.assertEqual(set(by_to.keys()), {self.user.email, viewer.email})
+            self.assertIn('New reply on "Dolomites 2027"', by_to[self.user.email].subject)
+            self.assertIn('replied to', by_to[self.user.email].body)
+            self.assertIn('Should we book morning tickets?', by_to[self.user.email].body)
+            self.assertIn('Yes, 9am slot is best!', by_to[self.user.email].body)
+            self.assertIn(f'/app/trips/?invite={vw_share.invite_token}', by_to[viewer.email].body)
+            self.assertNotIn(f'?trip={trip.id}', by_to[self.user.email].body)
+
+
 
 
 

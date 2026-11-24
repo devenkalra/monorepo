@@ -6,7 +6,7 @@ import os
 from urllib.parse import urlencode
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives, get_connection
 
 from .models import TripShare
 
@@ -193,3 +193,182 @@ def send_trip_invite_email(share, request=None):
             'console_only': console_only,
             'error': str(exc),
         }
+
+
+def _comment_target_label(comment):
+    """Short human-readable label for what a TripComment is attached to."""
+    if comment.stop_id and comment.stop:
+        stop = comment.stop
+        if stop.day_id and stop.day and stop.day.date:
+            return f'Stop "{stop.text}" ({stop.day.date.strftime("%b %d, %Y")})'
+        return f'Idea "{stop.text}"'
+    if comment.lodging_id and comment.lodging:
+        return f'Lodging "{comment.lodging.name}"'
+    if comment.day_id and comment.day:
+        day = comment.day
+        date_str = day.date.strftime('%b %d, %Y') if day.date else 'Day'
+        return f'{date_str} — {day.title}' if day.title else date_str
+    if comment.leg_id and comment.leg:
+        return f'Leg "{comment.leg.name}"'
+    return f'Trip "{comment.trip.title}"'
+
+
+def build_comment_email(comment, trip_url, request=None):
+    """Build (subject, text_body, html_body, reply_to) for a new comment or reply."""
+    trip = comment.trip
+    author = comment.author
+    author_name = _inviter_label(author)
+    author_email = (getattr(author, 'email', '') or '').strip()
+    target_label = _comment_target_label(comment)
+    is_reply = bool(comment.parent_id)
+    parent = comment.parent if is_reply else None
+    parent_author_name = _inviter_label(parent.author) if parent and parent.author_id else 'a comment'
+    parent_snippet = ''
+    if parent and parent.body:
+        raw_parent = parent.body.strip()
+        parent_snippet = raw_parent if len(raw_parent) <= 220 else f'{raw_parent[:217]}…'
+
+    kind_badge = 'New Reply' if is_reply else 'New Comment'
+    if comment.stop_id or comment.lodging_id or comment.day_id or comment.leg_id:
+        subject_prefix = 'New reply' if is_reply else 'New comment'
+        subject = f'{subject_prefix} on "{trip.title}" · {target_label}'
+    else:
+        subject_prefix = 'New reply' if is_reply else 'New comment'
+        subject = f'{subject_prefix} on "{trip.title}"'
+
+    action_line = (
+        f'{author_name} replied to {parent_author_name}\'s comment on {target_label}:'
+        if is_reply
+        else f'{author_name} posted a new comment on {target_label}:'
+    )
+
+    text_lines = [
+        f'{kind_badge} — {trip.title}',
+        '',
+        action_line,
+        '',
+    ]
+    if is_reply and parent_snippet:
+        text_lines += [
+            f'Original comment ({parent_author_name}):',
+            f'> {parent_snippet}',
+            '',
+            'Reply:',
+        ]
+    text_lines += [
+        comment.body.strip(),
+        '',
+        f'Open Trips: {trip_url}',
+    ]
+    text_body = '\n'.join(text_lines)
+
+    e_title = html.escape(trip.title)
+    e_badge = html.escape(kind_badge)
+    e_author = html.escape(author_name)
+    e_target = html.escape(target_label)
+    e_body = html.escape(comment.body.strip()).replace('\n', '<br>')
+    e_url = html.escape(trip_url, quote=True)
+
+    intro_html = (
+        f'<strong>{e_author}</strong> replied to <strong>{html.escape(parent_author_name)}</strong> on <strong>{e_target}</strong>:'
+        if is_reply
+        else f'<strong>{e_author}</strong> posted a new comment on <strong>{e_target}</strong>:'
+    )
+    parent_html = (
+        '<blockquote style="margin:0 0 12px;padding:10px 12px;border-left:3px solid #d6d3d1;'
+        'background:#fafaf9;color:#57534e;font-size:13px;line-height:1.45;">'
+        f'<div style="font-size:11px;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;color:#78716c;">'
+        f'In reply to {html.escape(parent_author_name)}</div>'
+        f'{html.escape(parent_snippet).replace(chr(10), "<br>")}'
+        '</blockquote>'
+        if is_reply and parent_snippet
+        else ''
+    )
+
+    html_body = (
+        '<!doctype html><html><body style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;'
+        'background:#f7f6f2;padding:24px;color:#202426;">'
+        '<div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #e7e5e4;'
+        'border-radius:12px;padding:24px;">'
+        f'<p style="margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:0.06em;color:#0f766e;font-weight:600;">{e_badge}</p>'
+        f'<h2 style="margin:0 0 10px;font-size:20px;color:#1c1917;">{e_title}</h2>'
+        f'<p style="margin:0 0 14px;font-size:14px;line-height:1.5;color:#44403c;">{intro_html}</p>'
+        f'{parent_html}'
+        '<div style="margin:0 0 20px;padding:14px 16px;background:#f5f5f4;border-radius:8px;'
+        f'font-size:15px;line-height:1.55;color:#1c1917;">{e_body}</div>'
+        f'<p style="margin:0 0 14px;">'
+        f'<a href="{e_url}" style="display:inline-block;background:#0f766e;color:#ffffff;'
+        f'text-decoration:none;font-weight:600;padding:10px 18px;border-radius:8px;font-size:14px;">'
+        f'Open Trip</a></p>'
+        f'<p style="margin:0;color:#78716c;font-size:12px;word-break:break-all;">'
+        f'Direct link: <a href="{e_url}" style="color:#0f766e;">{e_url}</a></p>'
+        '</div></body></html>'
+    )
+
+    reply_to = [author_email] if author_email else None
+    return subject, text_body, html_body, reply_to
+
+
+def send_trip_comment_emails(comment, request=None):
+    """Email trip participants (owner + collaborators, excluding the author) about a new comment or reply.
+
+    Never raises on mail-server failure so posting comments is never blocked.
+    """
+    trip = comment.trip
+    author_email = (getattr(comment.author, 'email', '') or '').strip().lower()
+    origin = _site_origin(request)
+    from_email = (
+        getattr(settings, 'DEFAULT_FROM_EMAIL', None)
+        or getattr(settings, 'EMAIL_HOST_USER', None)
+        or 'noreply@bldrdojo.com'
+    )
+
+    # Collect (recipient_email, recipient_url) deduplicated by lowercase email, excluding author.
+    recipients = []
+    seen = set()
+    if author_email:
+        seen.add(author_email)
+
+    owner_email = (getattr(trip.user, 'email', '') or '').strip().lower()
+    if owner_email and owner_email not in seen and comment.author_id != trip.user_id:
+        seen.add(owner_email)
+        recipients.append((owner_email, f'{origin}/app/trips/'))
+
+    for share in trip.shares.all():
+        s_email = (share.email or '').strip().lower()
+        if not s_email or s_email in seen:
+            continue
+        if share.user_id and share.user_id == comment.author_id:
+            continue
+        seen.add(s_email)
+        if not share.invite_token:
+            share.save()
+        recipients.append((s_email, f'{origin}/app/trips/?{urlencode({"invite": share.invite_token})}'))
+
+    if not recipients:
+        return {'sent': 0, 'failed': 0}
+
+    sent = 0
+    failed = 0
+    try:
+        connection = get_connection(fail_silently=False)
+        messages = []
+        for to_email, url in recipients:
+            subject, text_body, html_body, reply_to = build_comment_email(comment, url, request=request)
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_body,
+                from_email=from_email,
+                to=[to_email],
+                reply_to=reply_to,
+                connection=connection,
+            )
+            msg.attach_alternative(html_body, 'text/html')
+            messages.append(msg)
+        sent = connection.send_messages(messages) or 0
+    except Exception:  # noqa: BLE001
+        logger.exception('Failed to send comment notification emails for comment %s on trip %s', comment.pk, trip.pk)
+        failed = len(recipients) - sent
+
+    return {'sent': sent, 'failed': failed}
+
