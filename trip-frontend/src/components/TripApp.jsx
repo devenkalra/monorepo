@@ -5324,7 +5324,8 @@ export default function TripApp() {
 
   if (loading) return <div className="p-8 text-center text-stone-500">Loading…</div>;
   if (!user) {
-    window.location.replace(getLoginUrl('/app/trips/'));
+    const returnPath = `${window.location.pathname}${window.location.search}${window.location.hash}` || '/app/trips/';
+    window.location.replace(getLoginUrl(returnPath));
     return null;
   }
 

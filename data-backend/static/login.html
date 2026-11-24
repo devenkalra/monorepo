@@ -1293,7 +1293,9 @@
     }
 
     function socialLogin(provider) {
-        window.location.href = `${API_BASE}/accounts/${provider}/login/`;
+        const next = getRedirectUrl();
+        const qs = next ? `?next=${encodeURIComponent(next)}` : '';
+        window.location.href = `${API_BASE}/accounts/${provider}/login/${qs}`;
     }
 
     document.getElementById('auth-modal').addEventListener('click', (e) => {
