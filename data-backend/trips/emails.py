@@ -62,7 +62,9 @@ def build_invite_email(share, request=None):
     inviter_name = _inviter_label(inviter)
     inviter_email = (getattr(inviter, 'email', '') or '').strip()
     origin = _site_origin(request)
-    trip_url = f'{origin}/app/trips/?{urlencode({"trip": trip.pk})}'
+    if not share.invite_token:
+        share.save()
+    trip_url = f'{origin}/app/trips/?{urlencode({"invite": share.invite_token})}'
     public_url = (
         f'{origin}/app/trips/share/{trip.share_token}'
         if trip.public_enabled and trip.share_token

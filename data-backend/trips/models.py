@@ -531,6 +531,7 @@ class TripShare(models.Model):
     )
     email = models.EmailField()
     role = models.CharField(max_length=16, choices=ROLE_CHOICES, default=ROLE_VIEWER)
+    invite_token = models.CharField(max_length=64, unique=True, blank=True, default='')
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         null=True,
@@ -553,6 +554,8 @@ class TripShare(models.Model):
     def save(self, *args, **kwargs):
         if self.email:
             self.email = self.email.strip().lower()
+        if not self.invite_token:
+            self.invite_token = secrets.token_urlsafe(24)
         super().save(*args, **kwargs)
 
     def __str__(self):

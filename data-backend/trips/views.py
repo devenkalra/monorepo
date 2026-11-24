@@ -1013,6 +1013,28 @@ class TripShareViewSet(viewsets.ModelViewSet):
         data['email_status'] = email_status
         return Response(data, status=status.HTTP_200_OK)
 
+    @action(detail=False, methods=['get'], url_path='resolve-invite')
+    def resolve_invite(self, request):
+        token = (request.query_params.get('token') or '').strip()
+        if not token:
+            return Response({'detail': 'Invitation token is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        share = TripShare.objects.select_related('trip', 'trip__user').filter(invite_token=token).first()
+        if share is None:
+            return Response({'detail': 'This invitation link is invalid or has been revoked.'}, status=status.HTTP_404_NOT_FOUND)
+        user = request.user
+        user_email = (getattr(user, 'email', '') or '').strip().lower()
+        is_recipient = (share.user_id == user.id) or (bool(user_email) and share.email.lower() == user_email)
+        if not is_recipient and not is_trip_owner(share.trip, user):
+            return Response(
+                {'detail': f'This invitation was sent to {share.email}. Sign in with that email to open the trip.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if is_recipient and share.user_id is None:
+            share.user = user
+            share.save(update_fields=['user', 'modified_on'])
+        trip = Trip.objects.select_related('user').prefetch_related(*_trip_detail_prefetches()).get(pk=share.trip_id)
+        return Response(TripSerializer(trip, context={'request': request}).data)
+
     def perform_update(self, serializer):
         if not is_trip_owner(serializer.instance.trip, self.request.user):
             raise PermissionDenied('Only the trip owner can change collaborator roles.')

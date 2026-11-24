@@ -5287,20 +5287,35 @@ export default function TripApp() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const requestedTripId = new URLSearchParams(window.location.search).get('trip');
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = (params.get('invite') || '').trim();
+    const requestedTripId = params.get('trip');
+    const clearQueryParams = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('invite');
+      url.searchParams.delete('trip');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    };
     Promise.all([
       loadTrips(),
       api.json('/api/vacation/lists/').then((d) => setLists(asList(d))).catch(() => setLists([])),
       api.json('/api/gallery/galleries/').then((d) => setGalleries(asList(d))).catch(() => setGalleries([])),
     ])
       .then(() => {
-        if (requestedTripId && /^\d+$/.test(requestedTripId)) {
-          loadSelected(Number(requestedTripId))
-            .then(() => {
-              const url = new URL(window.location.href);
-              url.searchParams.delete('trip');
-              window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+        if (inviteToken) {
+          api.json(`/api/trips/shares/resolve-invite/?token=${encodeURIComponent(inviteToken)}`)
+            .then((tripData) => {
+              setSelected(tripData);
+              clearQueryParams();
+              loadTrips().catch(() => {});
             })
+            .catch((err) => {
+              setError(err.message);
+              clearQueryParams();
+            });
+        } else if (requestedTripId && /^\d+$/.test(requestedTripId)) {
+          loadSelected(Number(requestedTripId))
+            .then(clearQueryParams)
             .catch(() => {});
         }
       })

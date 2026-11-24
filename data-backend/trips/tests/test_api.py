@@ -1506,16 +1506,45 @@ class TripApiTests(APITestCase):
 
             self.assertEqual(len(mail.outbox), 1)
             msg = mail.outbox[0]
+            share = TripShare.objects.get(pk=res.data['id'])
+            self.assertTrue(len(share.invite_token) >= 24)
             self.assertEqual(msg.to, ['newfriend@example.com'])
             self.assertEqual(msg.reply_to, [self.user.email])
             self.assertIn('Patagonia Trek', msg.subject)
             self.assertIn('Editor', msg.body)
-            self.assertIn(f'/app/trips/?trip={trip.id}', msg.body)
+            self.assertIn(f'/app/trips/?invite={share.invite_token}', msg.body)
+            self.assertNotIn(f'?trip={trip.id}', msg.body)
             self.assertIn('newfriend@example.com', msg.body)  # pending signup hint
             self.assertEqual(len(msg.alternatives), 1)
             self.assertEqual(msg.alternatives[0][1], 'text/html')
 
+            # Owner can resolve their own invite link
+            owner_resolve = self.client.get(f'/api/trips/shares/resolve-invite/?token={share.invite_token}')
+            self.assertEqual(owner_resolve.status_code, 200, owner_resolve.data)
+            self.assertEqual(owner_resolve.data['id'], trip.id)
+
+            # Another user cannot resolve someone else's invite token
+            self.client.force_authenticate(self.other)
+            wrong_user = self.client.get(f'/api/trips/shares/resolve-invite/?token={share.invite_token}')
+            self.assertEqual(wrong_user.status_code, 403)
+
+            # Unknown token returns 404
+            missing = self.client.get('/api/trips/shares/resolve-invite/?token=not-a-real-token')
+            self.assertEqual(missing.status_code, 404)
+
+            # Once invitee signs up with invited email, resolve-invite opens trip and links share.user
+            new_friend = User.objects.create_user(
+                username='newfriend', email='newfriend@example.com', password='pw',
+            )
+            self.client.force_authenticate(new_friend)
+            friend_resolve = self.client.get(f'/api/trips/shares/resolve-invite/?token={share.invite_token}')
+            self.assertEqual(friend_resolve.status_code, 200, friend_resolve.data)
+            self.assertEqual(friend_resolve.data['id'], trip.id)
+            share.refresh_from_db()
+            self.assertEqual(share.user_id, new_friend.id)
+
             # Owner can resend invite
+            self.client.force_authenticate(self.user)
             share_id = res.data['id']
             resend = self.client.post(f'/api/trips/shares/{share_id}/resend/', {}, format='json')
             self.assertEqual(resend.status_code, 200, resend.data)
