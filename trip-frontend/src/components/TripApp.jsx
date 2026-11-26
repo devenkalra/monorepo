@@ -5453,7 +5453,7 @@ export default function TripApp() {
           <div>
             <div className="trip-list-actions">
               <button type="button" className="trip-primary" onClick={() => setCreatingTrip(true)} disabled={busy}>
-                + New trip
+                + Add Trip
               </button>
               <label className={`trip-import${busy ? ' is-disabled' : ''}`} title="Import a trip exported from another server (.zip)">
                 {busy ? 'Working…' : 'Import trip…'}
@@ -5469,9 +5469,6 @@ export default function TripApp() {
                   Export all ({ownedTripsCount}) (.zip)
                 </button>
               )}
-              <button type="button" onClick={seedDeathValley} disabled={busy}>
-                Add Sierra & Death Valley 2026
-              </button>
             </div>
             {creatingTrip && (
               <NewTripForm onClose={() => setCreatingTrip(false)} onCreate={createTrip} />

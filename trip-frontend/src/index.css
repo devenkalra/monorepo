@@ -30,10 +30,13 @@ body {
   background: var(--accent-color);
   color: #fff;
   border: 0;
-  padding: 0.45rem 0.85rem;
+  padding: 0.45rem 0.95rem;
   border-radius: 0.35rem;
+  font-weight: 600;
+  font-size: 0.9rem;
   cursor: pointer;
 }
+.trip-primary:hover:not(:disabled) { filter: brightness(0.93); }
 .trip-list-actions {
   display: flex;
   flex-wrap: wrap;
@@ -42,7 +45,7 @@ body {
   margin-bottom: 1.25rem;
 }
 .trip-create { display: flex; gap: 0.5rem; }
-.trip-links > button, .trip-list-actions > button, .trip-import {
+.trip-links > button:not(.trip-primary), .trip-list-actions > button:not(.trip-primary), .trip-import {
   border: 1px solid var(--border-color);
   background: #fff;
   padding: 0.4rem 0.75rem;
